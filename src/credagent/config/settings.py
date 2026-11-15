@@ -17,6 +17,8 @@ DEFAULTS = {
     "CREDAGENT_LLM_MODEL": "anthropic/claude-sonnet-5.5",
     "CREDAGENT_STAGEHAND_MODEL": "anthropic/claude-haiku-5.5",
     "CREDAGENT_JEV_MODEL": "typesafe/jev-latest",
+    # Provisional local placeholder until the owner decides open question Q3 (DECISIONS.md).
+    "CREDAGENT_REDIRECT_URI": "http://127.0.0.1:8976/callback",
 }
 SECRET_KEYS = ("FASTROUTER_API_KEY", "TAVILY_API_KEY")
 
@@ -59,6 +61,7 @@ class Settings:
     llm_model: str = DEFAULTS["CREDAGENT_LLM_MODEL"]
     stagehand_model: str = DEFAULTS["CREDAGENT_STAGEHAND_MODEL"]
     jev_model: str = DEFAULTS["CREDAGENT_JEV_MODEL"]
+    redirect_uri: str = DEFAULTS["CREDAGENT_REDIRECT_URI"]
     home: Path = Path.home() / ".credagent"
     env_file: Path = DEFAULT_ENV_FILE
 
@@ -83,6 +86,7 @@ class Settings:
             "CREDAGENT_LLM_MODEL": self.llm_model,
             "CREDAGENT_STAGEHAND_MODEL": self.stagehand_model,
             "CREDAGENT_JEV_MODEL": self.jev_model,
+            "CREDAGENT_REDIRECT_URI": self.redirect_uri,
             "CREDAGENT_HOME": str(self.home),
             "env file": f"{self.env_file} ({'found' if self.env_file.exists() else 'not found'})",
         }
@@ -115,6 +119,7 @@ def load_settings(env_file: Path | None = None, environ: dict[str, str] | None =
         llm_model=get("CREDAGENT_LLM_MODEL"),
         stagehand_model=get("CREDAGENT_STAGEHAND_MODEL"),
         jev_model=get("CREDAGENT_JEV_MODEL"),
+        redirect_uri=get("CREDAGENT_REDIRECT_URI"),
         home=home,
         env_file=env_path,
     )

@@ -49,7 +49,10 @@ _URL_SEGMENT_RE = re.compile(r"[^/?&=#.:]{32,}")
 
 
 def _mask_match(m: re.Match[str]) -> str:
-    return PLACEHOLDER.format(label="high_entropy") if looks_random(m.group(0)) else m.group(0)
+    tok = m.group(0)
+    if _SLUG_RE.fullmatch(tok):  # lowercase word/number slugs (run IDs, page paths) are identifiers
+        return tok
+    return PLACEHOLDER.format(label="high_entropy") if looks_random(tok) else tok
 
 
 _SLUG_RE = re.compile(r"[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+")

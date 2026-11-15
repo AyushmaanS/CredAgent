@@ -255,6 +255,8 @@ class Run(Strict):
     untested: list[str] = Field(default_factory=list)
     browser: BrowserSession | None = None
     replans_used: int = Field(default=0, ge=0, le=MAX_REPLANS)
+    plan_cursor: int = 0  # index of the current plan step during browser execution
+    metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
     checkpoint_seq: int = 0
 
     @model_validator(mode="after")

@@ -35,6 +35,13 @@ class TerminalIO:
             return None
         return options[n - 1]
 
+    def wait_enter(self, prompt: str) -> bool:
+        try:
+            click.prompt(prompt, default="", show_default=False, prompt_suffix=" ")
+        except (click.Abort, EOFError):
+            return False
+        return True
+
 
 def _settings() -> Settings:
     try:
@@ -105,13 +112,30 @@ def cli() -> None:
     """
 
 
+def _fake_provider_names() -> list[str]:
+    try:
+        from fake_provider.app import load_scenarios
+        return sorted(load_scenarios())
+    except Exception:  # noqa: BLE001 - fake provider not available in this install
+        return []
+
+
 @cli.command()
 @click.argument("app", callback=_validate_app)
-def get(app: str) -> None:
+@click.option("--fake-provider", "scenario", metavar="SCENARIO", default=None,
+              help="Run the browser phase against the local fake provider (Fakeprov) with this scenario.")
+@click.option("--offline", is_flag=True, help="With --fake-provider: no API calls (rule-based decisions, "
+              "plain-code candidates).")
+@click.option("--headless", is_flag=True, help="With --fake-provider: hide the browser window.")
+def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
     """Start a new run to obtain credentials for APP (e.g. "GitHub").
 
-    This version researches the app and writes a plan; browser execution arrives in Sprint 3.
+    Real apps: research + plan, then pause (real-provider browser runs need per-provider consent,
+    Sprint 6). Fakeprov: --fake-provider SCENARIO runs the browser phase locally.
     """
+    if scenario is not None:
+        _run_fake(app, scenario, offline, headless)
+        return
     from credagent.orchestrator import Orchestrator
     from credagent.reasoning.fastrouter import FastRouterClient
     from credagent.research.agent import ResearchAgent
@@ -129,6 +153,56 @@ def get(app: str) -> None:
         click.echo(f"\nRun {run.id} ended: {run.status} — {run.status_reason}")
         click.echo(f"Report: credagent report {run.id}")
         sys.exit(0 if run.status in ("succeeded", "partial") else 3)
+
+
+def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> None:
+    import asyncio
+
+    from fake_provider.app import FakeProvider, scenario
+
+    from credagent.browser.chrome import ChromeError
+    from credagent.decisions.client import JevClient, RuleJev
+    from credagent.orchestrator import BrowserDeps, Orchestrator, execute_browser_phase, fake_provider_plan
+    from credagent.secrets.store import SecretFileStore
+    from credagent.state.models import Run, new_run_id
+
+    names = _fake_provider_names()
+    if scenario_name not in names:
+        click.echo(f"Unknown scenario {scenario_name!r}. Choose one of: {', '.join(names)}", err=True)
+        sys.exit(CONFIG_EXIT)
+    s = _settings()
+    m = _masker(s)
+    if not offline and not s.fastrouter_api_key:
+        click.echo("FASTROUTER_API_KEY is missing. Add it (README 'Local environment') or use --offline.", err=True)
+        sys.exit(CONFIG_EXIT)
+    store = _store(s, m)
+    io = TerminalIO()
+    with FakeProvider(scenario(scenario_name)) as fp:
+        click.echo(f"Fakeprov ({scenario_name}) at {fp.base_url} (test sign-in: fake_provider/app/server.py)")
+        run = Run(id=new_run_id(f"fakeprov-{scenario_name}"), app_input=app, app_name="Fakeprov",
+                  provider="Fakeprov (local)", plan=fake_provider_plan(fp.base_url))
+        run.predicted_outcome = run.plan.predicted_outcome
+        run.phase = "planned"
+        store.create(run)
+        if offline:
+            jev, reasoner, cb = RuleJev(), None, None
+        else:
+            from credagent.browser.stagehand_llm import make_generate
+            from credagent.reasoning.fastrouter import FastRouterClient
+            fr = FastRouterClient(s, m)
+            jev, reasoner, cb = JevClient(fr), fr, make_generate(fr, s.stagehand_model)
+        deps = BrowserDeps(jev=jev, reasoner=reasoner, llm_model=s.llm_model, model_callback=cb,
+                           secret_store=SecretFileStore(s.secrets_dir),
+                           profile_dir=s.profiles_dir / "fakeprov" / run.id, redirect_uri=s.redirect_uri,
+                           headless=headless, allow_dcr=True, ephemeral_profile=True)
+        orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (no research for Fakeprov)
+        try:
+            run = asyncio.run(execute_browser_phase(orch, run, deps, fp.base_url + "/", io))
+        except ChromeError as exc:
+            click.echo(f"Browser problem: {exc}", err=True)
+            sys.exit(1)
+    click.echo(f"\nRun {run.id}: {run.status} — {run.status_reason}")
+    click.echo(f"Report: credagent report {run.id}")
 
 
 @cli.command()

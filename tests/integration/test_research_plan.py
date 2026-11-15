@@ -137,7 +137,7 @@ def test_research_to_plan_with_code_corrections(tmp_path):
     run = o.get("Acme")
     p = run.plan
     assert run.status == "running" and run.phase == "planned"
-    assert "browser execution is not available" in run.status_reason
+    assert "real providers stay disabled until the per-provider consent flow" in run.status_reason
     assert p.credential_kind == "oauth_client" and p.console_url == CONSOLE
     assert p.allowed_domains == ["acme.example", "login.acme.example"]
     assert [x.kind for x in p.steps][-2:] == ["capture", "verify"]
@@ -485,3 +485,39 @@ def test_search_and_page_limits_8_and_6_with_batched_reads(tmp_path):
     assert "up to 6) should" in triage_prompt and "Up to 5 follow_up_queries" in triage_prompt
     b = ResearchBudget()
     assert (b.max_searches, b.max_extracts, b.max_chars_per_page, b.max_follow_ups) == (8, 6, 12_000, 5)
+
+
+def test_cli_fake_provider_rejects_unknown_scenario_and_needs_key_unless_offline():
+    from credagent.cli.main import cli
+    r = CliRunner().invoke(cli, ["get", "Fakeprov", "--fake-provider", "nope"])
+    assert r.exit_code == 1 and "Unknown scenario" in r.output
+    r = CliRunner().invoke(cli, ["get", "Fakeprov", "--fake-provider", "success"])
+    assert r.exit_code == 1 and "--offline" in r.output
+
+
+def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
+    import asyncio
+
+    from fake_provider.app import FakeProvider, scenario
+
+    from credagent.decisions.client import RuleJev
+    from credagent.orchestrator import BrowserDeps, execute_browser_phase, fake_provider_plan
+    from credagent.secrets.store import SecretFileStore
+
+    m = Masker()
+    store = RunStore(tmp_path / "runs", m)
+    io = FakeIO()
+    o = Orchestrator(store, m, None, io)
+    with FakeProvider(scenario("dcr_shortcut")) as fp:
+        run = Run(id="r-dcr", app_input="Fakeprov", plan=fake_provider_plan(fp.base_url))
+        store.create(run)
+        deps = BrowserDeps(jev=RuleJev(), reasoner=None, llm_model=None, model_callback=None,
+                           secret_store=SecretFileStore(tmp_path / "secrets"), profile_dir=tmp_path / "p",
+                           redirect_uri="http://127.0.0.1:8976/callback", headless=True, allow_dcr=True)
+        run = asyncio.run(execute_browser_phase(o, run, deps, fp.base_url + "/", io))
+    assert run.status == "partial" and "untested" in run.status_reason and "dynamic registration" in run.status_reason
+    assert run.browser is None and not (tmp_path / "p").exists()  # no browser was opened
+    assert set(run.credential.parts) >= {"client_id", "client_secret"}
+    secret = SecretFileStore(tmp_path / "secrets").get(run.credential.parts["client_secret"].store_ref)
+    disk = "".join(f.read_text() for f in (tmp_path / "runs" / "r-dcr").iterdir())
+    assert secret not in disk  # never in run state, events or reports

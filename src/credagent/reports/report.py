@@ -25,9 +25,11 @@ def next_steps(run: Run) -> list[str]:
     if h:
         steps.append(f"[person] {h.person_instruction} Then run: credagent resume {run.id}")
     if run.status == "running" and run.phase == "planned" and not h:
-        steps.append("[owner] Review the plan above. Browser execution is not available in this "
-                     "version yet (Sprint 3); the run is saved and can be resumed then: "
+        steps.append("[owner] Review the plan above. Browser runs against real providers need your "
+                     "per-provider consent (Sprint 6); the run is saved and can be resumed then: "
                      f"credagent resume {run.id}")
+    if run.status == "running" and run.phase == "browser" and not h:
+        steps.append("[owner] Credential capture and the live test arrive in Sprint 5.")
     if run.status == "failed" and run.resumable:
         steps.append(f"[owner] When the failing service is reachable again, run: credagent resume {run.id}")
     if run.status == "partial" and run.verification:
@@ -70,8 +72,9 @@ def build_report(run: Run, events: list[dict[str, Any]] | None = None) -> dict[s
         "next_steps": next_steps(run),
         "untested": run.untested,
         "cleanup": ("Nothing was created at the provider (no browser actions were taken)."
-                    if run.phase in ("created", "research", "planned") else
+                    if run.phase in ("created", "research", "planned") and not run.credential else
                     "See handoffs and steps for anything created at the provider."),
+        "metadata_check": run.metadata_check,
         "sources": [{**s.model_dump(), "depth_label": s.depth_label()} for s in p.sources],
         "source_depth": source_depth(p.sources),
         "research_actions": research_actions,

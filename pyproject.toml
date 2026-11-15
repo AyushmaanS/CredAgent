@@ -21,7 +21,11 @@ dev = ["pytest>=8", "ruff>=0.6"]
 credagent = "credagent.cli.main:cli"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["credagent*", "fake_provider*"]
+
+[tool.setuptools.package-data]
+fake_provider = ["fixtures/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -38,6 +42,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S"]
 ignore = ["S101"]  # asserts are fine in tests
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S603", "S607"]  # fake secrets and fixed subprocess calls in tests
+"tests/**" = ["S105", "S106", "S603", "S607", "E501"]  # fake secrets and fixed subprocess calls in tests
+"src/credagent/browser/observe.py" = ["E501"]  # embedded JavaScript
 "fake_provider/**" = ["S105", "S106", "E501"]  # fake site: fake creds, long HTML lines
 "scripts/**" = ["S105", "S106", "S310", "S603", "S607", "UP031"]

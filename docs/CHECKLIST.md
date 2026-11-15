@@ -76,10 +76,31 @@ Live research reads public docs via Tavily only: no browser, no provider account
 - [x] S2.17 (owner request) Record and show how much of each source the model saw; tell the model its coverage
 - [x] S2.18 (owner request) Quote-verify every sourced claim against the text the model saw; tag weak sources
 - [x] S2.19 (owner request) Read the relevant sections of long pages instead of the first 12,000 chars
-- [ ] S2.16 👤 **Waiting:** checkpoint: owner reviews one generated plan before browser execution is enabled
+- [x] S2.16 👤 Checkpoint approved (2026-11-15): owner reviews one generated plan before browser execution is enabled
 
 ## Sprint 3 — Metadata shortcut and browser loop
-- [ ] Per sprint plan
+
+Browser execution runs on the local fake provider only; real-provider browser runs stay disabled in code
+until the Sprint 6 per-provider consent flow (protocol §2).
+
+- [x] S3.1 OAuth metadata discovery (RFC 8414 / OIDC well-known) on allowed domains only, bounded, recorded as observed
+- [x] S3.2 DCR eligibility: registration_endpoint present AND open registration documented (quote-verified); otherwise recorded, not used
+- [x] S3.3 DCR shortcut (RFC 7591) when eligible: register, store secret outside repo, masked reference only
+- [x] S3.4 Credential-type DECIDE before the browser when research found alternatives (D-035)
+- [x] S3.5 Browser session: CredAgent-owned headed Chrome + persistent per-provider profile + Stagehand attach with masked callback; session saved in run state
+- [x] S3.6 Page observation by plain code: URL, title, masked text, forms/fields, buttons, links, banners
+- [x] S3.7 Hard checks (code): off-allow-list, sign-in, CAPTCHA, terms checkbox, implied agreement, payment, identity/business verification, cookie banner, credential page
+- [x] S3.8 Secret-page safeguard: secret-bearing elements excluded from Stagehand (ignore_locators) or Stagehand skipped (plain-code candidates)
+- [x] S3.9 Candidate normalisation: Stagehand observe() / plain-code candidates → Jev c0..cN (dedupe, cap)
+- [x] S3.10 Domain allow-list + navigation checks (before link clicks and after every action); Stagehand domain policy as second layer if it works
+- [x] S3.11 Policy engine: hard stops and dangerous-control denial before every action; no model can override
+- [x] S3.12 Field values owned by code (app name, homepage, callback URL, description); terms controls never touched
+- [x] S3.13 Ordered loop: observe → hard checks → Jev → (fallback) → policy → act → record → checkpoint; begin/end action intents
+- [x] S3.14 DO handoff at human gates: card, wait for Enter, re-observe and re-check (never replay)
+- [x] S3.15 Loop budgets (observations, actions, no-progress, time) → checkpoint + honest stop
+- [x] S3.16 Fake-provider runs in real Chrome: success path to credential page; terms (checkbox + implied), sign-in, CAPTCHA, blocked, injection — gates handed off, forbidden actions never taken
+- [x] S3.17 Tests (unit + integration + opt-in browser) and secret scan
+- [ ] S3.18 👤 **Waiting:** checkpoint: owner watches a fake-provider run and confirms the browser is visible and understandable; remind owner to push
 
 ## Sprint 4 — Jev decisions, policy, handoffs
 - [ ] Per sprint plan

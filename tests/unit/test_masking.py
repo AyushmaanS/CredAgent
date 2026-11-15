@@ -91,3 +91,11 @@ def test_labelled_prose_is_not_masked():
         assert Masker().mask_text(prose) == prose
     assert "Ab12Cd34Ef56" not in Masker().mask_text("api_key=Ab12Cd34Ef56")
     assert "abcdefghijklmnopqrstuvwxyz" not in Masker().mask_text("token: abcdefghijklmnopqrstuvwxyz")
+
+
+def test_run_ids_and_slugs_survive_but_random_tokens_do_not():
+    import secrets
+    for ident in ["20261115-162510-fakeprov-success-7c48", "20261115-143914-github-7436"]:
+        assert Masker().mask_text(f"run {ident} done") == f"run {ident} done"
+    tok = secrets.token_urlsafe(30)
+    assert tok not in Masker().mask_text(f"secret {tok}")

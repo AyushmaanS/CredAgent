@@ -127,8 +127,10 @@ class ChromeProcess:
         deadline = time.monotonic() + ready_timeout_s
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                raise ChromeError(f"Chrome exited during startup (code {proc.returncode}); "
-                                  "is another Chrome already using this profile?")
+                raise ChromeError(
+                    f"Chrome could not start with the profile {profile_dir} (exit code {proc.returncode}). "
+                    "Usually another Chrome window is still using it, e.g. a CredAgent run paused at a handoff. "
+                    "Finish or close that window, then try again.")
             if cdp_version(port):
                 return cls(pid=proc.pid, port=port, profile_dir=profile_dir)
             time.sleep(0.1)

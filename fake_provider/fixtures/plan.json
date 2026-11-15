@@ -1,0 +1,24 @@
+{
+  "notes": "Plan for Fakeprov, standing in for a research result (Tavily cannot find a local site). '{base}' is replaced with the running server's URL. Steps are written the way research writes them.",
+  "plan": {
+    "identification": {"canonical_name": "Fakeprov", "provider": "Fakeprov (local fake provider)", "confidence": "high", "official_domains": ["127.0.0.1"]},
+    "credential_kind": "oauth_client",
+    "console_url": "{base}/console",
+    "allowed_domains": ["127.0.0.1"],
+    "predicted_outcome": "succeeded",
+    "needs_redirect_uri": "yes",
+    "dynamic_registration": "documented_open",
+    "verification_procedure": "client-credentials token request at {base}/oauth/token, then GET {base}/api/me",
+    "expected_blockers": ["sign_in: the console may require sign-in", "terms: creating an app may require accepting terms"],
+    "steps": [
+      {"id": "p1", "kind": "navigate", "description": "Open the developer console", "expected_page": "/console"},
+      {"id": "p2", "kind": "click", "description": "Open the form to create a new app", "expected_page": "/apps/new"},
+      {"id": "p3", "kind": "fill", "description": "Fill in the application name field"},
+      {"id": "p4", "kind": "fill", "description": "Fill in the authorization callback URL field"},
+      {"id": "p5", "kind": "click", "description": "Submit the form to create the app (Create app button)"},
+      {"id": "p6", "kind": "capture", "description": "Capture only the newly created credential with plain browser code (never a model) and store it outside the repo."},
+      {"id": "p7", "kind": "verify", "description": "Live test: client-credentials token request, then GET /api/me"}
+    ],
+    "facts": [{"statement": "Fakeprov is a local test site; this plan stands in for research.", "kind": "observed"}]
+  }
+}
