@@ -1,0 +1,100 @@
+{
+  "stagehand_version": "4.4.0",
+  "headless": false,
+  "ran_at": "2026-11-15T18:58:49+0530",
+  "persist_set": {
+    "cookie_set": true,
+    "localstorage_set": true,
+    "model_calls": 0
+  },
+  "launch_and_close_s": 1.4,
+  "persist_after_process_restart": {
+    "cookie_survived": false,
+    "localstorage_survived": false,
+    "profile_dir_exists_after_close": true
+  },
+  "owned_graceful": {
+    "set": {
+      "chrome_close": "graceful"
+    },
+    "after_relaunch": {
+      "cookie_survived": true,
+      "localstorage_survived": true,
+      "chrome_close": "graceful"
+    }
+  },
+  "owned_detach": {
+    "set": {
+      "chrome_pid": 47506,
+      "chrome_port": 54058,
+      "left_running": true
+    },
+    "reattach_new_process": {
+      "was_running_after_python_exit": true,
+      "cookie_present": true,
+      "localstorage_present": true,
+      "chrome_close": "graceful"
+    },
+    "after_relaunch": {
+      "cookie_survived": true,
+      "localstorage_survived": true,
+      "chrome_close": "graceful"
+    }
+  },
+  "profile_dir_mode": "0o700",
+  "exposure": {
+    "observe_plain": {
+      "model_calls": 1,
+      "latency_ms_excluding_model": 41,
+      "fake_secret_seen_by_model": {
+        "code_text": true,
+        "readonly_input": true,
+        "password_input": false,
+        "outside_input": true
+      },
+      "returned_actions": 0,
+      "request_keys": [
+        "messages",
+        "response_format",
+        "stop_sequences",
+        "system_prompt",
+        "temperature"
+      ]
+    },
+    "observe_with_ignore_locators": {
+      "model_calls": 1,
+      "fake_secret_seen_by_model": {
+        "code_text": false,
+        "readonly_input": false,
+        "password_input": false,
+        "outside_input": true
+      }
+    },
+    "observe_scoped_to_nav": {
+      "model_calls": 1,
+      "fake_secret_seen_by_model": {
+        "code_text": false,
+        "readonly_input": false,
+        "password_input": false,
+        "outside_input": false
+      },
+      "returned_actions": 0
+    },
+    "act_with_action": {
+      "model_calls": 0,
+      "clicked": true,
+      "error": null
+    },
+    "plain_code_read": {
+      "model_calls": 0,
+      "value_matches": true
+    },
+    "offmachine_hosts_attempted_via_proxy": [
+      "accounts.google.com:443",
+      "clients2.google.com",
+      "www.google.com:443",
+      "www.gstatic.com:443"
+    ]
+  },
+  "python_offmachine_connections_at_end": []
+}

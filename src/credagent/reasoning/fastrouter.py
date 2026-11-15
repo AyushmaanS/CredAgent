@@ -71,6 +71,7 @@ class FastRouterClient:
         model: str | None = None,
         json_schema: dict[str, Any] | None = None,
         schema_name: str = "result",
+        strict: bool = True,
         temperature: float = 0.0,
         max_tokens: int = 2000,
         timeout_s: float | None = None,
@@ -84,7 +85,7 @@ class FastRouterClient:
         if json_schema is not None:
             body["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"name": schema_name, "strict": True, "schema": json_schema},
+                "json_schema": {"name": schema_name, "strict": strict, "schema": json_schema},
             }
         started = time.monotonic()
         data = self._post("/chat/completions", body, timeout_s)

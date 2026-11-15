@@ -1,0 +1,24 @@
+{
+  "ran_at": "2026-11-15T19:01:50+0530",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "home": "~/.credagent",
+  "home_outside_repo": true,
+  "process_umask": "0o22",
+  "secret_file": {
+    "ref": "file:spike-1794749510/client_secret",
+    "file_mode": "0o600",
+    "run_dir_mode": "0o700",
+    "store_dir_mode": "0o700",
+    "home_mode": "0o700",
+    "owner_is_me": true
+  },
+  "secret_readable_from_new_process": true,
+  "widened_mode_refused": true,
+  "fake_secret_removed": true,
+  "state": {
+    "reload_in_new_process": true,
+    "checkpoint_mode": "0o600",
+    "run_dir_mode": "0o700"
+  },
+  "time_machine": "[Included]  ~/.credagent"
+}

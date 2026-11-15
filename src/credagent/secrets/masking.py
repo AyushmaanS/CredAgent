@@ -58,7 +58,11 @@ def shannon_entropy(s: str) -> float:
 
 def looks_random(token: str) -> bool:
     """Long, mixed-class, high-entropy token (e.g. an unprefixed client secret)."""
-    if len(token) < 32 or shannon_entropy(token) < 4.0:
+    if len(token) < 32:
+        return False
+    if re.fullmatch(r"[0-9a-fA-F]{32,}", token):
+        return True  # hex secrets (e.g. 40-char client secrets) have entropy < 4 bits/char
+    if shannon_entropy(token) < 4.0:
         return False
     classes = sum(
         bool(re.search(p, token)) for p in (r"[a-z]", r"[A-Z]", r"[0-9]")

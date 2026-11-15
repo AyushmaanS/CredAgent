@@ -49,3 +49,10 @@ def test_masked_display_reveals_little():
     long = "abcd" + "x" * 30
     assert masked_display(long).startswith("abcd…")
     assert "x" * 5 not in masked_display(long)
+
+
+def test_hex_secret_masked():
+    import secrets
+    hex40 = secrets.token_hex(20)  # like a 40-char hex client secret
+    out = Masker().mask_text(f"Client secret {hex40} shown once")
+    assert hex40 not in out
