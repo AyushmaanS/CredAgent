@@ -39,3 +39,9 @@ def test_store_inside_repo_refused():
 def test_unsafe_identifiers_refused(tmp_path, bad):
     with pytest.raises(SecretStoreError):
         SecretFileStore(tmp_path).put(bad, "k", "fake-value-123456")
+
+
+def test_nested_store_root_parents_owner_only(tmp_path):
+    store = SecretFileStore(tmp_path / "home" / "secrets")
+    store.put("run-1", "k", "fake-value-123456")
+    assert mode(tmp_path / "home") == 0o700

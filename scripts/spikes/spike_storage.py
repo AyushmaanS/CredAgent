@@ -69,7 +69,8 @@ def main() -> int:
     out["state"] = {
         "reload_in_new_process": subprocess.run([sys.executable, "-c", code], capture_output=True,
                                                 text=True).stdout.strip() == "2",
-        "checkpoint_mode": mode(ckpt), "run_dir_mode": mode(ckpt.parent)}
+        "checkpoint_mode": mode(ckpt), "run_dir_mode": mode(ckpt.parent),
+        "runs_root_mode": mode(s.runs_dir), "profiles_root_mode": mode(ensure_private_dir(s.profiles_dir))}
     shutil.rmtree(s.runs_dir / run_id)
 
     tm = subprocess.run(["tmutil", "isexcluded", str(s.home)], capture_output=True, text=True)

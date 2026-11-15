@@ -12,6 +12,7 @@ import stat
 from pathlib import Path
 
 from credagent.config.settings import REPO_ROOT, is_inside
+from credagent.state.atomic import mkdir_private
 
 _SAFE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
@@ -25,7 +26,7 @@ def _mode(path: Path) -> int:
 
 
 def ensure_private_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    mkdir_private(path)
     os.chmod(path, 0o700)
     if _mode(path) != 0o700:
         raise SecretStoreError(f"could not restrict {path} to owner-only (0700)")

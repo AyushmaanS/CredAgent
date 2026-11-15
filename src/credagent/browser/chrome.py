@@ -26,6 +26,8 @@ from pathlib import Path
 
 import websockets
 
+from credagent.state.atomic import mkdir_private
+
 MAC_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 # Mirrors stagehand 4.4.0 browser._DEFAULT_CHROME_FLAGS (needed for its extension),
@@ -111,8 +113,7 @@ class ChromeProcess:
     ) -> ChromeProcess:
         if not executable.exists():
             raise ChromeError(f"Chrome not found at {executable}")
-        profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(profile_dir, 0o700)
+        mkdir_private(profile_dir)
         port = free_port()
         args = [
             str(executable), *STAGEHAND_FLAGS, "--window-size=1280,800",

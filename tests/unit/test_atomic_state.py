@@ -36,3 +36,10 @@ def test_files_are_owner_only(tmp_path):
     atomic_write_json(path, {})
     assert (path.stat().st_mode & 0o077) == 0
     json.loads(path.read_text())
+
+
+def test_intermediate_directories_are_owner_only(tmp_path):
+    path = tmp_path / "home" / "runs" / "r1" / "checkpoint.json"
+    atomic_write_json(path, {})
+    for d in (tmp_path / "home", tmp_path / "home" / "runs", tmp_path / "home" / "runs" / "r1"):
+        assert (d.stat().st_mode & 0o777) == 0o700, d

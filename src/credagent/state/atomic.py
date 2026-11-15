@@ -8,9 +8,26 @@ from pathlib import Path
 from typing import Any
 
 
+def mkdir_private(path: Path) -> Path:
+    """Create `path` and any missing parents, each owner-only (0700).
+
+    `Path.mkdir(parents=True, mode=...)` applies `mode` only to the last component,
+    so intermediate directories would otherwise get the default 0755.
+    """
+    missing = []
+    p = path
+    while not p.exists():
+        missing.append(p)
+        p = p.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(d, 0o700)
+    return path
+
+
 def atomic_write_json(path: Path, data: Any) -> None:
     """Write JSON so a reader sees either the old file or the new one, never a partial."""
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    mkdir_private(path.parent)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     payload = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -33,7 +50,7 @@ def read_json(path: Path) -> Any:
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     """Append one event line and fsync. A torn final line is tolerated by read_jsonl."""
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    mkdir_private(path.parent)
     line = (json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
