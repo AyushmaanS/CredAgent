@@ -140,7 +140,8 @@ def test_terms_are_handed_to_the_person(tmp_path, name):
     assert created and created[0]["actor"] == "person"  # the person clicked the agreement-carrying submit
     assert_safe(audit)
     filled = [s.action for s in run.steps if s.actor == "agent" and s.action.startswith("fill")]
-    assert len(filled) == 2  # agent filled name + callback before handing off
+    # agent filled every field it has a value for (name, callback, description, homepage) before handing off
+    assert len(filled) == 4 and all(any(k in f for f in filled) for k in ("name", "callback", "Description", "Homepage"))
 
 
 def test_sign_in_and_captcha_are_handed_off(tmp_path):
@@ -299,6 +300,7 @@ async def run_jev(tmp_path, name, jev, *, drop_steps=(), io_factory=None):
         finally:
             await session.close()
         apps = [(a.name, a.redirect_uri) for a in fp.state.apps.values()]
+        run.__dict__.setdefault("_apps_full", [vars(a).copy() for a in fp.state.apps.values()])
         audit = fp.audit()
     return result, run, io, audit, apps
 
@@ -319,10 +321,50 @@ def test_terms_flag_does_not_preempt_filling_other_fields(tmp_path, name):
 def test_required_field_prefilled_before_terms_handoff_even_if_plan_skipped_it(tmp_path):
     result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "terms_checkbox", RuleJev(), drop_steps=("p4",)))
     assert result.status == "credential_page", result
-    assert any("required field, before handing over the terms" in s.action for s in run.steps)
+    assert any("completing the form before it is submitted" in s.action and "callback" in s.action.lower()
+               for s in run.steps)
     assert apps and apps[0][1] == "http://127.0.0.1:8976/callback"
 
 
 def test_non_terms_blocker_still_hands_off_immediately(tmp_path):
     result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "success", AlwaysBlocker()))
     assert io.handoffs and io.handoffs[0] == ("DO", "unexpected")
+
+
+
+@pytest.mark.parametrize("name", ["terms_checkbox", "terms_implied"])
+def test_agent_fills_optional_fields_too_and_card_says_what_it_did(tmp_path, name):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, name, FlagsTermsLikeRealJev()))
+    assert result.status == "credential_page"
+    (app,) = run.__dict__["_apps_full"]
+    assert app["homepage_url"] == "http://127.0.0.1:8976" and app["description"].startswith("Created by CredAgent")
+    assert app["redirect_uri"] == "http://127.0.0.1:8976/callback"
+    card = " ".join(" ".join(io.out).split())
+    for label in ("Application name", "Description", "Homepage URL", "Authorization callback URL"):
+        assert f"“{label}”" in card.split("The agent filled:")[1].split(".")[0], label
+    assert io.handoffs == [("DO", "terms")]
+    assert_safe(audit)
+
+
+def test_unanswered_dropdown_becomes_decide_before_submit_and_scopes_stay_unticked(tmp_path):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "decide_app_type_and_scopes", RuleJev()))
+    assert result.status == "credential_page", result
+    assert ("DECIDE", "other") in io.handoffs
+    (app,) = run.__dict__["_apps_full"]
+    assert app["app_type"] == "confidential" and app["scopes"] == []   # person chose option 1; no scope ticked
+    assert any("(your choice)" in s.action for s in run.steps)
+
+
+class DeclineIO(PersonIO):
+    async def choose(self, prompt, options):
+        self.handoffs.append(("DECIDE", self.run.pending_handoff.blocker_kind))
+        assert "Stop here" in options  # the person can always say no
+        return "Stop here"
+
+
+def test_declining_a_form_choice_ends_blocked(tmp_path):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "decide_app_type_and_scopes", RuleJev(),
+                                                       io_factory=DeclineIO))
+    assert result.status == "blocked" and "declined" in result.reason
+    assert run.blockers and run.blockers[-1].who_must_act == "person"
+    assert not [a for a in audit if a["event"] == "app_created"] and apps == []

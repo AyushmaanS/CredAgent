@@ -30,7 +30,7 @@ from credagent.browser.observe import Observation, observe_page
 from credagent.decisions.client import DecisionLog, ServiceDown, apply_fallbacks
 from credagent.decisions.jev import NONE_OPTION, PageState
 from credagent.handoff.cards import render_card
-from credagent.policy.engine import ProposedAction, Verdict, evaluate
+from credagent.policy.engine import HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed
 from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
 from credagent.secrets.masking import Masker
@@ -91,6 +91,25 @@ def terms_instruction(obs: Observation, gates: list) -> tuple[str, str]:
         f"In the browser window: read the terms linked on the page. If you agree, click {btn}: clicking it "
         f"accepts the terms.{stop}"
     ), missing
+
+
+def terms_form(obs: Observation, gates: list) -> str | None:
+    g = next((x for x in gates if x.kind == "terms"), None)
+    box = next((i for i in obs.inputs if g and i["xpath"] == g.target_xpath), None)
+    return (g.form_xpath if g else None) or (box["form"] if box else None)
+
+
+def form_summary_text(summary: dict[str, list[str]]) -> str:
+    parts = []
+    if summary["filled"]:
+        parts.append("The agent filled: " + ", ".join(summary["filled"]) + ".")
+    if summary["left_empty"]:
+        parts.append(
+            "Left empty (no approved value; fill them yourself if needed): " + ", ".join(summary["left_empty"]) + "."
+        )
+    if summary["defaults"]:
+        parts.append("Options left at their defaults: " + ", ".join(summary["defaults"]) + ".")
+    return (" " + " ".join(parts)) if parts else ""
 
 
 class LoopIO(Protocol):
@@ -183,7 +202,14 @@ class BrowserLoop:
         page = page if page is not None else getattr(self, "_page", None)
         gates = gates if gates is not None else getattr(self, "_gates", [])
         if kind == "DO" and blocker_kind == "terms" and page is not None:
-            obs, gates = await self._prefill_required(run, page, obs, gates)
+            obs, gates, status, summary = await self._complete_form(run, page, obs, gates, terms_form(obs, gates))
+            if status != "ok":
+                if status == "declined":
+                    self._stop = "person declined a choice in the form"
+                return None
+            if instruction is None:
+                instruction, _ = terms_instruction(obs, gates)
+                instruction += form_summary_text(summary)
         if kind == "DO" and blocker_kind == "terms" and instruction is None:
             instruction, _ = terms_instruction(obs, gates)
         h = run.open_handoff(
@@ -241,42 +267,87 @@ class BrowserLoop:
         self._cp(run, "handoff_resolved", {"handoff_id": h.id, "answer": answer})
         return answer
 
-    async def _prefill_required(self, run: Run, page: Any, obs: Observation, gates: list) -> tuple[Observation, list]:
-        """Before handing terms to the person, fill any required field in that form that is still empty and has a
-        code-approved value, so the person never meets a form with a hidden gap (D-049). Policy still decides."""
-        t = next((g for g in gates if g.kind == "terms"), None)
-        box = next((i for i in obs.inputs if t and i["xpath"] == t.target_xpath), None)
-        form = (t.form_xpath if t else None) or (box["form"] if box else None)
+    async def _complete_form(
+        self, run: Run, page: Any, obs: Observation, gates: list, form: str | None
+    ) -> tuple[Observation, list, str, dict[str, list[str]]]:
+        """Before a form is submitted (by the person at a terms handoff, or by the agent), complete everything
+        the agent may legitimately fill (D-050). Policy decides every fill. Never overwrites a value.
+
+        Returns (obs, gates, status, summary); status is "ok", "pending" (a DECIDE was left unanswered)
+        or "declined"; summary lists what was filled, left empty, left at defaults, or left for the person."""
+        summary: dict[str, list[str]] = {"filled": [], "left_empty": [], "defaults": [], "for_you": []}
+        if not form:
+            return obs, gates, "ok", summary
+        terms_xpaths = {g.target_xpath for g in gates if g.kind == "terms" and g.target_xpath}
         changed = False
-        for i in obs.inputs:
-            if not (form and i["form"] == form and i["required"] and not i["value_len"]):
+        for i in list(obs.inputs):
+            if i["form"] != form or i["type"] in ("hidden", "submit", "button", "image", "reset"):
                 continue
-            if i["type"] in ("checkbox", "radio", "submit", "button", "hidden") or i["tag"] == "select":
+            if i["readonly"] or i["value_secretlike"] or i["xpath"] in obs.secret_xpaths:
                 continue
-            key = field_key_for(i["label"] or i["name"])
+            label = i["label"] or i["name"] or i["type"]
+            if i["xpath"] in terms_xpaths:
+                summary["for_you"].append(f"“{label[:70]}”")
+                continue
+            if HUMAN_ONLY_FIELDS.search(label):
+                summary["for_you"].append(f"“{label[:70]}”")
+                continue
+            if i["type"] in ("checkbox", "radio"):
+                summary["defaults"].append(f"“{label[:60]}” ({'ticked' if i['checked'] else 'unticked'})")
+                continue
+            if i["value_len"]:
+                if i["tag"] != "select":
+                    summary["filled"].append(f"“{label[:60]}”")
+                continue
+            if i["tag"] == "select":
+                cand = RawCandidate(i["xpath"], "select", f"dropdown '{label}'")
+                act = ProposedAction(method="select", xpath=i["xpath"], description=cand.description)
+                verdict = evaluate(act, obs, gates, self._allowed, risk="reversible", risk_uncertain=False)
+                if verdict.decision == "DECIDE":
+                    choice = await self._decide(run, cand, verdict, obs)
+                    if choice is None:
+                        return obs, gates, "pending", summary
+                    if choice == "__declined__":
+                        return obs, gates, "declined", summary
+                    seq = self.store.begin_action(run, "select", {"target": cand.description, "why": "complete form"})
+                    await page.locator("xpath=" + i["xpath"]).select_option(choice)
+                    self.store.end_action(run, seq, "done")
+                    self._step(run, f"select {cand.description} = {choice} (your choice)", "agent", "done")
+                    summary["filled"].append(f"“{label[:60]}” (your choice)")
+                    changed = True
+                continue
+            key = field_key_for(label)
             value = self.values.get(key)
+            if not value:
+                summary["left_empty"].append(f"“{label[:60]}”" + (" (required)" if i["required"] else ""))
+                continue
             act = ProposedAction(
-                method="fill", xpath=i["xpath"], description=f"text field '{i['label']}'", field_key=key, value=value
+                method="fill", xpath=i["xpath"], description=f"text field '{label}'", field_key=key, value=value
             )
             verdict = evaluate(act, obs, gates, self._allowed, risk="reversible", risk_uncertain=False)
             if verdict.decision != "allow":
+                summary["for_you"].append(f"“{label[:60]}”")
                 continue
-            seq = self.store.begin_action(run, "fill", {"target": act.description, "field": key, "why": "prefill"})
-            await page.locator("xpath=" + i["xpath"]).fill(value or "")
+            seq = self.store.begin_action(
+                run, "fill", {"target": act.description, "field": key, "why": "complete form"}
+            )
+            await page.locator("xpath=" + i["xpath"]).fill(value)
             self.store.end_action(run, seq, "done")
             self._step(
                 run,
-                f"fill {act.description} = {value} (required field, before handing over the terms)",
+                f"fill {act.description} = {value} (completing the form before it is submitted)",
                 "agent",
                 "done",
                 [f"policy: {verdict.reason}"],
             )
+            summary["filled"].append(f"“{label[:60]}”")
             changed = True
-        if not changed:
-            return obs, gates
-        await page.wait_for_timeout(self.budget.settle_ms)
-        obs = await observe_page(page, self.masker)
-        return obs, check(obs, self._allowed)
+        self._cp(run, "form_completed", summary)
+        if changed:
+            await page.wait_for_timeout(self.budget.settle_ms)
+            obs = await observe_page(page, self.masker)
+            gates = check(obs, self._allowed)
+        return obs, gates, "ok", summary
 
     async def _still_needed(self, page: Any | None, before: Observation, blocker_kind: str) -> str | None:
         """Re-check the page after the person pressed Enter. None = the handoff's condition is resolved."""
@@ -337,6 +408,21 @@ class BrowserLoop:
 
     # --------------------------------------------------------------- main
     async def run(self, run: Run, page: Any, sh: Any | None = None, context: Any | None = None) -> LoopResult:
+        self._stop: str | None = None
+        result = await self._run(run, page, sh, context)
+        if self._stop:  # a person's "no" ends the run honestly as blocked, not as a pending handoff
+            run.add_blocker(
+                Blocker(
+                    kind="other",
+                    description=self._stop,
+                    who_must_act="person",
+                    next_steps=["Re-run when you are ready to make that choice."],
+                )
+            )
+            return LoopResult("blocked", self._stop, result.observations, result.actions)
+        return result
+
+    async def _run(self, run: Run, page: Any, sh: Any | None, context: Any | None) -> LoopResult:
         t0 = time.monotonic()
         n_obs = n_act = 0
         no_progress = 0
@@ -590,6 +676,22 @@ class BrowserLoop:
                     )
                     return LoopResult("blocked", f"person declined: {cand.description}", n_obs, n_act)
 
+            # Before the agent itself submits a form, complete everything it may fill (D-050).
+            form_of_btn = next(
+                (
+                    b["form"]
+                    for b in obs.buttons
+                    if b["xpath"] == cand.xpath and b["type"] in ("submit", "") and b["form"]
+                ),
+                None,
+            )
+            if cand.method == "click" and form_of_btn:
+                obs, gates, status, _summary = await self._complete_form(run, page, obs, gates, form_of_btn)
+                if status == "pending":
+                    return LoopResult("handoff_pending", "a choice in the form is waiting for you", n_obs, n_act)
+                if status == "declined":
+                    self._stop = "person declined a choice in the form"
+                    return LoopResult("blocked", self._stop, n_obs, n_act)
             # 6. act  7. record  8. checkpoint
             seq = self.store.begin_action(run, cand.method, {"target": cand.description, "field": cand.field_key})
             try:
@@ -616,8 +718,7 @@ class BrowserLoop:
         if cand.method == "select":
             inp = next((i for i in obs.inputs if i["xpath"] == cand.xpath), None)
             opts = [o for o in (inp["options"] if inp else []) if o and not o.lower().startswith("choose")]
-            if len(opts) < 2:
-                opts = opts + ["Stop here"] if opts else ["Stop here", "Skip"]
+            opts = opts + ["Stop here"] if opts else ["Stop here", "Skip"]  # the person can always say no
             ans = await self._handoff(
                 run,
                 "DECIDE",

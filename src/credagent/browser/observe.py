@@ -33,6 +33,9 @@ OBSERVE_JS = r"""
     if (!t && el.labels && el.labels.length) t = Array.from(el.labels).map(l => l.innerText).join(' ');
     if (!t) { const l = el.closest('label'); if (l) t = l.innerText; }
     if (!t) t = el.getAttribute('placeholder') || el.getAttribute('title') || el.name || el.id || '';
+    if (el.tagName === 'SELECT') {            // a wrapping <label> also contains every option's text
+      for (const o of el.options) t = t.split(o.text).join(' ');
+    }
     return clean(t).slice(0, 160);
   };
   const ctx = el => { const p = el.parentElement; return clean(p ? p.innerText : '').slice(0, 200); };

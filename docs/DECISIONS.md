@@ -308,6 +308,17 @@ Fixes:
 2. Safety net: before any terms handoff, the agent fills every **required** field in that form that is still empty and has a code-approved value. Policy still decides each fill. The card names any required field the agent could not fill.
 Tested: a Jev stand-in that flags terms like the real one (checkbox + implied) → both fields filled before the single handoff, app created with the callback URL. A plan missing the callback step → required field pre-filled before the handoff. *Online with real Jev 1.14.0 + Stagehand + LLM and a simulated person:* both terms scenarios reached the credential page with one handoff, Jev's flag deferred 1–2 times, the app created with the callback URL, and terms accepted and app created by the person.
 
+## D-050 Complete the whole form before it is submitted; hand off only what needs a person — Decided (owner request)
+Owner: *"why only required fields? It should fill all fields it logically can and only hand off where a human is actually required."* That replaces D-049's required-only pre-fill. Before a form is submitted (by the person at a terms handoff, or by the agent clicking a submit button), a **form-completion pass** runs:
+- every empty text field the agent has a **code-approved value** for (app name, homepage, callback URL, description) is filled, **required or optional**; values are never overwritten; policy decides each fill;
+- empty fields without an approved value (e.g. a privacy-policy URL) are left empty, and the card names them;
+- an **unanswered dropdown** (still on a placeholder) becomes a DECIDE before submitting. Every dropdown DECIDE now includes **"Stop here"**, so the person can always say no. A "no" ends the run `blocked` (*found while testing:* with ≥2 options there had been no way to decline);
+- checkboxes/radios (other than terms) are **left at their defaults** and listed. Ticking one is a choice (e.g. a scope), i.e. the person's DECIDE;
+- human-only fields and the terms control are never touched; they are listed as "for you".
+The terms card now says what the agent did: *"The agent filled: “Application name”, “Description”, “Homepage URL”, “Authorization callback URL”."*
+*Also found and fixed:* a dropdown's label was read as the whole wrapping `<label>` text, including every option, which bloated step records, Jev's view and cards.
+Tested (real Chrome, offline stand-in): terms checkbox/implied → all four fields filled, one handoff, the created app has homepage + description + callback. Dropdown with no plan step → DECIDE before submit, scopes left unticked. "Stop here" → blocked, nothing created. *Online (real Jev + Stagehand + LLM, simulated person):* terms checkbox → the card listed the four fields, the app was created with all four values, one handoff, terms accepted by the person.
+
 ---
 
 ## Discrepancies between documents
