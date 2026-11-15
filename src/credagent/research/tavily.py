@@ -61,5 +61,7 @@ class TavilyClient:
              "include_answer": False, "include_raw_content": False},
         )
 
-    def extract(self, urls: list[str]) -> dict[str, Any]:
-        return self._post("/extract", {"urls": urls[:5], "extract_depth": "basic"})
+    def extract(self, urls: list[str], *, depth: str = "basic") -> dict[str, Any]:
+        # Markdown keeps headings, which section selection uses. "advanced" depth returned identical
+        # text for official docs at twice the cost (DECISIONS D-038), so "basic" is the default.
+        return self._post("/extract", {"urls": urls[:5], "extract_depth": depth, "format": "markdown"})

@@ -238,6 +238,20 @@ Known limitations / failure modes:
 3. OAuth-client live tests usually need the authorization-code flow (a person approves, a redirect URI receives the code). This makes **Q3 (default redirect URI) a decision needed by Sprint 5**.
 4. Ranking mixes tutorials with official docs. Triage prefers official docs, and code only cites retrieved URLs, but a tutorial can still be the cited source for a step.
 
+## D-038 How much of each source the model sees — Decided (owner request, 2026-11-15)
+*Observed* on the GitHub plan: "search" sources were only Tavily's excerpt (≈1,100–1,450 chars), cut to the first 700 chars; the page was never opened. "Extract" pages were cut to their first 12,000 chars: two of four GitHub pages were 41–43% visible. The model's unknown claimed the key "Creating an OAuth app" page was truncated. **That claim was false:** the page is complete at 2,704 chars and simply doesn't cover secret generation.
+Changes:
+1. **Depth is recorded and shown** for every source: `snippet` (excerpt only, page not opened), `full`, or `sections` (n of m sections, chars seen of total). Shown in the plan view, the report's Sources section and the run log (`research_action.coverage`).
+2. **The model is told each source's coverage** in its header (`coverage=excerpt` / `full page` / `sections …`) and must not claim truncation or absence unless it saw the page in full.
+3. **Long pages are reduced to relevant sections**, not the first 12,000 chars (`research/sections.py`). The page is split at markdown headings, sections are scored for credential-related terms plus the app name, the opening section is always kept, the rest are emitted in page order with `[… section omitted …]` markers. Deterministic.
+4. **Tavily `extract_depth` stays `basic`:** *observed:* `advanced` returned byte-identical text for the GitHub docs pages at twice the credit cost. Extraction now requests `format=markdown` so headings survive for section splitting.
+
+## D-039 "Sourced" now means quote-verified — Decided
+Every sourced fact, sourced blocker and documented-DCR claim must include a short verbatim `quote`. Code checks the quote against the exact text the model was shown **for the cited URL**. Matching ignores whitespace, case, quote marks, dashes, `**` and markdown link syntax, and needs ≥15 chars. Missing, too short, not found, or found only in a *different* source → downgraded to inferred (DCR → unknown), with a correction note counting the downgrades. The console URL must literally appear in its cited source's text, otherwise an "inferred" fact says so (the URL is still used if it is on an allowed domain).
+Sourced facts are also tagged by code when weaker: `[code: third-party source]` (cited host not an official domain) and/or `[code: search snippet only]` (page never opened).
+*Observed* (GitHub, 2 runs after the change): 7 and 8 sourced facts, all quotes verified, 0 downgrades. The console URL `github.com/settings/applications/new` is now labelled inferred, because no retrieved GitHub page prints it. The model's false "page truncated" unknown no longer appears.
+Limit: a quote proves the source *says* the words, not that the model's paraphrase in `statement` is faithful. The report shows the quote next to each statement so a reader can compare.
+
 ---
 
 ## Discrepancies between documents

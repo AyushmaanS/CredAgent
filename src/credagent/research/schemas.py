@@ -101,18 +101,18 @@ FINDINGS_SCHEMA = obj({
     "needs_redirect_uri": enum(["yes", "no", "unknown"]),
     "scopes_or_permissions": arr(obj({"name": STR, "why": STR, "source_url": NSTR})),
     "likely_blockers": arr(obj({"kind": enum(BLOCKER_KINDS), "description": STR,
-                                "basis": enum(["sourced", "inferred"]), "source_url": NSTR})),
+                                "basis": enum(["sourced", "inferred"]), "source_url": NSTR, "quote": NSTR})),
     "oauth_metadata": obj({"metadata_url": NSTR,
                            "dynamic_registration": enum(["documented_open", "documented_restricted",
                                                          "not_documented", "unknown"]),
-                           "source_url": NSTR}),
+                           "source_url": NSTR, "quote": NSTR}),
     "verification": obj({"method": STR, "endpoint": NSTR, "what_passing_proves": STR,
                          "label_if_passes": enum(["verified", "client_recognized"]),
                          "source_url": NSTR}),
     "predicted_outcome": enum(OUTCOMES),
     "prediction_reason": STR,
     "facts": arr(obj({"statement": STR, "kind": enum(["sourced", "inferred", "unknown"]),
-                      "source_url": NSTR})),
+                      "source_url": NSTR, "quote": NSTR})),
     "unknowns": arr(STR),
 })
 
@@ -143,12 +143,14 @@ class LikelyBlocker(_M):
     description: str
     basis: Literal["sourced", "inferred"]
     source_url: str | None
+    quote: str | None
 
 
 class OAuthMeta(_M):
     metadata_url: str | None
     dynamic_registration: Literal["documented_open", "documented_restricted", "not_documented", "unknown"]
     source_url: str | None
+    quote: str | None
 
 
 class Verification(_M):
@@ -163,6 +165,7 @@ class FindingFact(_M):
     statement: str
     kind: Literal["sourced", "inferred", "unknown"]
     source_url: str | None
+    quote: str | None
 
 
 class Findings(_M):

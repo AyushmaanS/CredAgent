@@ -26,8 +26,10 @@ Sprint 2 live research through Tavily + FastRouter. Not demo runs; listed for co
 | 2026-11-15 | Todoist | 20261115-143447-todoist-3581 | planned | proposed copying a personal API token (prevented, D-034) |
 | 2026-11-15 | zzqx (nonsense) | 20261115-143547-zzqx-7340 | blocked | app_not_identified, as intended |
 | 2026-11-15 | Notion | 20261115-143654-notion-b33b | planned | after truncation fix |
-| 2026-11-15 | GitHub | 20261115-143914-github-7436 | planned | after D-034 fix; sample in docs/samples/plan-github.md |
+| 2026-11-15 | GitHub | 20261115-143914-github-7436 | planned | after D-034 fix |
 | 2026-11-15 | Notion | 20261115-143956-notion-3326 | planned | after D-034 fix |
+| 2026-11-15 | GitHub | 20261115-153255-github-839f | planned | after depth + quote checks (D-038/D-039): 7 sourced, all quotes verified |
+| 2026-11-15 | GitHub | 20261115-153458-github-9cfb | planned | adds weak-source tags; sample in docs/samples/plan-github.md |
 
 No credential was obtained or tested in any of these runs.
 

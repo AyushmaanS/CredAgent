@@ -72,9 +72,16 @@ def build_report(run: Run, events: list[dict[str, Any]] | None = None) -> dict[s
         "cleanup": ("Nothing was created at the provider (no browser actions were taken)."
                     if run.phase in ("created", "research", "planned") else
                     "See handoffs and steps for anything created at the provider."),
-        "sources": [s.model_dump() for s in p.sources],
+        "sources": [{**s.model_dump(), "depth_label": s.depth_label()} for s in p.sources],
+        "source_depth": source_depth(p.sources),
         "research_actions": research_actions,
     }
+
+
+def source_depth(sources: list) -> dict[str, int]:
+    return {"snippet_only": sum(s.depth == "snippet" for s in sources),
+            "read_in_full": sum(s.depth == "full" for s in sources),
+            "read_partially": sum(s.depth == "sections" for s in sources)}
 
 
 def _bullets(items: list[str]) -> str:
@@ -113,6 +120,7 @@ def render_markdown(r: dict[str, Any]) -> str:
     lines += ["", "## Facts"]
     for k in FACT_KINDS:
         items = [f["statement"] + (f" ([source]({f['source_url']}))" if f.get("source_url") else "")
+                 + (f'\n  > "{f["quote"]}"' if f.get("quote") else "")
                  for f in r["facts"][k]]
         lines += [f"**{k.capitalize()}**", _bullets(items), ""]
     lines += ["**Unknowns**", _bullets(r["unknowns"]), "",
@@ -128,8 +136,13 @@ def render_markdown(r: dict[str, Any]) -> str:
               "", "## Next steps", _bullets(r["next_steps"]), "",
               "## Untested", _bullets(r["untested"]), "",
               "## Cleanup", f"- {r['cleanup']}", "",
-              "## Sources", _bullets([f"[{s['title'] or s['url']}]({s['url']}) ({s['via']})"
-                                      for s in r["sources"][:25]]), ""]
+              "## Sources",
+              "How much the model saw: {snippet_only} search snippet(s) only (pages never opened), "
+              "{read_in_full} page(s) read in full, {read_partially} long page(s) read partially "
+              "(sections most relevant to credentials). A sourced fact is kept only if its quote appears "
+              "in that text.".format(**r["source_depth"]), "",
+              _bullets([f"[{s['title'] or s['url']}]({s['url']}) — {s['depth_label']}"
+                        for s in r["sources"][:25]]), ""]
     return "\n".join(lines)
 
 
@@ -165,7 +178,14 @@ def render_plan(run: Run, masker: Masker | None = None) -> str:
         out += [f"    - {b}" for b in p.expected_blockers]
     out.append(f"  Live test: {p.verification_procedure or 'not defined'}")
     counts = {k: sum(f.kind == k for f in p.facts) for k in FACT_KINDS}
-    out.append("  Facts: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+    out.append("  Facts: " + ", ".join(f"{v} {k}" for k, v in counts.items())
+               + " (sourced = quote verified in the text the model saw)")
+    d = source_depth(p.sources)
+    out.append(f"  Sources: {d['snippet_only']} snippet only, {d['read_in_full']} read in full, "
+               f"{d['read_partially']} read partially")
+    for src in p.sources:
+        if src.via == "extract":
+            out.append(f"    - {src.url} — {src.depth_label()}")
     if p.unknowns:
         out.append("  Unknowns:")
         out += [f"    - {u}" for u in p.unknowns[:8]]

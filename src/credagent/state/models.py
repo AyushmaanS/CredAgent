@@ -77,6 +77,7 @@ class Fact(Strict):
     statement: str
     kind: FactKind
     source_url: str | None = None
+    quote: str | None = None  # verbatim excerpt, checked by code against the text the model saw
 
     @model_validator(mode="after")
     def _sourced_needs_url(self) -> Fact:
@@ -97,6 +98,24 @@ class Source(Strict):
     title: str = ""
     via: Literal["search", "extract"]
     query: str | None = None
+    # How much of this source the model actually saw:
+    #   snippet  = search-result excerpt only (page never opened)
+    #   full     = the whole extracted page text
+    #   sections = a long page cut down to the sections most relevant to credentials
+    depth: Literal["snippet", "full", "sections"] = "snippet"
+    chars_total: int | None = None
+    chars_seen: int | None = None
+    sections_kept: int | None = None
+    sections_total: int | None = None
+
+    def depth_label(self) -> str:
+        if self.depth == "snippet":
+            return (f"snippet only: {self.chars_seen:,} of {self.chars_total:,} chars of the search excerpt; "
+                    "page not opened") if self.chars_total else "snippet only; page not opened"
+        if self.depth == "full":
+            return f"read in full ({self.chars_total:,} chars)"
+        return (f"read {self.chars_seen:,} of {self.chars_total:,} chars: {self.sections_kept} of "
+                f"{self.sections_total} sections, chosen for relevance to credentials")
 
 
 class Identification(Strict):

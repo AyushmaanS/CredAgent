@@ -16,6 +16,10 @@ from credagent.state.models import Plan, PlanStep, Run, StepRecord
 from credagent.state.store import RunStore
 
 DOCS = "https://docs.acme.example/oauth/creating-an-app"
+DOCS_TEXT = ("# Creating an OAuth app\n\nYou must be signed in to an Acme account to create an OAuth app.\n\n"
+             "## Steps\n\n1. Open **Developer settings** and click **New OAuth app**.\n"
+             "2. Enter the app name and the callback URL. Then generate a client secret on "
+             "https://console.acme.example/settings/developers.\n")
 CONSOLE = "https://console.acme.example/settings/developers"
 BLOG = "https://blog.thirdparty.example/acme-oauth-tutorial"
 
@@ -43,7 +47,7 @@ class FakeSearcher:
     def extract(self, urls):
         self.extracted.append(list(urls))
         pages = self.pages if self.pages is not None else [
-            {"url": u, "raw_content": f"page text for {u}"} for u in urls]
+            {"url": u, "raw_content": DOCS_TEXT if u == DOCS else f"page text for {u}"} for u in urls]
         return {"results": pages, "failed_results": [], "latency_ms": 5}
 
 
@@ -68,19 +72,20 @@ def findings(**over):
         "needs_redirect_uri": "yes",
         "scopes_or_permissions": [{"name": "read:user", "why": "identify", "source_url": DOCS}],
         "likely_blockers": [{"kind": "sign_in", "description": "Account needed", "basis": "sourced",
-                             "source_url": DOCS},
+                             "source_url": DOCS, "quote": "You must be signed in to an Acme account"},
                             {"kind": "terms", "description": "Terms on create", "basis": "sourced",
-                             "source_url": "https://docs.acme.example/never-retrieved"}],
-        "oauth_metadata": {"metadata_url": None, "dynamic_registration": "not_documented", "source_url": None},
+                             "source_url": "https://docs.acme.example/never-retrieved", "quote": "agree to terms"}],
+        "oauth_metadata": {"metadata_url": None, "dynamic_registration": "not_documented", "source_url": None,
+                           "quote": None},
         "verification": {"method": "client-credentials token request", "endpoint": "https://acme.example/token",
                          "what_passing_proves": "secret works", "label_if_passes": "verified",
                          "source_url": DOCS},
         "predicted_outcome": "succeeded", "prediction_reason": "standard flow",
         "facts": [{"statement": "OAuth apps are created under Developer settings", "kind": "sourced",
-                   "source_url": DOCS},
+                   "source_url": DOCS, "quote": "Open Developer settings and click New OAuth app"},
                   {"statement": "Secret is shown once", "kind": "sourced",
-                   "source_url": "https://made-up.example/claim"},
-                  {"statement": "Rate limits", "kind": "unknown", "source_url": None}],
+                   "source_url": "https://made-up.example/claim", "quote": "shown once"},
+                  {"statement": "Rate limits", "kind": "unknown", "source_url": None, "quote": None}],
         "unknowns": ["Whether the console shows a terms checkbox"],
     }
     f.update(over)
@@ -190,7 +195,7 @@ def test_client_recognized_only_test_and_unsourced_dcr_flagged(tmp_path):
     f = findings(verification={"method": "open authorize URL", "endpoint": None, "what_passing_proves": "id",
                                "label_if_passes": "client_recognized", "source_url": None},
                  oauth_metadata={"metadata_url": None, "dynamic_registration": "documented_open",
-                                 "source_url": "https://nowhere.example"})
+                                 "source_url": "https://nowhere.example", "quote": "open registration"})
     o, _ = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
     p = o.get("Acme").plan
     assert "client_recognized only" in p.verification_procedure and "[inferred]" in p.verification_procedure
@@ -376,7 +381,8 @@ def test_model_capture_steps_folded_and_other_credentials_not_planned(tmp_path):
             {"kind": "oauth_client", "description": "Public OAuth app", "best_for": "x", "source_url": DOCS},
             {"kind": "token", "description": "Internal integration token", "best_for": "y", "source_url": DOCS}],
         likely_blockers=[{"kind": "provider_review", "description": "Review before public use",
-                          "basis": "sourced", "source_url": DOCS}])
+                          "basis": "sourced", "source_url": DOCS,
+                          "quote": "Enter the app name and the callback URL"}])
     o, _ = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
     p = o.get("Acme").plan
     kinds = [s.kind for s in p.steps]
@@ -387,3 +393,71 @@ def test_model_capture_steps_folded_and_other_credentials_not_planned(tmp_path):
     assert any("optimistic" in n for n in p.validation_notes)
     assert any("DECIDE" in n for n in p.validation_notes)
     assert len(p.validation_notes) == len(set(p.validation_notes))
+
+
+# ---------------------------------------------------- depth + quote checks
+
+def test_fabricated_or_misattributed_quotes_are_downgraded(tmp_path):
+    f = findings(facts=[
+        {"statement": "Real", "kind": "sourced", "source_url": DOCS,
+         "quote": "open  developer settings and click ‘New OAuth app’"},       # whitespace/case/quote style ok
+        {"statement": "Made up", "kind": "sourced", "source_url": DOCS,
+         "quote": "Secrets never expire and can be shared publicly"},          # not in the text
+        {"statement": "Wrong source", "kind": "sourced", "source_url": BLOG,
+         "quote": "You must be signed in to an Acme account"},                 # text is on DOCS, not BLOG
+        {"statement": "Too short", "kind": "sourced", "source_url": DOCS, "quote": "Steps"},
+        {"statement": "No quote", "kind": "sourced", "source_url": DOCS, "quote": None}])
+    p = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))[0].get("Acme").plan
+    kinds = {x.statement: x.kind for x in p.facts}
+    assert kinds["Real"] == "sourced"
+    assert [kinds[k] for k in ("Made up", "Wrong source", "Too short", "No quote")] == ["inferred"] * 4
+    assert any("4 sourced claim(s) downgraded" in n for n in p.validation_notes)
+    real = next(x for x in p.facts if x.statement == "Real")
+    assert real.quote and real.source_url == DOCS
+
+
+def test_console_url_must_appear_in_cited_text(tmp_path):
+    ok = orch(tmp_path / "a", FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [findings()]}))
+    assert not any("Console URL" in x.statement for x in ok[0].get("Acme").plan.facts)
+    f = findings(console_url="https://console.acme.example/apps/new")  # on-domain, but not in the text
+    bad = orch(tmp_path / "b", FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
+    p = bad[0].get("Acme").plan
+    assert p.console_url == "https://console.acme.example/apps/new"
+    assert any("does not appear in the text" in x.statement and x.kind == "inferred" for x in p.facts)
+
+
+def test_sources_record_depth_and_prompt_shows_coverage(tmp_path):
+    long_text = DOCS_TEXT + "\n\n" + "\n\n".join(f"## Section {i}\n" + "filler words " * 300 for i in range(20))
+    s = FakeSearcher(pages=[{"url": DOCS, "raw_content": long_text}])
+    r = FakeReasoner({"triage": [triage()], "synthesis": [findings()]})
+    o, store = orch(tmp_path, s, r)
+    run = o.get("Acme")
+    by = {(x.url, x.via): x for x in run.plan.sources}
+    assert by[(BLOG, "search")].depth == "snippet"
+    page = by[(DOCS, "extract")]
+    assert page.depth == "sections" and page.chars_seen <= 12_000 < page.chars_total
+    assert "read" in page.depth_label() and "sections" in page.depth_label()
+    synth_prompt = r.calls[-1]["messages"][1]["content"]
+    assert 'coverage="sections:' in synth_prompt and "coverage=excerpt" in synth_prompt
+    assert "[… section omitted …]" in synth_prompt
+    assert "quote" in r.calls[-1]["messages"][0]["content"]
+    ext = [e["data"] for e in store.events(run.id) if e["type"] == "research_action"
+           and e["data"]["action"] == "extract"][0]
+    assert ext["coverage"][0]["chars_total"] == len(long_text)
+    md = (tmp_path / "runs" / run.id / "report.md").read_text()
+    assert "snippet only" in md and "read partially" in md and "page not opened" in md
+
+
+def test_sourced_facts_tagged_by_source_strength(tmp_path):
+    s = FakeSearcher(results=[result(DOCS, "Docs", "Open Developer settings and click New OAuth app", 0.9),
+                              result(BLOG, "Blog", "The client secret is shown only once, copy it", 0.5)])
+    f = findings(facts=[
+        {"statement": "Official, read", "kind": "sourced", "source_url": DOCS,
+         "quote": "You must be signed in to an Acme account"},
+        {"statement": "Blog snippet", "kind": "sourced", "source_url": BLOG,
+         "quote": "The client secret is shown only once"}])
+    r = FakeReasoner({"triage": [triage(urls_to_read=[DOCS])], "synthesis": [f]})
+    p = orch(tmp_path, s, r, budget=ResearchBudget(max_extracts=1))[0].get("Acme").plan
+    st = [x.statement for x in p.facts if x.kind == "sourced"]
+    assert st[0] == "Official, read"
+    assert st[1] == "Blog snippet [code: third-party source; search snippet only]"

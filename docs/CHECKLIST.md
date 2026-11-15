@@ -73,6 +73,9 @@ Live research reads public docs via Tavily only: no browser, no provider account
 - [x] S2.13 Markdown + JSON report with every required field (filled as later sprints land)
 - [x] S2.14 Mocked tests: research→plan, nonsense, ambiguous, citation downgrade, off-domain console, service failures, CLI
 - [x] S2.15 Live runs: GitHub, Notion, an unfamiliar app, a nonsense name; record quality and failure modes
+- [x] S2.17 (owner request) Record and show how much of each source the model saw; tell the model its coverage
+- [x] S2.18 (owner request) Quote-verify every sourced claim against the text the model saw; tag weak sources
+- [x] S2.19 (owner request) Read the relevant sections of long pages instead of the first 12,000 chars
 - [ ] S2.16 👤 **Waiting:** checkpoint: owner reviews one generated plan before browser execution is enabled
 
 ## Sprint 3 — Metadata shortcut and browser loop
