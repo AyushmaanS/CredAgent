@@ -292,6 +292,15 @@ Handoffs (DO) wait for Enter. While the person acts, the domain guard is lifted.
 Real Chrome, offline stand-in, a harness playing the person (its requests marked `person`), 10 tests: success (no handoffs, every action bracketed); terms checkbox and implied (agent filled name + callback; handoff `DO terms`; the person accepted and created the app); sign-in; CAPTCHA; blocked (no app created); prompt injection (nothing deleted or submitted); cookie accept-only (`DO cookie_consent`); app type (`DECIDE`); domain guard lifted/restored; CLI end-to-end. In every scenario the audit shows **no forbidden event**, and terms/sign-in/CAPTCHA only ever by the person.
 Online, real Jev 1.14.0 + Stagehand observe + LLM via FastRouter, headless, fake provider: success → credential page in 39 s (9 decisions, 1 DECIDE for "Create app", 0 fallback errors). Prompt injection → credential page in 36 s (1 DECIDE, nothing forbidden). Blocked → blocked in 3 s. Earlier online attempts that got stuck or paused are what led to the fixes in D-044, D-045 and D-046.
 
+## D-048 Handoffs re-check the page before letting go — Decided (from the owner's checkpoint run)
+*Observed (owner, terms_checkbox, real Jev):* Jev flagged the create-app page as needing a person, and the loop opened a **generic "unexpected"** handoff ("do what the page needs"). It never said that clicking **Create app** is part of accepting. The owner ticked the box and pressed Enter; the form was still unsubmitted, so the agent asked again with the same card, three times, with no limit.
+Fixes:
+1. If code has identified a terms gate on the page, the handoff is a **terms** handoff no matter what triggered it (Jev's blocker decision or policy). The card names the exact box and button: *"tick 'I have read and agree to …', then click 'Create app'"*, plus *"If you do not agree, press Ctrl+C: nothing is submitted and the run is saved."*
+2. After Enter, the handoff **re-checks the page by plain code before resolving**. Gate gone → continue. Not done → *"Not done yet — still needed: click 'Create app'"* and wait again on the **same** handoff (no new card, no new Jev call).
+3. After **3** Enters with the gate still there, the run is saved with the handoff pending (*"Still needed: …"*) instead of looping.
+4. Card fixes: the run ID is never split across lines (it had been broken at a hyphen, making the resume command un-copyable). The resume line no longer tells people to run `credagent resume` before it exists (Sprint 5). The "Blocking" text is plainer.
+Tested in real Chrome by replaying the owner's steps: tick only → Enter → "still needed: click 'Create app'" → click → Enter → credential page, with **one** handoff and terms accepted only by the person. Doing nothing 3 times → saved as waiting, nothing submitted.
+
 ---
 
 ## Discrepancies between documents

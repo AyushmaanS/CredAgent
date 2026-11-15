@@ -172,7 +172,7 @@ def check(obs: Observation, allowed: list[str]) -> list[Gate]:
                 Gate(
                     "terms",
                     "INFO",
-                    "A terms-acceptance control is on this page (always the person's).",
+                    "This form asks you to accept terms. Only you can accept terms; the agent never does.",
                     [f'checkbox: "{i["label"][:120]}"'],
                     target_xpath=i["xpath"],
                     form_xpath=i["form"],
@@ -185,7 +185,7 @@ def check(obs: Observation, allowed: list[str]) -> list[Gate]:
                 Gate(
                     "terms",
                     "INFO",
-                    "Submitting this form implies agreement to terms (always the person's).",
+                    "Submitting this form accepts terms. Only you can accept terms; the agent never does.",
                     [_quote(f["text"], m)],
                     form_xpath=f["xpath"],
                 )

@@ -34,7 +34,7 @@ def test_card_has_all_six_fields(kind):
                   "5. To resume", "6. Do not"]:
         assert label in card
     assert "step 2 of 6" in card
-    assert "credagent resume r1" in card
+    assert "r1" in card and "resume" in card
     if kind == "DECIDE":
         assert "Option 1" in card and "Option 2" in card
     else:
@@ -46,3 +46,11 @@ def test_card_masks_secrets():
     kw = dict(DO, reason=f"page shows {secret}")
     card = render_card(sample_run(), Handoff(**kw), Masker([secret]))
     assert secret not in card
+
+
+def test_run_id_never_split_across_lines():
+    from credagent.state.models import Run
+    rid = "20261115-181141-fakeprov-terms-check-8866"
+    run = Run(id=rid, app_input="x")
+    card = render_card(run, Handoff(**DO))
+    assert rid in card  # appears unbroken on one line

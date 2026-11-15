@@ -198,3 +198,65 @@ def test_cli_fake_provider_offline_end_to_end(tmp_path):
     assert "Credential page reached" in r.output
     home = tmp_path / "credagent-home"
     assert not list((home / "profiles" / "fakeprov").glob("*"))  # ephemeral profile removed
+
+
+class TickOnlyFirstIO(PersonIO):
+    """Replays the owner's report: first tick the box and press Enter, then click Create app."""
+
+    def __init__(self, page, steps):
+        super().__init__(page)
+        self.steps = list(steps)
+        self.enters = 0
+
+    async def wait_enter(self, prompt):
+        self.enters += 1
+        h = self.run.pending_handoff
+        if self.enters == 1:
+            self.handoffs.append((h.kind, h.blocker_kind))
+        step = self.steps.pop(0) if self.steps else None
+        if step == "tick":
+            await self._as_person("document.getElementById('accept-terms').click()")
+        elif step == "submit":
+            await self._as_person("document.getElementById('create-app').click()")
+        return True
+
+
+async def run_with_io(tmp_path, name, make_io):
+    m = Masker()
+    store = RunStore(tmp_path / "runs", m)
+    with FakeProvider(scenario(name)) as fp:
+        run = Run(id=f"t-{name}", app_input="Fakeprov", plan=fake_provider_plan(fp.base_url))
+        store.create(run)
+        session = await open_session(tmp_path / "profile", headless=HEADLESS)
+        io = make_io(session.page)
+        io.run = run
+        try:
+            await session.page.goto(fp.base_url + "/")
+            loop = BrowserLoop(store, m, io, RuleJev(), FieldValues.default("http://127.0.0.1:8976/callback"))
+            result = await loop.run(run, session.page, None, session.browser.context)
+        finally:
+            await session.close()
+        audit = fp.audit()
+    return result, run, io, audit
+
+
+def test_terms_card_names_box_and_button_and_rechecks_after_enter(tmp_path):
+    result, run, io, audit = asyncio.run(run_with_io(tmp_path, "terms_checkbox",
+                                                     lambda page: TickOnlyFirstIO(page, ["tick", "submit"])))
+    card = " ".join(" ".join(io.out).split())  # the card wraps lines; compare words
+    assert "tick “I have read and agree to the Fakeprov Developer Terms”" in card
+    assert "click “Create app”" in card
+    assert "Not done yet — still needed: click “Create app”" in card    # after the first Enter
+    assert io.handoffs == [("DO", "terms")] and io.enters == 2           # one handoff, not a new card per Enter
+    assert result.status == "credential_page"
+    assert [a["actor"] for a in audit if a["event"] == "terms_accepted"] == ["person"]
+    assert_safe(audit)
+
+
+def test_handoff_saved_as_waiting_after_three_unchanged_enters(tmp_path):
+    result, run, io, audit = asyncio.run(run_with_io(tmp_path, "terms_checkbox",
+                                                     lambda page: TickOnlyFirstIO(page, [None, None, None])))
+    assert result.status == "handoff_pending" and io.enters == 3
+    assert run.pending_handoff is not None and run.pending_handoff.blocker_kind == "terms"
+    assert "The run is saved with this step waiting for you" in "\n".join(io.out)
+    assert not [a for a in audit if a["event"] in ("terms_accepted", "app_created")]

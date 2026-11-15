@@ -52,6 +52,34 @@ DO_INSTRUCTIONS = {
 }
 
 
+MAX_HANDOFF_TRIES = 3
+
+
+def terms_instruction(obs: Observation, gates: list) -> tuple[str, str]:
+    """Exact instruction for a terms gate, naming the box and the button, and what is still missing.
+    Returns (instruction, still_missing)."""
+    g = next((x for x in gates if x.kind == "terms"), None)
+    box = next((i for i in obs.inputs if g and i["xpath"] == g.target_xpath), None)
+    form = (g.form_xpath if g else None) or (box["form"] if box else None)
+    submit = next((b for b in obs.buttons if form and b["form"] == form and b["type"] in ("submit", "")), None)
+    btn = f"“{submit['text']}”" if submit and submit["text"] else "the form's submit button"
+    stop = " If you do not agree, press Ctrl+C: nothing is submitted and the run is saved."
+    if box and not box["checked"]:
+        missing = f"tick “{box['label'][:90]}” and click {btn}"
+        return f"In the browser window: read the terms, tick “{box['label'][:90]}”, then click {btn}.{stop}", missing
+    if box and box["checked"]:
+        missing = f"click {btn}"
+        return (
+            f"The box “{box['label'][:90]}” is ticked, but the form is not submitted yet. "
+            f"Click {btn} in the browser window.{stop}"
+        ), missing
+    missing = f"click {btn}"
+    return (
+        f"In the browser window: read the terms linked on the page. If you agree, click {btn}: clicking it "
+        f"accepts the terms.{stop}"
+    ), missing
+
+
 class LoopIO(Protocol):
     def say(self, text: str) -> None: ...
     def choose(self, prompt: str, options: list[str]) -> str | None: ...
@@ -136,7 +164,13 @@ class BrowserLoop:
         instruction: str | None = None,
         options: list[str] | None = None,
         after: str = "Re-check the page, then continue the plan.",
+        page: Any | None = None,
+        gates: list | None = None,
     ) -> str | None:
+        page = page if page is not None else getattr(self, "_page", None)
+        gates = gates if gates is not None else getattr(self, "_gates", [])
+        if kind == "DO" and blocker_kind == "terms" and instruction is None:
+            instruction, _ = terms_instruction(obs, gates)
         h = run.open_handoff(
             Handoff(
                 kind=kind,
@@ -162,13 +196,22 @@ class BrowserLoop:
             # guard only while they act, then restore it. The code allow-list check still applies to the agent.
             await self._domain_guard(run, on=False)
             try:
-                done = self.io.wait_enter("Press Enter when you are done (Ctrl+C to stop; the run is saved)")
-                if inspect.isawaitable(done):
-                    done = await done
+                for attempt in range(1, MAX_HANDOFF_TRIES + 1):
+                    done = self.io.wait_enter("Press Enter when you are done (Ctrl+C to stop; the run is saved)")
+                    if inspect.isawaitable(done):
+                        done = await done
+                    if not done:
+                        return None
+                    still = await self._still_needed(page, obs, blocker_kind)
+                    if still is None:
+                        break
+                    self._cp(run, "handoff_not_done_yet", {"handoff_id": h.id, "attempt": attempt, "still": still})
+                    if attempt == MAX_HANDOFF_TRIES:
+                        self.io.say(f"Still needed: {still}. The run is saved with this step waiting for you.")
+                        return None
+                    self.io.say(f"Not done yet — still needed: {still}. Do that in the browser, then press Enter.")
             finally:
                 await self._domain_guard(run, on=True)
-            if not done:
-                return None
             run.resolve_handoff(h.id)
             self._step(run, f"person: {h.person_instruction[:120]}", "person", "done")
             self._cp(run, "handoff_resolved", {"handoff_id": h.id})
@@ -182,6 +225,27 @@ class BrowserLoop:
         self._step(run, f"person decided: {answer}", "person", "done")
         self._cp(run, "handoff_resolved", {"handoff_id": h.id, "answer": answer})
         return answer
+
+    async def _still_needed(self, page: Any | None, before: Observation, blocker_kind: str) -> str | None:
+        """Re-check the page after the person pressed Enter. None = the handoff's condition is resolved."""
+        if page is None:
+            return None
+        try:
+            now = await observe_page(page, self.masker)
+        except Exception:  # noqa: BLE001 - if the page cannot be read, let the main loop re-observe
+            return None
+        allowed = self._allowed
+        gates_now = check(now, allowed)
+        if blocker_kind == "terms":
+            if not any(g.kind == "terms" for g in gates_now) or now.url != before.url:
+                return None
+            return terms_instruction(now, gates_now)[1]
+        if blocker_kind in {g.kind for g in gates_now if g.action in ("DO", "BLOCK")}:
+            return "the page still shows the same step (" + blocker_kind.replace("_", " ") + ")"
+        unchanged = now.fingerprint() == before.fingerprint()
+        if blocker_kind in ("unexpected", "human_field", "off_allow_list") and unchanged:
+            return "nothing has changed on the page yet"
+        return None
 
     async def _domain_guard(self, run: Run, *, on: bool) -> None:
         """Second layer behind the code allow-list: Stagehand's browser-level domain policy (D-043)."""
@@ -229,6 +293,9 @@ class BrowserLoop:
         allowed = run.plan.allowed_domains
         run.phase = "browser"
         self.context = context
+        self._allowed = allowed
+        self._page = page
+        self._gates: list = []
         await self._domain_guard(run, on=True)
         self._cp(run, "browser_loop_started", {"allowed_domains": allowed, "domain_guard": context is not None})
 
@@ -247,6 +314,7 @@ class BrowserLoop:
             if run.browser:
                 run.browser.last_url = obs.url_masked
             gates = check(obs, allowed)
+            self._gates = gates
             self._cp(run, "page_observed", {**obs.summary(), "gates": [f"{g.kind}:{g.action}" for g in gates]})
 
             # 2. hard checks
@@ -358,10 +426,15 @@ class BrowserLoop:
             )
 
             if d["blocker_detection"].value is True:
-                why = "Jev/LLM judged that a person needs to act on this page" + (
-                    f" ({log.llm_reason[:120]})" if log.llm_reason else ""
-                )
-                if await self._handoff(run, "DO", "unexpected", why, [f"title: {obs.title}"], obs) is None:
+                terms = [g for g in gates if g.kind == "terms"]
+                if terms:  # code knows exactly what the person must do here
+                    why, kind_, ev_ = terms[0].reason, "terms", terms[0].evidence
+                else:
+                    why = "Jev/LLM judged that a person needs to act on this page" + (
+                        f" ({log.llm_reason[:120]})" if log.llm_reason else ""
+                    )
+                    kind_, ev_ = "unexpected", [f"title: {obs.title}"]
+                if await self._handoff(run, "DO", kind_, why, ev_, obs, page=page, gates=gates) is None:
                     return LoopResult("handoff_pending", why, n_obs, n_act)
                 continue
             if act == "step_complete":

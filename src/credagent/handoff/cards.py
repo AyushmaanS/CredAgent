@@ -13,6 +13,7 @@ from credagent.secrets.masking import Masker
 from credagent.state.models import Handoff, Run
 
 WIDTH = 78
+RESUME_AVAILABLE = False  # flips to True when `credagent resume` lands (Sprint 5)
 DEFAULT_DONT = {
     "DO": ["Do not close the CredAgent browser window while this handoff is open.",
            "Do not paste any secret or code shown on screen into chat or the terminal."],
@@ -30,7 +31,8 @@ def progress(run: Run) -> str:
 
 
 def _wrap(label: str, text: str) -> list[str]:
-    lines = textwrap.wrap(text, WIDTH - 4 - len(label)) or [""]
+    # Never break inside words or at hyphens: run IDs and commands must stay copy-pasteable.
+    lines = textwrap.wrap(text, WIDTH - 4 - len(label), break_on_hyphens=False, break_long_words=False) or [""]
     pad = " " * len(label)
     return [f"  {label}{lines[0]}"] + [f"  {pad}{ln}" for ln in lines[1:]]
 
@@ -52,8 +54,9 @@ def render_card(run: Run, handoff: Handoff, masker: Masker | None = None) -> str
     out += _wrap("4. Then I will:  ", handoff.expected_resume_action)
     resume = ("Press Enter here when you are done." if handoff.kind == "DO"
               else "Type the option number here.")
-    out += _wrap("5. To resume:    ", f"{resume} If you closed this terminal, run: "
-                                    f"credagent resume {run.id}")
+    later = (f"If you closed this terminal, run: credagent resume {run.id}" if RESUME_AVAILABLE else
+             f"If you close this terminal, the run is saved as {run.id} (the resume command arrives in Sprint 5).")
+    out += _wrap("5. To resume:    ", f"{resume} {later}")
     donts = handoff.what_not_to_do or DEFAULT_DONT[handoff.kind]
     for i, d in enumerate(donts):
         out += _wrap("6. Do not:       " if i == 0 else "                 ", d)
