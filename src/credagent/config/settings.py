@@ -90,7 +90,8 @@ class Settings:
 
 def load_settings(env_file: Path | None = None, environ: dict[str, str] | None = None) -> Settings:
     """Environment variables override the env file; empty values fall back to defaults."""
-    env_path = Path(os.environ.get("CREDAGENT_ENV_FILE", env_file or DEFAULT_ENV_FILE))
+    # An explicit argument wins over CREDAGENT_ENV_FILE, which wins over the default.
+    env_path = Path(env_file) if env_file else Path(os.environ.get("CREDAGENT_ENV_FILE", DEFAULT_ENV_FILE))
     merged = parse_env_file(env_path)
     for key, value in (environ if environ is not None else os.environ).items():
         if value:

@@ -1,3 +1,4 @@
+import pytest
 from click.testing import CliRunner
 
 from credagent.cli.main import NOT_IMPLEMENTED_EXIT, cli
@@ -12,8 +13,9 @@ def test_help_lists_all_prd_commands():
         assert c in out.output
 
 
-def test_unimplemented_commands_never_claim_success():
-    r = CliRunner().invoke(cli, ["get", "GitHub"])
+@pytest.mark.parametrize("args", [["resume", "x"], ["verify", "x"], ["secret", "x"]])
+def test_unimplemented_commands_never_claim_success(args):
+    r = CliRunner().invoke(cli, args)
     assert r.exit_code == NOT_IMPLEMENTED_EXIT
     assert "not implemented" in r.output
 

@@ -1,7 +1,7 @@
 # CredAgent — Attempt protocol for real-provider runs
 
-Status: **DRAFT, awaiting owner approval.** No real-provider walkthrough may
-start until the owner approves this document (approval record at the end).
+Status: **APPROVED v1 (2026-11-15).** Real-provider walkthroughs additionally need
+per-provider consent (section 2) every time.
 
 Derived from the PRD (`docs/CredAgent-PRD.md`) §5 (principles), §6.2 (out of
 scope), §7 (flows), §9 (handoffs) and §13 (risks). Where this protocol and
@@ -216,9 +216,10 @@ screenshot, a recording or chat):
 
 | Field | Value |
 |---|---|
-| Protocol version | v1 (draft) |
-| Approved by owner | _not yet_ |
-| Date | |
-| Owner's changes requested | |
+| Protocol version | v1 |
+| Approved by owner | Yes (owner, in the CredAgent working session) |
+| Date | 2026-11-15 |
+| Owner's changes requested | None |
 
-Real-provider runs remain blocked until this table records approval.
+Approval of this protocol is not consent for any provider. Each real-provider
+run still needs the per-provider consent in section 2.

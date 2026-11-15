@@ -35,8 +35,10 @@ BlockerKind = Literal[
     "sign_in", "account_creation", "verification_code", "two_factor", "captcha",
     "identity_verification", "business_verification", "payment", "terms", "cookie_consent",
     "provider_review", "paid_plan", "partner_approval", "policy_denied", "off_allow_list",
-    "unexpected", "service_unavailable", "budget_exhausted", "replan_limit", "other",
+    "unexpected", "service_unavailable", "budget_exhausted", "replan_limit", "app_not_identified",
+    "other",
 ]
+RunPhase = Literal["created", "research", "planned", "browser", "verifying", "done"]
 
 # Which statuses may follow which. Resume re-enters "running" from resumable outcomes.
 TRANSITIONS: dict[str, set[str]] = {
@@ -90,7 +92,22 @@ class PlanStep(Strict):
     expected_page: str | None = None
 
 
+class Source(Strict):
+    url: str
+    title: str = ""
+    via: Literal["search", "extract"]
+    query: str | None = None
+
+
+class Identification(Strict):
+    canonical_name: str | None = None
+    provider: str | None = None
+    confidence: Literal["high", "medium", "low", "none"] = "none"
+    official_domains: list[str] = Field(default_factory=list)
+
+
 class Plan(Strict):
+    identification: Identification = Field(default_factory=Identification)
     credential_kind: CredentialKind | Literal["unknown"] = "unknown"
     console_url: str | None = None
     allowed_domains: list[str] = Field(default_factory=list)
@@ -101,6 +118,14 @@ class Plan(Strict):
     expected_blockers: list[str] = Field(default_factory=list)
     verification_procedure: str = ""
     facts: list[Fact] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    sources: list[Source] = Field(default_factory=list)
+    needs_redirect_uri: Literal["yes", "no", "unknown"] = "unknown"
+    scopes: list[str] = Field(default_factory=list)
+    dynamic_registration: Literal[
+        "documented_open", "documented_restricted", "not_documented", "unknown"] = "unknown"
+    metadata_url: str | None = None
+    validation_notes: list[str] = Field(default_factory=list)  # what code corrected in the model's plan
     revision: int = 0  # 0 = original plan, 1..MAX_REPLANS = re-plans
 
 
@@ -195,6 +220,7 @@ class Run(Strict):
     created_at: str = Field(default_factory=now)
     updated_at: str = Field(default_factory=now)
     status: RunStatus = "running"
+    phase: RunPhase = "created"
     status_reason: str | None = None
     resumable: bool = True
     current_step_id: str | None = None

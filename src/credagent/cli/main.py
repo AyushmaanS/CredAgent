@@ -1,18 +1,77 @@
 """`credagent` command-line entry point.
 
-Sprint 0: every PRD command exists with its arguments and help text. Commands not
-yet implemented say so plainly and exit with code 2 — they never imply success.
+Every PRD command exists. Commands not yet implemented say so plainly and exit
+with code 2 — they never imply success. Output never includes secrets.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 
 import click
 
 from credagent import __version__
+from credagent.config.settings import ConfigError, Settings, load_settings
+from credagent.handoff.cards import render_card
+from credagent.reports.report import build_report, render_markdown, write_reports
+from credagent.secrets.masking import Masker
+from credagent.state.store import RunNotFound, RunStore, StoreError
 
 NOT_IMPLEMENTED_EXIT = 2
+CONFIG_EXIT = 1
+
+
+class TerminalIO:
+    def say(self, text: str) -> None:
+        click.echo(text)
+
+    def choose(self, prompt: str, options: list[str]) -> str | None:
+        for i, o in enumerate(options, 1):
+            click.echo(f"  {i}. {o}")
+        try:
+            n = click.prompt(prompt + " (number)", type=click.IntRange(1, len(options)))
+        except (click.Abort, EOFError):
+            return None
+        return options[n - 1]
+
+
+def _settings() -> Settings:
+    try:
+        return load_settings()
+    except ConfigError as exc:
+        click.echo(f"Configuration problem: {exc}", err=True)
+        sys.exit(CONFIG_EXIT)
+
+
+def _masker(s: Settings) -> Masker:
+    m = Masker()
+    if s.fastrouter_api_key:
+        m.register(s.fastrouter_api_key, "fastrouter_key")
+    if s.tavily_api_key:
+        m.register(s.tavily_api_key, "tavily_key")
+    return m
+
+
+def _store(s: Settings, m: Masker) -> RunStore:
+    return RunStore(s.runs_dir, m)
+
+
+def _load(store: RunStore, run_id: str | None):
+    try:
+        if run_id is None:
+            runs = store.list_runs()
+            if not runs:
+                click.echo("No runs yet. Start one with: credagent get \"<app>\"")
+                sys.exit(0)
+            run_id = runs[0].id
+        return store.load(run_id).run
+    except RunNotFound:
+        click.echo(f"No run with id {run_id}. List runs with: credagent runs", err=True)
+        sys.exit(1)
+    except StoreError as exc:
+        click.echo(f"Could not read run {run_id}: {exc}", err=True)
+        sys.exit(1)
 
 
 def _not_yet(command: str, sprint: int) -> None:
@@ -49,8 +108,27 @@ def cli() -> None:
 @cli.command()
 @click.argument("app", callback=_validate_app)
 def get(app: str) -> None:
-    """Start a new run to obtain credentials for APP (e.g. "GitHub")."""
-    _not_yet("get", 2)
+    """Start a new run to obtain credentials for APP (e.g. "GitHub").
+
+    This version researches the app and writes a plan; browser execution arrives in Sprint 3.
+    """
+    from credagent.orchestrator import Orchestrator
+    from credagent.reasoning.fastrouter import FastRouterClient
+    from credagent.research.agent import ResearchAgent
+    from credagent.research.tavily import TavilyClient
+
+    s = _settings()
+    missing = [k for k, v in s.describe().items() if v == "missing"]
+    if missing:
+        click.echo(f"Missing configuration: {', '.join(missing)}. See README 'Local environment'.", err=True)
+        sys.exit(CONFIG_EXIT)
+    m = _masker(s)
+    agent = ResearchAgent(TavilyClient(s, m), FastRouterClient(s, m), model=s.llm_model)
+    run = Orchestrator(_store(s, m), m, agent, TerminalIO()).get(app)
+    if run.status != "running":
+        click.echo(f"\nRun {run.id} ended: {run.status} — {run.status_reason}")
+        click.echo(f"Report: credagent report {run.id}")
+        sys.exit(0 if run.status in ("succeeded", "partial") else 3)
 
 
 @cli.command()
@@ -64,13 +142,42 @@ def resume(run_id: str) -> None:
 @click.argument("run_id", required=False)
 def status(run_id: str | None) -> None:
     """Show status, current step, pending handoff and next action (no secrets)."""
-    _not_yet("status", 2)
+    s = _settings()
+    m = _masker(s)
+    store = _store(s, m)
+    run = _load(store, run_id)
+    r = build_report(run)
+    waiting = " — waiting for you" if run.pending_handoff else ""
+    lines = [f"Run {run.id}  ({run.app_name or run.app_input})",
+             f"  Status: {run.status}{waiting}   Phase: {run.phase}",
+             f"  Reason: {run.status_reason or '-'}",
+             f"  Predicted: {run.plan.predicted_outcome}   Verification: {r['verification']['label']}",
+             f"  Steps: {len(run.steps)} ({r['steps']['by_actor']['agent']} by agent, "
+             f"{r['steps']['by_actor']['person']} by you)"]
+    if run.steps:
+        last = run.steps[-1]
+        lines.append(f"  Last step: [{last.actor}] {last.action} → {last.outcome}")
+    lines.append("  Next:")
+    lines += [f"    - {x}" for x in r["next_steps"]]
+    click.echo(m.mask_text("\n".join(lines)))
+    if run.pending_handoff:
+        click.echo(render_card(run, run.pending_handoff, m))
 
 
 @cli.command()
 def runs() -> None:
     """List local runs and their outcomes."""
-    _not_yet("runs", 2)
+    s = _settings()
+    m = _masker(s)
+    all_runs = _store(s, m).list_runs()
+    if not all_runs:
+        click.echo("No runs yet. Start one with: credagent get \"<app>\"")
+        return
+    click.echo(f"{'RUN ID':<40} {'APP':<22} {'STATUS':<20} {'PHASE':<10} UPDATED")
+    for r in all_runs:
+        st = r.status + (" (waiting)" if r.pending_handoff else "")
+        click.echo(m.mask_text(f"{r.id:<40} {(r.app_name or r.app_input)[:22]:<22} {st:<20} "
+                               f"{r.phase:<10} {r.updated_at}"))
 
 
 @cli.command()
@@ -78,8 +185,16 @@ def runs() -> None:
 @click.option("--format", "fmt", type=click.Choice(["md", "json"]), default="md",
               show_default=True, help="Report format.")
 def report(run_id: str, fmt: str) -> None:
-    """Show the Markdown or JSON report for RUN_ID."""
-    _not_yet("report", 2)
+    """Show the Markdown or JSON report for RUN_ID (also saved in the run folder)."""
+    s = _settings()
+    m = _masker(s)
+    store = _store(s, m)
+    run = _load(store, run_id)
+    jpath, mpath = write_reports(run, store.runs_dir / run.id, m, store.events(run.id))
+    rep = m.mask(build_report(run, store.events(run.id)))
+    click.echo(json.dumps(rep, indent=2, ensure_ascii=False) if fmt == "json"
+               else m.mask_text(render_markdown(rep)))
+    click.echo(f"\n(saved: {mpath} and {jpath.name})", err=True)
 
 
 @cli.command()
