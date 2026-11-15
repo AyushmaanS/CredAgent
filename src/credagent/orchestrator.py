@@ -313,11 +313,15 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
         result = await loop.run(run, session.page, session.stagehand, session.browser.context)
     except KeyboardInterrupt:
         result = None
-        keep_open = True
     run.untested = ["Credential capture (Sprint 5)", "Live credential test (Sprint 5)"]
     if result is None or result.status == "handoff_pending":
-        keep_open = True
-        run.status_reason = "Paused at a handoff; the browser window stays open. Resume arrives in Sprint 5."
+        # Real providers: keep the window open so the person can finish and resume later.
+        # Fake provider: its server stops with this process, so an open window would show a dead site.
+        keep_open = not deps.ephemeral_profile
+        run.status_reason = ("Paused at a handoff; the browser window stays open. Resume arrives in Sprint 5."
+                             if keep_open else
+                             "Paused at a handoff with no answer. The fake provider stops with this process, so "
+                             "the browser was closed.")
         o._cp(run, "paused", {})
         o._report(run)
     elif result.status == "credential_page":
