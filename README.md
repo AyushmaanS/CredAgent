@@ -29,7 +29,7 @@ Tested on **macOS 26 (Apple Silicon), Python 3.12, Google Chrome**. Python 3.11+
 Linux is untested; the browser code currently expects Chrome at the macOS install path.
 
 ```bash
-git clone https://github.com/<owner>/CredAgent.git
+git clone https://github.com/AyushmaanS/CredAgent.git
 cd CredAgent
 python3 --version                      # must be 3.11 or newer
 python3 -m venv .venv
