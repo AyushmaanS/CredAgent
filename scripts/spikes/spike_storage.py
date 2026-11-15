@@ -31,11 +31,16 @@ def mode(p: Path) -> str:
     return oct(stat.S_IMODE(p.stat().st_mode))
 
 
+def tilde(text: str) -> str:
+    """Committed spike output must not contain the owner's home path (it reveals the username)."""
+    return text.replace(str(Path.home()), "~")
+
+
 def main() -> int:
     s = load_settings()
     run_id = f"spike-{int(time.time())}"
     out: dict = {"ran_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "platform": platform.platform(),
-                 "home": str(s.home), "home_outside_repo": not is_inside(s.home, REPO_ROOT)}
+                 "home": tilde(str(s.home)), "home_outside_repo": not is_inside(s.home, REPO_ROOT)}
     old = os.umask(0)
     os.umask(old)
     out["process_umask"] = oct(old)
@@ -74,7 +79,7 @@ def main() -> int:
     shutil.rmtree(s.runs_dir / run_id)
 
     tm = subprocess.run(["tmutil", "isexcluded", str(s.home)], capture_output=True, text=True)
-    out["time_machine"] = (tm.stdout or tm.stderr).strip()[:200]
+    out["time_machine"] = tilde((tm.stdout or tm.stderr).strip()[:200])
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, indent=2) + "\n")
     print(json.dumps(out, indent=2))

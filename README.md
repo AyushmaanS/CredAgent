@@ -6,24 +6,56 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> Status: **Sprint 2 (research and planning).** `get` researches an app and writes a plan, then
-> pauses (browser execution comes in Sprint 3). `status`, `runs` and `report` work. `resume`,
-> `verify` and `secret` say they are not implemented yet and exit with code 2. See
-> `docs/CHECKLIST.md` for progress and `docs/DECISIONS.md` for decisions.
+> **Work in progress — Sprint 2 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
+> Every decision and assumption: `docs/DECISIONS.md`. Every live run, including failures: `RESULTS.md`.
 
-Requirements: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,
-`docs/03-SPRINT-PLAN.md`.
+Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,
+`docs/03-SPRINT-PLAN.md`. Safety rules for real-provider runs: `docs/ATTEMPT-PROTOCOL.md`.
 
-## Setup
+## What works today
 
-Requires macOS or Linux, Python 3.11+, and Google Chrome.
+| Works | Not built yet |
+|---|---|
+| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan, then pauses | Browser execution in a provider console (Sprint 3) |
+| `credagent status`, `runs`, `report` (Markdown / JSON) | Jev page decisions, policy hard stops, DO/DECIDE in the browser (Sprint 4) |
+| Run state saved after every step, crash-safe; secrets masked before any model call | `resume`, credential capture, `verify`, `secret` (Sprint 5) — these commands exit with code 2 and say so |
+| Fakeprov: a local fake provider site with 15 test scenarios | Real-provider runs (Sprint 6) |
+
+No credential has been obtained or live-tested against a real provider yet.
+
+## Quick start
+
+Tested on **macOS 26 (Apple Silicon), Python 3.12, Google Chrome**. Python 3.11+ is required.
+Linux is untested; the browser code currently expects Chrome at the macOS install path.
 
 ```bash
+git clone https://github.com/<owner>/CredAgent.git
+cd CredAgent
+python3 --version                      # must be 3.11 or newer
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-git config core.hooksPath .githooks   # enables the pre-commit secret scan + lint
-.venv/bin/credagent --help
+git config core.hooksPath .githooks    # pre-commit secret scan + lint (for contributors)
 ```
+
+**No API keys needed** for these:
+
+```bash
+.venv/bin/credagent --help
+.venv/bin/python -m pytest                                    # full test suite, no network
+.venv/bin/python -m fake_provider.app --scenario terms_checkbox   # fake console at http://127.0.0.1:8765
+```
+
+**With your own API keys** (see "Local environment" below):
+
+```bash
+.venv/bin/credagent get "GitHub"       # research + plan (~1–2 min); browser not used yet
+.venv/bin/credagent runs
+.venv/bin/credagent report <run-id>
+```
+
+You need a **FastRouter** key (LLM + Jev) and a **Tavily** key (web research). A research run
+costs roughly $0.15–0.20 at list prices (about 9–10 Tavily credits plus two LLM calls; Tavily's
+free tier is 1,000 credits a month). Estimates, not measured billing; see `docs/DECISIONS.md`.
 
 ## Local environment
 
@@ -77,6 +109,17 @@ DECIDE choices, overwrite, cookie accept-only, prompt injection, DCR). The test 
 
 Feasibility spikes (Sprint 0) are in `scripts/spikes/`; curated results are in
 `docs/spikes/` and summarised in `docs/DECISIONS.md`.
+
+## Repository layout
+
+```text
+src/credagent/      CLI, orchestrator, research, reasoning (FastRouter), decisions (Jev),
+                    browser (Chrome + Stagehand), state, secrets, reports, config
+fake_provider/      Fakeprov fake developer console + scenario fixtures
+tests/              unit, integration (incl. opt-in real-browser test), fake_provider
+scripts/            secret scan, env check, Sprint 0 feasibility spikes
+docs/               PRD, spec, sprint plan, protocol, decisions, checklist, spike results, samples
+```
 
 ## Approach, human involvement, verification, limitations
 

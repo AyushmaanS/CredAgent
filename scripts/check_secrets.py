@@ -8,7 +8,8 @@ Modes:
 
 Checks:
   1. Forbidden paths (.env files other than .env.example, keys, secret files, runtime dirs).
-  2. Exact values of the keys in .env.local (read in memory, never printed).
+  2. Exact values of the keys in .env.local (read in memory, never printed), and the
+     owner's home-directory path (personal data in a public repo).
   3. Credential-shaped patterns (prefixed keys, private keys, JWTs, quoted random literals).
 
 Findings print as `path:line: rule` only. Matched text is never printed.
@@ -51,7 +52,12 @@ def git(*args: str) -> str:
 
 def known_values() -> list[tuple[str, str]]:
     env = parse_env_file(REPO / ".env.local")
-    return [(k, v) for k, v in env.items() if k in SECRET_KEYS and len(v) >= 8]
+    vals = [(k, v) for k, v in env.items() if k in SECRET_KEYS and len(v) >= 8]
+    # Personal data guard: the owner's home path reveals their username in a public repo.
+    home = str(Path.home())
+    if len(home) > 6:
+        vals.append(("HOME_PATH (personal: write ~ instead)", home + "/"))
+    return vals
 
 
 def scan_text(path: str, text: str, known: list[tuple[str, str]]) -> list[str]:
@@ -146,7 +152,7 @@ def main() -> int:
         for f in findings:
             print(f"  {f}")
         return 1
-    print(f"Secret scan passed ({mode}; {len(known)} local key value(s) checked).")
+    print(f"Secret scan passed ({mode}; {len(known)} local value(s) checked).")
     return 0
 
 
