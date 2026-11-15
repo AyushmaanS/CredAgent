@@ -34,25 +34,25 @@ verified live, `[ ]` not started.
 
 ## Sprint 1 — Safety protocol, domain model, fake provider
 
-- [ ] S1.1 Write `docs/ATTEMPT-PROTOCOL.md` from PRD §5, §6.2, §7, §9, §13 (consent, DO/DECIDE, terms, payment, verification, account access, screenshots, secrets, cleanup)
-- [ ] S1.2 👤 Owner approves ATTEMPT-PROTOCOL.md (required before any real-provider walkthrough)
-- [ ] S1.3 Domain models: Run, Plan, StepRecord, Handoff, Blocker, CredentialReference, VerificationResult (pydantic, validated)
-- [ ] S1.4 Run state machine: allowed status transitions; outcome mapping (only `verified` → `succeeded`)
-- [ ] S1.5 Checkpoint store: atomic per-step checkpoint + append-only event log; no secret fields
-- [ ] S1.6 Restart/recovery tests (kill mid-write, reload in new process, corrupted tail of event log)
-- [ ] S1.7 Handoff model + card renderer (all six required fields) for DO and DECIDE
-- [ ] S1.8 Re-plan counter (max 2) in the run model
-- [ ] S1.9 Fake provider site: sign-in wall
-- [ ] S1.10 Fake provider site: create-app form
-- [ ] S1.11 Fake provider site: terms checkbox variant
-- [ ] S1.12 Fake provider site: implied-agreement ("By clicking Create you agree") variant
-- [ ] S1.13 Fake provider site: shown-once secret page
-- [ ] S1.14 Fake provider site: CAPTCHA stand-in
-- [ ] S1.15 Fake provider site: blocked path (e.g. "business verification required")
-- [ ] S1.16 Fake provider site: mock token endpoint (client_credentials) for live verification
-- [ ] S1.17 Deterministic scenario fixtures: success, terms (checkbox), terms (implied), sign-in + resume, shown-once secret, CAPTCHA, blocked, Jev failure
-- [ ] S1.18 Tests for the fake provider (HTTP-level) and fixtures; obviously fake credentials only
-- [ ] S1.19 👤 Checkpoint: owner approves protocol and confirms fake-site scenarios
+- [x] S1.1 Write `docs/ATTEMPT-PROTOCOL.md` (draft v1) from PRD §5, §6.2, §7, §9, §13 (consent, DO/DECIDE, terms, payment, verification, account access, screenshots, secrets, cleanup)
+- [ ] S1.2 👤 **Waiting:** owner approves ATTEMPT-PROTOCOL.md (required before any real-provider walkthrough)
+- [x] S1.3 Domain models: Run, Plan, StepRecord, Handoff, Blocker, CredentialReference, VerificationResult (pydantic, validated)
+- [x] S1.4 Run state machine: allowed status transitions; outcome mapping (only `verified` → `succeeded`)
+- [x] S1.5 Checkpoint store: atomic per-step checkpoint + append-only event log; no secret fields
+- [x] S1.6 Restart/recovery tests (kill mid-write, reload in new process, corrupted tail of event log)
+- [x] S1.7 Handoff model + card renderer (all six required fields) for DO and DECIDE
+- [x] S1.8 Re-plan counter (max 2) in the run model
+- [x] S1.9 Fake provider site: sign-in wall
+- [x] S1.10 Fake provider site: create-app form
+- [x] S1.11 Fake provider site: terms checkbox variant
+- [x] S1.12 Fake provider site: implied-agreement ("By clicking Create you agree") variant
+- [x] S1.13 Fake provider site: shown-once secret page
+- [x] S1.14 Fake provider site: CAPTCHA stand-in
+- [x] S1.15 Fake provider site: blocked path (e.g. "business verification required")
+- [x] S1.16 Fake provider site: mock token endpoint (client_credentials) for live verification
+- [x] S1.17 Deterministic scenario fixtures: success, terms (checkbox), terms (implied), sign-in + resume, shown-once secret, CAPTCHA, blocked, Jev failure
+- [x] S1.18 Tests for the fake provider (HTTP-level) and fixtures; obviously fake credentials only
+- [ ] S1.19 👤 **Waiting:** checkpoint: owner approves protocol and confirms fake-site scenarios
 
 ## Sprint 2 — CLI, research, plan generation
 - [ ] Per sprint plan; expanded when Sprint 1 checkpoint is approved

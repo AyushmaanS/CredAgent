@@ -153,11 +153,48 @@ Unknown model → HTTP 4xx → `ModelCallError` (a request problem, not an outag
 ## D-020 TLS on this Python build — Recorded
 python.org Python 3.12's stdlib `urllib` fails certificate verification here (no system CA bundle installed). All network code uses `httpx`, which bundles certifi. stdlib HTTP is used only for `127.0.0.1` (Chrome's DevTools port). No owner action needed.
 
+## D-021 Run status model — Decided (Sprint 1)
+Status values are the spec's: `running` plus the six PRD outcomes. A run paused at a handoff stays `running` with exactly one **pending handoff**. `status` shows it as "waiting for you". No extra status was invented.
+Transitions (`state/models.py: TRANSITIONS`): `running` → any outcome. `blocked` / `waiting_on_provider` / `failed` → `running` **only via resume** (`failed` only when `resumable=True`, e.g. service unavailable). `partial` → `running` or `succeeded` (re-verification after provider review). `succeeded` and `cancelled` are final. Invalid transitions raise.
+
+## D-022 `succeeded` is enforced by the model, not by convention — Decided
+A `Run` cannot be constructed, assigned or transitioned to `succeeded` unless it has a credential reference **and** a `verified` result with **no production limitations**. Tested for every non-verified label. `decide_outcome` maps results to outcomes:
+verified + no limits → succeeded · verified + limits → partial · captured but client_recognized / inconclusive / untested → partial (label stated) · invalid → failed · review pending → waiting_on_provider · blocker → blocked · error → failed.
+**Interpretation recorded:** PRD §10 doesn't say what a captured-but-`invalid` credential is. We use `failed` ("provider rejected it"), not `partial`, because nothing usable was obtained.
+
+## D-023 Credential reference holds named parts — Decided
+The spec's `CredentialReference` has a single `storeRef`. An OAuth client has two values, so it becomes `parts: {"client_id": {store_ref, masked_display}, "client_secret": {...}}`. Each `store_ref` must match `file:<run>/<name>`, so a raw value cannot be stored in that field. Extra fields are forbidden on every model (`extra="forbid"`).
+
+## D-024 Checkpoint store format — Decided (resolves spec open decision 5)
+`~/.credagent/runs/<run-id>/run.json` (atomic snapshot) + `events.jsonl` (append-only, fsync per line), all `0600` in `0700` dirs.
+- Write order: event first, then snapshot. On load, events newer than the snapshot are reported (`events_after_snapshot`) and the sequence stays monotonic.
+- **Never-replay:** `begin_action` records the intent before any browser action, and `end_action` records the result. An action started but not finished is returned as `in_doubt_action` on load. Tested with a real process killed by `os._exit` between the two. Resume must re-check the page for it.
+- A torn final event line (crash mid-write) is tolerated. A corrupt snapshot is a plain-language error, not a guess.
+- **Secret guard:** every snapshot and event is checked against the Masker's registered values and refused (`SecretLeakError`) before anything touches disk.
+- Run IDs: `YYYYMMDD-HHMMSS-<app-slug>-<4 hex>`, safe for paths and the secret store.
+
+## D-025 Handoff cards — Decided
+`handoff/cards.py` renders the six PRD §9 fields, numbered 1–6, plus DECIDE options. Default "do not" lines: don't close the browser window; don't paste secrets into chat. Cards pass through the Masker. Model rules: DECIDE needs ≥ 2 options and the answer must be one of them; DO has no options; one pending handoff at a time.
+
+## D-026 Fake provider ("Fakeprov") — Decided
+- Python standard library only (`ThreadingHTTPServer`). No new dependency, runs in-process for tests or by hand: `python -m fake_provider.app --scenario <name>`.
+- Clearly fake: a banner on every page, "Fakeprov" name, `fpcid_` / `fpcs_` / `fpat_` prefixes, `*.test` email. A test checks that no real provider name appears.
+- **Audit log with actor:** consequential events (terms accepted, sign-in, CAPTCHA solved, app created / overwritten / deleted, review submitted, payment, business verification, secret regenerated, account created) are logged with the `X-Fakeprov-Actor` header. The test harness sends `person` only while simulating the human, so acceptance tests can assert that e.g. every `terms_accepted` came from the person and no `app_deleted` ever happened.
+- Test hooks (`/__test__/…`) require `X-Fakeprov-Test: 1`, so a browser navigating the site cannot trigger them.
+- Off-allow-list link uses `partner.elsewhere.localhost` (Chrome resolves `*.localhost` to loopback), so domain checks can be tested without the internet.
+- Scenarios (`fake_provider/fixtures/scenarios.json`): the 8 PRD acceptance cases (success, terms checkbox, terms implied, sign-in + resume, shown-once secret, CAPTCHA, blocked, Jev failure) **plus** service unavailable, partial (testing mode), DECIDE app type + scopes, overwrite existing app, cookie accept-only, prompt injection, and DCR shortcut. The extras exercise PRD requirements (§8, §9, §10, F3, spec §7) that the acceptance list does not name. Each scenario states its expected outcome, handoffs and verification label, used by the Sprint 4+ acceptance tests.
+- The verification path on Fakeprov is `POST /oauth/token` (client_credentials, Basic or POST auth), then `GET /api/me`. `/oauth/authorize` recognises a client ID without a secret, which provides a real `client_recognized` case.
+
+## D-027 Real-browser tests are opt-in — Decided
+`tests/integration/test_fake_provider_browser.py` launches Chrome, so it runs only with `CREDAGENT_BROWSER_TESTS=1` (headed by default; `CREDAGENT_HEADLESS=1` hides the window). It calls no model API: Stagehand gets a recording callback. *Observed* (headed and headless, 2026-11-15): cookie "Reject all" by plain click; sign-in by the simulated person; **sign-in survived a full Chrome quit and relaunch**; terms left unticked by the agent; one real `observe()` model request containing the page minus the excluded credentials panel, with neither client ID nor secret in it; secret read by plain code on first view and hidden after reload; captured credential passed the token + `/api/me` live test; audit shows terms accepted once, by the person, and no forbidden events.
+
 ---
 
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
+3. Spec §5 `CredentialReference.storeRef` (single) vs. OAuth's two values → `parts` (D-023).
+4. PRD §10 does not classify a captured-but-`invalid` credential → `failed` (D-022).
 
 ## Assumptions not yet verified
 - ~~A1. Structured outputs work for the chosen models.~~ Verified (D-009).
@@ -174,4 +211,5 @@ python.org Python 3.12's stdlib `urllib` fails certificate verification here (no
 - Q3. Default redirect URI: local placeholder vs. the integration's real callback (e.g. Composio's). **Open: owner decision, needed before Sprint 6.**
 - Q4. Secret store: owner-only file (default, implemented) vs. OS keychain. **Open: evaluate in Sprint 5.** Input: Time Machine currently backs up `~/.credagent` (D-015).
 - Q5. Demo app list and each provider's automation terms. **Open: Sprint 6.**
+- ~~Spec open decision 5 (run-state format and location).~~ Resolved: D-024.
 - Q6. Budgets: research/search count, page observations, actions, per-call timeouts, retries, total run time, max plan steps. **Open: set in Sprints 2–4.** Current client defaults: LLM timeout 60 s, Jev 20 s, Tavily 30 s.

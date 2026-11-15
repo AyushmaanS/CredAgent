@@ -6,7 +6,7 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> Status: **Sprint 0 (foundation and feasibility).** The CLI commands exist but
+> Status: **Sprint 1 (safety protocol, run model, fake provider).** The CLI commands exist but
 > are not implemented yet; they say so and exit with code 2. See
 > `docs/CHECKLIST.md` for progress and `docs/DECISIONS.md` for decisions.
 
@@ -54,6 +54,25 @@ Runtime data (run state, browser profiles, secret store) lives in
 .venv/bin/ruff check src tests scripts            # lint
 .venv/bin/python scripts/check_secrets.py --tree  # secret scan (also --staged, --history)
 ```
+
+Real-browser tests open Chrome, so they are opt-in:
+
+```bash
+CREDAGENT_BROWSER_TESTS=1 .venv/bin/python -m pytest tests/integration   # add CREDAGENT_HEADLESS=1 to hide the window
+```
+
+## Fake provider (Fakeprov)
+
+A local, clearly fake developer console used to test every path without real accounts:
+
+```bash
+.venv/bin/python -m fake_provider.app --scenario terms_checkbox   # then open http://127.0.0.1:8765
+```
+
+Scenarios are listed in `fake_provider/fixtures/scenarios.json` (success, terms checkbox / implied,
+sign-in + resume, shown-once secret, CAPTCHA, blocked, Jev failure, service unavailable, partial,
+DECIDE choices, overwrite, cookie accept-only, prompt injection, DCR). The test login is in
+`fake_provider/app/server.py` (fake values for this local site only).
 
 Feasibility spikes (Sprint 0) are in `scripts/spikes/`; curated results are in
 `docs/spikes/` and summarised in `docs/DECISIONS.md`.
