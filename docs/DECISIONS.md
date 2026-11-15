@@ -301,6 +301,13 @@ Fixes:
 4. Card fixes: the run ID is never split across lines (it had been broken at a hyphen, making the resume command un-copyable). The resume line no longer tells people to run `credagent resume` before it exists (Sprint 5). The "Blocking" text is plainer.
 Tested in real Chrome by replaying the owner's steps: tick only → Enter → "still needed: click 'Create app'" → click → Enter → credential page, with **one** handoff and terms accepted only by the person. Doing nothing 3 times → saved as waiting, nothing submitted.
 
+## D-049 A terms-only "person needed" flag must not pre-empt the agent's form filling — Decided (owner's second checkpoint run)
+*Observed (owner, terms_checkbox, real Jev):* after the agent filled the app name, Jev (correctly) flagged the page as needing a person because of the terms box. The loop treated that as "hand off now" and gave the person the terms step **before the callback URL was filled**. The person ticked and clicked Create app, and Chrome refused: "Please fill out this field". That breaks PRD §9: the agent fills every other field and leaves only the terms control and the agreement-carrying submit to the person.
+Fixes:
+1. If Jev (or the LLM fallback) says a person must act **and code has identified the reason as terms** (the only gate left at that point), the flag is recorded (`blocker_deferred`) and the agent carries on. Policy hands off exactly when the agent reaches the terms control or the submit. Any other "person needed" flag still hands off immediately (tested).
+2. Safety net: before any terms handoff, the agent fills every **required** field in that form that is still empty and has a code-approved value. Policy still decides each fill. The card names any required field the agent could not fill.
+Tested: a Jev stand-in that flags terms like the real one (checkbox + implied) → both fields filled before the single handoff, app created with the callback URL. A plan missing the callback step → required field pre-filled before the handoff. *Online with real Jev 1.14.0 + Stagehand + LLM and a simulated person:* both terms scenarios reached the credential page with one handoff, Jev's flag deferred 1–2 times, the app created with the callback URL, and terms accepted and app created by the person.
+
 ---
 
 ## Discrepancies between documents

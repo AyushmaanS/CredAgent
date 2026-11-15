@@ -260,3 +260,69 @@ def test_handoff_saved_as_waiting_after_three_unchanged_enters(tmp_path):
     assert run.pending_handoff is not None and run.pending_handoff.blocker_kind == "terms"
     assert "The run is saved with this step waiting for you" in "\n".join(io.out)
     assert not [a for a in audit if a["event"] in ("terms_accepted", "app_created")]
+
+
+class FlagsTermsLikeRealJev(RuleJev):
+    """Like the real Jev in the owner's run: says 'a person must act' on any page that mentions agreeing."""
+
+    def decide(self, state, log):
+        d = super().decide(state, log)
+        from dataclasses import replace
+        if "agree" in state.visible_text.lower():
+            d.decisions["blocker_detection"] = replace(d.decisions["blocker_detection"], value=True)
+        return d
+
+
+class AlwaysBlocker(RuleJev):
+    def decide(self, state, log):
+        d = super().decide(state, log)
+        from dataclasses import replace
+        d.decisions["blocker_detection"] = replace(d.decisions["blocker_detection"], value=True)
+        return d
+
+
+async def run_jev(tmp_path, name, jev, *, drop_steps=(), io_factory=None):
+    m = Masker()
+    store = RunStore(tmp_path / "runs", m)
+    with FakeProvider(scenario(name)) as fp:
+        plan = fake_provider_plan(fp.base_url)
+        plan = plan.model_copy(update={"steps": [s for s in plan.steps if s.id not in drop_steps]})
+        run = Run(id=f"t-{name}", app_input="Fakeprov", plan=plan)
+        store.create(run)
+        session = await open_session(tmp_path / "profile", headless=HEADLESS)
+        io = (io_factory or PersonIO)(session.page)
+        io.run = run
+        try:
+            await session.page.goto(fp.base_url + "/")
+            loop = BrowserLoop(store, m, io, jev, FieldValues.default("http://127.0.0.1:8976/callback"))
+            result = await loop.run(run, session.page, None, session.browser.context)
+        finally:
+            await session.close()
+        apps = [(a.name, a.redirect_uri) for a in fp.state.apps.values()]
+        audit = fp.audit()
+    return result, run, io, audit, apps
+
+
+@pytest.mark.parametrize("name", ["terms_checkbox", "terms_implied"])
+def test_terms_flag_does_not_preempt_filling_other_fields(tmp_path, name):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, name, FlagsTermsLikeRealJev()))
+    assert result.status == "credential_page", result
+    assert io.handoffs == [("DO", "terms")]
+    fills = [s.action for s in run.steps if s.actor == "agent" and s.action.startswith("fill")]
+    assert any("Application name" in f for f in fills) and any("callback" in f.lower() for f in fills)
+    handoff_at = next(i for i, s in enumerate(run.steps) if s.actor == "person")
+    assert all(i < handoff_at for i, s in enumerate(run.steps) if s.actor == "agent" and s.action.startswith("fill"))
+    assert len(apps) == 1 and apps[0][1] == "http://127.0.0.1:8976/callback"
+    assert_safe(audit)
+
+
+def test_required_field_prefilled_before_terms_handoff_even_if_plan_skipped_it(tmp_path):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "terms_checkbox", RuleJev(), drop_steps=("p4",)))
+    assert result.status == "credential_page", result
+    assert any("required field, before handing over the terms" in s.action for s in run.steps)
+    assert apps and apps[0][1] == "http://127.0.0.1:8976/callback"
+
+
+def test_non_terms_blocker_still_hands_off_immediately(tmp_path):
+    result, run, io, audit, apps = asyncio.run(run_jev(tmp_path, "success", AlwaysBlocker()))
+    assert io.handoffs and io.handoffs[0] == ("DO", "unexpected")

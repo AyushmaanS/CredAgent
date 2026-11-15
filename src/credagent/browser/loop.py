@@ -21,6 +21,7 @@ from credagent.browser.candidates import (
     FieldValues,
     RawCandidate,
     dom_candidates,
+    field_key_for,
     from_stagehand,
     normalise,
     use_stagehand,
@@ -64,6 +65,18 @@ def terms_instruction(obs: Observation, gates: list) -> tuple[str, str]:
     submit = next((b for b in obs.buttons if form and b["form"] == form and b["type"] in ("submit", "")), None)
     btn = f"“{submit['text']}”" if submit and submit["text"] else "the form's submit button"
     stop = " If you do not agree, press Ctrl+C: nothing is submitted and the run is saved."
+    empty = [
+        i["label"][:60]
+        for i in obs.inputs
+        if form
+        and i["form"] == form
+        and i["required"]
+        and not i["value_len"]
+        and i["type"] not in ("checkbox", "radio", "submit", "button", "hidden")
+    ]
+    if empty:
+        fields = ", ".join(f"“{e}”" for e in empty)
+        btn = f"{btn} (first fill the required field(s) the agent could not: {fields})"
     if box and not box["checked"]:
         missing = f"tick “{box['label'][:90]}” and click {btn}"
         return f"In the browser window: read the terms, tick “{box['label'][:90]}”, then click {btn}.{stop}", missing
@@ -169,6 +182,8 @@ class BrowserLoop:
     ) -> str | None:
         page = page if page is not None else getattr(self, "_page", None)
         gates = gates if gates is not None else getattr(self, "_gates", [])
+        if kind == "DO" and blocker_kind == "terms" and page is not None:
+            obs, gates = await self._prefill_required(run, page, obs, gates)
         if kind == "DO" and blocker_kind == "terms" and instruction is None:
             instruction, _ = terms_instruction(obs, gates)
         h = run.open_handoff(
@@ -225,6 +240,43 @@ class BrowserLoop:
         self._step(run, f"person decided: {answer}", "person", "done")
         self._cp(run, "handoff_resolved", {"handoff_id": h.id, "answer": answer})
         return answer
+
+    async def _prefill_required(self, run: Run, page: Any, obs: Observation, gates: list) -> tuple[Observation, list]:
+        """Before handing terms to the person, fill any required field in that form that is still empty and has a
+        code-approved value, so the person never meets a form with a hidden gap (D-049). Policy still decides."""
+        t = next((g for g in gates if g.kind == "terms"), None)
+        box = next((i for i in obs.inputs if t and i["xpath"] == t.target_xpath), None)
+        form = (t.form_xpath if t else None) or (box["form"] if box else None)
+        changed = False
+        for i in obs.inputs:
+            if not (form and i["form"] == form and i["required"] and not i["value_len"]):
+                continue
+            if i["type"] in ("checkbox", "radio", "submit", "button", "hidden") or i["tag"] == "select":
+                continue
+            key = field_key_for(i["label"] or i["name"])
+            value = self.values.get(key)
+            act = ProposedAction(
+                method="fill", xpath=i["xpath"], description=f"text field '{i['label']}'", field_key=key, value=value
+            )
+            verdict = evaluate(act, obs, gates, self._allowed, risk="reversible", risk_uncertain=False)
+            if verdict.decision != "allow":
+                continue
+            seq = self.store.begin_action(run, "fill", {"target": act.description, "field": key, "why": "prefill"})
+            await page.locator("xpath=" + i["xpath"]).fill(value or "")
+            self.store.end_action(run, seq, "done")
+            self._step(
+                run,
+                f"fill {act.description} = {value} (required field, before handing over the terms)",
+                "agent",
+                "done",
+                [f"policy: {verdict.reason}"],
+            )
+            changed = True
+        if not changed:
+            return obs, gates
+        await page.wait_for_timeout(self.budget.settle_ms)
+        obs = await observe_page(page, self.masker)
+        return obs, check(obs, self._allowed)
 
     async def _still_needed(self, page: Any | None, before: Observation, blocker_kind: str) -> str | None:
         """Re-check the page after the person pressed Enter. None = the handoff's condition is resolved."""
@@ -425,16 +477,16 @@ class BrowserLoop:
                 },
             )
 
-            if d["blocker_detection"].value is True:
-                terms = [g for g in gates if g.kind == "terms"]
-                if terms:  # code knows exactly what the person must do here
-                    why, kind_, ev_ = terms[0].reason, "terms", terms[0].evidence
-                else:
-                    why = "Jev/LLM judged that a person needs to act on this page" + (
-                        f" ({log.llm_reason[:120]})" if log.llm_reason else ""
-                    )
-                    kind_, ev_ = "unexpected", [f"title: {obs.title}"]
-                if await self._handoff(run, "DO", kind_, why, ev_, obs, page=page, gates=gates) is None:
+            terms = [g for g in gates if g.kind == "terms"]
+            if d["blocker_detection"].value is True and terms:
+                # PRD §9: the agent fills every other field first; the person's part is the terms control and
+                # the agreement-carrying submit, which policy hands off when the agent reaches them (D-049).
+                self._cp(run, "blocker_deferred", {"reason": "terms only: filling the other fields first"})
+            elif d["blocker_detection"].value is True:
+                why = "Jev/LLM judged that a person needs to act on this page" + (
+                    f" ({log.llm_reason[:120]})" if log.llm_reason else ""
+                )
+                if await self._handoff(run, "DO", "unexpected", why, [f"title: {obs.title}"], obs) is None:
                     return LoopResult("handoff_pending", why, n_obs, n_act)
                 continue
             if act == "step_complete":
