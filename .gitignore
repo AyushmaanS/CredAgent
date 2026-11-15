@@ -1,0 +1,32 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Environment files: only .env.example may be committed
+.env
+.env.*
+!.env.example
+
+# Runtime data (default location is ~/.credagent, outside the repo; these guard
+# against a misconfigured CREDAGENT_HOME pointing inside the repo)
+.credagent/
+browser-data/
+chrome-user-data/
+profiles/
+runs/
+secret-store/
+*.secret
+*.pem
+*.key
+
+# Raw spike captures may contain page text; only curated summaries are committed
+docs/spikes/raw/
+
+# OS
+.DS_Store

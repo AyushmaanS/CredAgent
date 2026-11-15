@@ -1,0 +1,8 @@
+#!/bin/sh
+# CredAgent pre-commit: secret scan + lint. Enable with: git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+PY=.venv/bin/python
+[ -x "$PY" ] || PY=python3
+"$PY" scripts/check_secrets.py --staged
+"$PY" -m ruff check --quiet src tests scripts fake_provider

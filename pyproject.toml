@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credagent"
+version = "0.1.0"
+description = "Local CLI agent that obtains and live-verifies developer credentials for an app."
+requires-python = ">=3.11"
+dependencies = [
+  "stagehand==4.4.0",
+  "click>=8.1,<9",
+  "httpx>=0.27,<1",
+  "pydantic>=2.12,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+credagent = "credagent.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101"]  # asserts are fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S603", "S607"]  # fake secrets and fixed subprocess calls in tests
+"scripts/**" = ["S105", "S106", "S310", "S603", "S607"]
