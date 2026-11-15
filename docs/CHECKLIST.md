@@ -30,7 +30,7 @@ verified live, `[ ]` not started.
 - [x] S0.21 Local state: atomic write + reload in a fresh process
 - [x] S0.22 Secret file: owner-only permissions (0600 file / 0700 dir) outside the repo on this machine
 - [x] S0.23 DECISIONS.md: results, runtime, models, paths, budgets-to-test, unresolved questions
-- [ ] S0.24 👤 Checkpoint: owner reviews decisions summary and confirms local setup
+- [x] S0.24 👤 Checkpoint: owner reviews decisions summary and confirms local setup (approved 2026-11-15)
 
 ## Sprint 1 — Safety protocol, domain model, fake provider
 
