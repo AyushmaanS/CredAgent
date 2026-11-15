@@ -15,7 +15,6 @@ import statistics
 import sys
 import threading
 import time
-import urllib.request
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -24,6 +23,7 @@ from typing import Literal
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
+import httpx  # noqa: E402
 from pydantic import BaseModel, ValidationError  # noqa: E402
 
 from credagent.config.settings import load_settings  # noqa: E402
@@ -53,8 +53,10 @@ def err(exc: Exception) -> str:
 # ------------------------------------------------------------------ models
 
 def check_models(settings) -> dict:
-    with urllib.request.urlopen(f"{settings.fastrouter_base_url}/models", timeout=30) as r:
-        data = {m["id"]: m for m in json.loads(r.read())["data"]}
+    # httpx (certifi CA bundle); stdlib urllib fails TLS on this python.org build.
+    r = httpx.get(f"{settings.fastrouter_base_url}/models", timeout=30)
+    r.raise_for_status()
+    data = {m["id"]: m for m in r.json()["data"]}
     out = {}
     for role, mid in (("llm", settings.llm_model), ("stagehand", settings.stagehand_model),
                       ("jev", settings.jev_model)):

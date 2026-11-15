@@ -44,6 +44,24 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_\-+/=]{32,}")
+_URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]]+")
+_URL_SEGMENT_RE = re.compile(r"[^/?&=#.:]{32,}")
+
+
+def _mask_match(m: re.Match[str]) -> str:
+    return PLACEHOLDER.format(label="high_entropy") if looks_random(m.group(0)) else m.group(0)
+
+
+_SLUG_RE = re.compile(r"[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+")
+
+
+def _mask_url_segment(m: re.Match[str]) -> str:
+    # Lowercase word-slugs ("8128613-api-keys-create-api-keys") are page paths, not secrets.
+    return m.group(0) if _SLUG_RE.fullmatch(m.group(0)) else _mask_match(m)
+
+
+def _mask_tokens(text: str) -> str:
+    return _TOKEN_RE.sub(_mask_match, text)
 
 
 def shannon_entropy(s: str) -> float:
@@ -99,12 +117,17 @@ class Masker:
                 )
             else:
                 text = pattern.sub(PLACEHOLDER.format(label=label), text)
-        text = _TOKEN_RE.sub(
-            lambda m: PLACEHOLDER.format(label="high_entropy") if looks_random(m.group(0))
-            else m.group(0),
-            text,
-        )
-        return text
+        # High-entropy pass. Inside URLs, judge each path/query segment separately so
+        # ordinary paths survive (research needs real URLs) while secret-looking query
+        # values or path segments are still masked. Outside URLs, keep '/' and '+' in
+        # tokens so base64 secrets are judged whole.
+        out, last = [], 0
+        for m in _URL_RE.finditer(text):
+            out.append(_mask_tokens(text[last:m.start()]))
+            out.append(_URL_SEGMENT_RE.sub(_mask_url_segment, m.group(0)))
+            last = m.end()
+        out.append(_mask_tokens(text[last:]))
+        return "".join(out)
 
     def mask(self, obj: Any) -> Any:
         """Recursively mask strings inside dicts/lists/tuples. Keys are masked too."""

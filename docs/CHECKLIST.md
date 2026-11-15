@@ -7,8 +7,6 @@ verified live, `[ ]` not started.
 
 ## Sprint 0 — Local foundation and feasibility spikes
 
-`[~]` on S0.13–S0.16: spike scripts written and unit-tested against mocks; live runs wait for S0.10 (owner keys).
-
 - [x] S0.1 Initialise git repo; move PRD/spec/sprint plan into `docs/` (spec layout)
 - [x] S0.2 Choose runtime + CLI framework; record in DECISIONS.md
 - [x] S0.3 Scaffold Python package with the spec's module layout (`src/credagent/...`)
@@ -18,20 +16,20 @@ verified live, `[ ]` not started.
 - [x] S0.7 `.env.example` — names only
 - [x] S0.8 Secret scan script (`scripts/check_secrets.py`: staged / tree / history modes) + pre-commit hook
 - [x] S0.9 README.md and RESULTS.md skeletons
-- [ ] S0.10 👤 Owner creates `.env.local` and adds FastRouter + Tavily keys (steps in README "Local environment")
+- [x] S0.10 👤 Owner creates `.env.local` and adds FastRouter + Tavily keys (steps in README "Local environment")
 - [x] S0.11 Env check script that reports set/missing without printing values
 - [x] S0.12 FastRouter: list model IDs (public endpoint; per-model structured-output support confirmed in S0.14)
-- [~] S0.13 FastRouter: plain LLM request + latency
-- [~] S0.14 FastRouter: constrained structured output (json_schema) + validation
-- [~] S0.15 Jev: request/response format, five-decision request shape, repeated trials, latency
-- [~] S0.16 Tavily: search + extract, latency, result shape
+- [x] S0.13 FastRouter: plain LLM request + latency
+- [x] S0.14 FastRouter: constrained structured output (json_schema) + validation
+- [x] S0.15 Jev: request/response format, five-decision request shape, repeated trials, latency
+- [x] S0.16 Tavily: search + extract, latency, result shape
 - [x] S0.17 Stagehand: headed local Chrome launches
 - [x] S0.18 Stagehand: persistent profile survives process restart — FAILS with Stagehand launch/close; PASSES with CredAgent-owned Chrome (D-012)
 - [x] S0.19 Stagehand: record exactly what page content reaches its model (recording callback); test `ignore_locators` exclusion of secret-bearing nodes
 - [x] S0.20 Stagehand: check for outbound network connections in local mode
 - [x] S0.21 Local state: atomic write + reload in a fresh process
 - [x] S0.22 Secret file: owner-only permissions (0600 file / 0700 dir) outside the repo on this machine
-- [~] S0.23 DECISIONS.md: results, runtime, models, paths, budgets-to-test, unresolved questions
+- [x] S0.23 DECISIONS.md: results, runtime, models, paths, budgets-to-test, unresolved questions
 - [ ] S0.24 👤 Checkpoint: owner reviews decisions summary and confirms local setup
 
 ## Sprint 1 — Safety protocol, domain model, fake provider

@@ -1,0 +1,765 @@
+{
+  "ran_at": "2026-11-15T19:21:29+0530",
+  "base_url": "https://api.fastrouter.ai/api/v1",
+  "models": {
+    "llm": {
+      "id": "anthropic/claude-sonnet-5.5",
+      "listed": true,
+      "active": true,
+      "structured_params": [
+        "response_format"
+      ]
+    },
+    "stagehand": {
+      "id": "anthropic/claude-haiku-5.5",
+      "listed": true,
+      "active": true,
+      "structured_params": [
+        "response_format"
+      ]
+    },
+    "jev": {
+      "id": "typesafe/jev-latest",
+      "listed": true,
+      "active": true,
+      "structured_params": []
+    }
+  },
+  "llm": {
+    "plain": [
+      {
+        "ok": true,
+        "latency_ms": 1804,
+        "served_model": "anthropic.claude-sonnet-5-5"
+      },
+      {
+        "ok": true,
+        "latency_ms": 1415,
+        "served_model": "claude-sonnet-5-5"
+      },
+      {
+        "ok": true,
+        "latency_ms": 1502,
+        "served_model": "claude-sonnet-5-5"
+      }
+    ],
+    "plain_latency": {
+      "n": 3,
+      "min": 1415,
+      "p50": 1502,
+      "max": 1804,
+      "p90": 1804
+    },
+    "structured": [
+      {
+        "strict": true,
+        "valid": true,
+        "latency_ms": 2903,
+        "served_model": "anthropic.claude-sonnet-5-5"
+      },
+      {
+        "strict": true,
+        "valid": true,
+        "latency_ms": 3168,
+        "served_model": "anthropic.claude-sonnet-5-5"
+      },
+      {
+        "strict": true,
+        "valid": true,
+        "latency_ms": 2859,
+        "served_model": "anthropic/claude-sonnet-5-5"
+      },
+      {
+        "strict": false,
+        "valid": true,
+        "latency_ms": 3185,
+        "served_model": "anthropic/claude-sonnet-5-5"
+      },
+      {
+        "strict": false,
+        "valid": true,
+        "latency_ms": 3175,
+        "served_model": "anthropic.claude-sonnet-5-5"
+      },
+      {
+        "strict": false,
+        "valid": true,
+        "latency_ms": 3647,
+        "served_model": "anthropic/claude-sonnet-5-5"
+      }
+    ],
+    "structured_latency": {
+      "n": 6,
+      "min": 2859,
+      "p50": 3172,
+      "max": 3647,
+      "p90": 3647
+    }
+  },
+  "jev": {
+    "per_state": {
+      "sign_in_wall": [
+        {
+          "shape_ok": true,
+          "element": [
+            "none",
+            0.49
+          ],
+          "action": [
+            "proceed",
+            0.44
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.15
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "element_selection",
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "none",
+            0.48
+          ],
+          "action": [
+            "proceed",
+            0.52
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.23
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "element_selection",
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "none",
+            0.43
+          ],
+          "action": [
+            "proceed",
+            0.52
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.26
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "element_selection",
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "none",
+            0.47
+          ],
+          "action": [
+            "proceed",
+            0.55
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.23
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "element_selection",
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "none",
+            0.45
+          ],
+          "action": [
+            "proceed",
+            0.47
+          ],
+          "blocker_p": 0.96,
+          "risk": [
+            "read_only",
+            0.28
+          ],
+          "completion_p": 0.02,
+          "uncertain": [
+            "element_selection",
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        }
+      ],
+      "create_form": [
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.06,
+          "risk": [
+            "reversible",
+            0.92
+          ],
+          "completion_p": 0.05,
+          "uncertain": [],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true,
+            "element": true,
+            "action": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.07,
+          "risk": [
+            "reversible",
+            0.91
+          ],
+          "completion_p": 0.05,
+          "uncertain": [],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true,
+            "element": true,
+            "action": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.06,
+          "risk": [
+            "reversible",
+            0.89
+          ],
+          "completion_p": 0.05,
+          "uncertain": [],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true,
+            "element": true,
+            "action": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.06,
+          "risk": [
+            "reversible",
+            0.89
+          ],
+          "completion_p": 0.05,
+          "uncertain": [],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true,
+            "element": true,
+            "action": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.07,
+          "risk": [
+            "reversible",
+            0.88
+          ],
+          "completion_p": 0.05,
+          "uncertain": [],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true,
+            "element": true,
+            "action": true
+          }
+        }
+      ],
+      "implied_terms": [
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.49,
+          "risk": [
+            "irreversible",
+            0.46
+          ],
+          "completion_p": 0.05,
+          "uncertain": [
+            "blocker_detection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": false,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.49,
+          "risk": [
+            "irreversible",
+            0.61
+          ],
+          "completion_p": 0.04,
+          "uncertain": [
+            "blocker_detection"
+          ],
+          "matches_expected": {
+            "blocker": false,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.48,
+          "risk": [
+            "irreversible",
+            0.51
+          ],
+          "completion_p": 0.05,
+          "uncertain": [
+            "blocker_detection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": false,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.52,
+          "risk": [
+            "irreversible",
+            0.55
+          ],
+          "completion_p": 0.04,
+          "uncertain": [
+            "blocker_detection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            1.0
+          ],
+          "action": [
+            "proceed",
+            1.0
+          ],
+          "blocker_p": 0.48,
+          "risk": [
+            "irreversible",
+            0.57
+          ],
+          "completion_p": 0.04,
+          "uncertain": [
+            "blocker_detection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": false,
+            "completion": true
+          }
+        }
+      ],
+      "credential_shown": [
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.94
+          ],
+          "action": [
+            "proceed",
+            0.75
+          ],
+          "blocker_p": 0.07,
+          "risk": [
+            "read_only",
+            0.17
+          ],
+          "completion_p": 0.95,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.92
+          ],
+          "action": [
+            "proceed",
+            0.71
+          ],
+          "blocker_p": 0.08,
+          "risk": [
+            "read_only",
+            0.28
+          ],
+          "completion_p": 0.96,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.92
+          ],
+          "action": [
+            "proceed",
+            0.71
+          ],
+          "blocker_p": 0.08,
+          "risk": [
+            "read_only",
+            0.28
+          ],
+          "completion_p": 0.95,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.92
+          ],
+          "action": [
+            "proceed",
+            0.69
+          ],
+          "blocker_p": 0.07,
+          "risk": [
+            "read_only",
+            0.18
+          ],
+          "completion_p": 0.95,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.94
+          ],
+          "action": [
+            "proceed",
+            0.85
+          ],
+          "blocker_p": 0.06,
+          "risk": [
+            "read_only",
+            0.27
+          ],
+          "completion_p": 0.95,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        }
+      ],
+      "captcha": [
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.9
+          ],
+          "action": [
+            "proceed",
+            0.65
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.49
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.88
+          ],
+          "action": [
+            "proceed",
+            0.69
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.38
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.88
+          ],
+          "action": [
+            "proceed",
+            0.56
+          ],
+          "blocker_p": 0.94,
+          "risk": [
+            "read_only",
+            0.49
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "action_selection",
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.86
+          ],
+          "action": [
+            "proceed",
+            0.69
+          ],
+          "blocker_p": 0.95,
+          "risk": [
+            "read_only",
+            0.45
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        },
+        {
+          "shape_ok": true,
+          "element": [
+            "c0",
+            0.88
+          ],
+          "action": [
+            "proceed",
+            0.6
+          ],
+          "blocker_p": 0.94,
+          "risk": [
+            "read_only",
+            0.46
+          ],
+          "completion_p": 0.03,
+          "uncertain": [
+            "risk_assessment"
+          ],
+          "matches_expected": {
+            "blocker": true,
+            "completion": true
+          }
+        }
+      ]
+    },
+    "served_models": [
+      "jev-1.14.0"
+    ],
+    "errors": [],
+    "latency": {
+      "n": 25,
+      "min": 277,
+      "p50": 412,
+      "max": 589,
+      "p90": 460
+    }
+  },
+  "failure_mapping": {
+    "unknown_model": "ModelCallError",
+    "unreachable": "ServiceUnavailable"
+  },
+  "stagehand_via_fastrouter": {
+    "strict_False": {
+      "latency_ms": 1805,
+      "actions": [
+        {
+          "selector": "xpath=/html[1]/body[1]/button[2]",
+          "description": "The 'Create new app' button, which creates a new app."
+        }
+      ],
+      "picked_create": true
+    },
+    "strict_True": {
+      "latency_ms": 1734,
+      "actions": [
+        {
+          "selector": "xpath=/html[1]/body[1]/button[2]",
+          "description": "Button labeled 'Create new app' that creates a new app."
+        }
+      ],
+      "picked_create": true
+    }
+  }
+}

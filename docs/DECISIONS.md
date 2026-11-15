@@ -61,14 +61,15 @@ Tavily responses are masked on receipt. The masker over-masks by design:
 registered exact values, known key prefixes, labelled `secret: …` values, and
 long high-entropy tokens.
 
-## D-009 Model IDs — Provisional (until the live spike runs)
+## D-009 Model IDs — Decided (verified live 2026-11-15)
 *Observed* from FastRouter's public model list (no key needed), 2026-11-15:
 - Jev: `typesafe/jev-latest` (active, 64k context). Responses report the exact version; we log it per call. We use the alias for now; pin once the spike confirms the served version.
 - LLM (research, planning, re-planning, page reasoning): `anthropic/claude-sonnet-5.5`.
 - Stagehand's model (observe/act), via the custom LLM callback: `anthropic/claude-haiku-5.5` (cheaper and faster for per-page calls).
-All configurable in `.env.local`. Structured-output support per model is confirmed by the live spike, not assumed.
+All configurable in `.env.local`.
+*Observed live* (`docs/spikes/fastrouter.json`): all three IDs listed and active. Sonnet 5.5 returned schema-valid JSON in 6/6 structured calls, both `strict: true` and `strict: false`. Haiku 5.5 served Stagehand `observe()` correctly in both modes. The served model name alternates between `anthropic.claude-sonnet-5-5` and `claude-sonnet-5-5`, so FastRouter routes across upstream providers (*inferred*). We log the served name per call.
 
-## D-010 Jev request format — Provisional
+## D-010 Jev request format — Decided (verified live)
 *Sourced* ([FastRouter Jev docs](https://docs.fastrouter.ai/explore-features/openai-decisions-and-typesafe-systemone/typesafe-systemone-jev.md)):
 `POST {FASTROUTER_BASE_URL}/systemone` with `{model, state, questions}`; question
 types `noul` (yes/no probability), `choice` (option map, max 255), `score`
@@ -85,11 +86,18 @@ types `noul` (yes/no probability), `choice` (option map, max 255), `score`
 All five go in **one request per page** (`src/credagent/decisions/jev.py`).
 Missing or malformed answers, unknown choices, and out-of-range values all
 parse as *uncertain*, so they follow the PRD §8 fallbacks rather than being guessed.
+*Observed live:* 25/25 five-decision requests returned all five answers in the documented shape; 0 errors. `typesafe/jev-latest` served **`jev-1.14.0`** (FastRouter's docs still say 1.13.0). FastRouter lists only the alias, so the version cannot be pinned: we record the served version on every call, and a version change becomes a re-calibration trigger.
 
-## D-011 Jev certainty thresholds — Provisional (calibrate in Sprint 4)
+## D-011 Jev certainty thresholds — Provisional (calibrate in Sprint 4; first live data below)
 choice/score: uncertain if `confidence < 0.6`. noul: confident yes if `p ≥ 0.8`,
 confident no if `p ≤ 0.2`, otherwise uncertain. Starting points, not measured
 values. They get calibrated on the fake provider and the first real runs.
+*Observed live* (5 synthetic pages × 5 trials, two runs):
+- **Blocker detection** was confident and correct for the sign-in wall (0.95), CAPTCHA (0.94–0.96), create form (0.06–0.07, no blocker) and credential page (0.06–0.07).
+- **Implied agreement** ("By clicking Create, you agree to the Developer Terms…"): blocker p = **0.43–0.53**, uncertain every time, and on the yes/no reading 2 of 5 trials in the first run said "no human needed". Under the PRD fallback this goes to the LLM second opinion and code checks, so it would pause, but it shows **Jev cannot be relied on for terms**. Decision: the code hard check for terms (checkbox *and* implied wording) runs **before** Jev on every page, as PRD §9/§13 require. Jev's answer can never clear it.
+- **Completion detection:** credential page 0.95–0.96; all other pages ≤ 0.05.
+- **Element selection:** confident and correct on the create form (`c0`, 1.0). On the sign-in wall it chose `none` with ~0.5 confidence (uncertain), which is reasonable since sign-in is a DO handoff.
+- **Risk assessment:** confidence was usually low (0.12–0.58) except on the create form (0.88–0.93; `reversible`). With the 0.6 threshold, risk will often be bumped one level ("assume the next higher risk level"). That is safe but may cause extra DECIDE handoffs. Calibrate wording and threshold in Sprint 4; never loosen hard stops.
 
 ## D-012 Chrome lifecycle: CredAgent owns the Chrome process; Stagehand attaches via `connect()` — Decided
 - *Observed* (`docs/spikes/stagehand.json`, reproduced twice): with `stagehand.local_browser.launch(user_data_dir=…)` + `browser.close()`, a persistent cookie and a localStorage value set before close were **gone** after relaunching the same profile in a new process. The profile directory was kept and in use.
@@ -122,6 +130,29 @@ values. They get calibrated on the fake provider and the first real runs.
 *Bug found and fixed during this spike:* `Path.mkdir(parents=True, mode=0o700)` left the intermediate `~/.credagent/runs` at `0755` (mode applies only to the last component). All directory creation now goes through `state.atomic.mkdir_private`, which makes every created component `0700`. Unit test added; the spike now checks the `runs/` and `profiles/` roots too.
 **Finding for Q4:** `tmutil isexcluded ~/.credagent` → `[Included]`. Stored secrets would be copied into Time Machine backups. Excluding the folder changes a backup setting, so CredAgent will not do it automatically. This is an input to the file-vs-keychain decision (Sprint 5); the owner may choose to exclude it.
 
+## D-016 Measured latency (2026-11-15, this machine) — Recorded
+| Call | p50 | max | n |
+|---|---:|---:|---:|
+| Jev five-decision request | 377–412 ms | 639 ms | 50 |
+| LLM plain (Sonnet 5.5) | 1.5 s | 2.8 s | 6 |
+| LLM structured JSON (Sonnet 5.5) | 2.8–3.2 s | 3.6 s | 12 |
+| Stagehand `observe()` via FastRouter (Haiku 5.5) | 1.7–1.9 s | 1.9 s | 4 |
+| Tavily search (basic, 5 results) | 1.3–3.9 s | 3.9 s | 6 |
+| Tavily extract (2 URLs) | 0.4 s | 0.4 s | 2 |
+Jev is fast enough to call on every page. Starting timeouts (Q6): Jev 20 s, LLM 60 s, Tavily 30 s, then one Jev retry per the PRD.
+
+## D-017 Error mapping for the FastRouter-unavailable rule — Decided (verified live)
+Unknown model → HTTP 4xx → `ModelCallError` (a request problem, not an outage). Unreachable host, timeout or 5xx → `ServiceUnavailable`. Only `ServiceUnavailable` on both the LLM and Jev triggers the PRD's resumable `failed: service unavailable` end. Error messages are masked and never include the key (unit-tested).
+
+## D-018 Tavily — Decided (verified live)
+`Authorization: Bearer` works on `/search` and `/extract`. Result fields: `title, url, content, score, raw_content, id`; extract returns `raw_content, title, url, images`. Results were relevant for a common app (GitHub: official docs at ranks 2–3, a tutorial at rank 1), sensible for a less common app (Raindrop.io: official developer docs ranked first), and **low-scoring and off-topic for a nonsense name** (top score 0.36). Implication for Sprint 2: research must rank official domains above tutorials and treat a low top score as "app not identified", not as a fact.
+
+## D-019 Masking must not destroy research URLs — Decided
+*Observed:* the first Tavily run masked URL paths (e.g. `community.openai.[REDACTED]`) because long path tokens with digits looked random. Fix: inside URLs, each path/query segment is judged on its own, and lowercase word-slugs are kept. Secret-looking query values and random segments are still masked (tests for both, plus base64 secrets containing `/` outside URLs). After the fix, 0 masked URLs across the Tavily results.
+
+## D-020 TLS on this Python build — Recorded
+python.org Python 3.12's stdlib `urllib` fails certificate verification here (no system CA bundle installed). All network code uses `httpx`, which bundles certifi. stdlib HTTP is used only for `127.0.0.1` (Chrome's DevTools port). No owner action needed.
+
 ---
 
 ## Discrepancies between documents
@@ -129,15 +160,16 @@ values. They get calibrated on the fake provider and the first real runs.
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
 
 ## Assumptions not yet verified
-- A1. FastRouter chat completions accept `response_format: json_schema, strict: true` for the chosen Claude models (docs say "compatible models"). → live spike.
-- A2. Jev latency is low enough to call on every page. → live spike.
-- A3. Tavily accepts `Authorization: Bearer` on `/search` and `/extract`. → live spike.
+- ~~A1. Structured outputs work for the chosen models.~~ Verified (D-009).
+- ~~A2. Jev latency is low enough to call on every page.~~ Verified (D-016).
+- ~~A3. Tavily accepts Bearer auth.~~ Verified (D-018).
+- A7. Jev's behaviour on synthetic page summaries carries over to real pages built from Stagehand observations. → calibrate on the fake provider (Sprint 4).
 - ~~A4. Stagehand's local mode sends nothing off-machine except our model callback.~~ Verified (D-014).
 - ~~A5. A user-supplied `user_data_dir` keeps cookies/localStorage across restarts.~~ **False** with Stagehand's own launch/close; true with CredAgent-owned Chrome (D-012).
 - A6. Chrome's graceful quit flushes the profile even after a long session with sign-ins (verified only for a cookie and localStorage set seconds before quitting). → re-check during the Sprint 5 resume tests.
 
 ## Open questions (PRD §15 / spec §10)
-- Q1. Jev model ID, format, latency (→ D-009/D-010 provisional; live spike pending).
+- ~~Q1. Jev model ID, format, latency.~~ Resolved: D-009, D-010, D-016 (version cannot be pinned; logged per call).
 - ~~Q2. Stagehand persistent profile and hiding page content from its model.~~ Resolved: D-012, D-013.
 - Q3. Default redirect URI: local placeholder vs. the integration's real callback (e.g. Composio's). **Open: owner decision, needed before Sprint 6.**
 - Q4. Secret store: owner-only file (default, implemented) vs. OS keychain. **Open: evaluate in Sprint 5.** Input: Time Machine currently backs up `~/.credagent` (D-015).

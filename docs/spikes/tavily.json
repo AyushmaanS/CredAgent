@@ -1,0 +1,151 @@
+{
+  "ran_at": "2026-11-15T19:23:28+0530",
+  "searches": [
+    {
+      "query": "GitHub create OAuth app client ID client secret developer settings",
+      "latency_ms": 2779,
+      "count": 5,
+      "result_fields": [
+        "content",
+        "id",
+        "raw_content",
+        "score",
+        "title",
+        "url"
+      ],
+      "top": [
+        {
+          "title": "How to Set Up a GitHub OAuth Application",
+          "url": "https://www.freecodecamp.org/news/how-to-set-up-a-github-oauth-application",
+          "score": 0.75328517
+        },
+        {
+          "title": "Authenticating to the REST API with an OAuth app - GitHub Docs",
+          "url": "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authenticating-to-the-rest-api-with-an-oauth-app",
+          "score": 0.62314755
+        },
+        {
+          "title": "Creating an OAuth app - GitHub Docs",
+          "url": "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app",
+          "score": 0.5777932
+        },
+        {
+          "title": "How to Get Github Client ID and Client Secret",
+          "url": "https://www.youtube.com/watch?v=BbJt6HpZnNU",
+          "score": 0.5628975
+        },
+        {
+          "title": "GitHub Apps \"Client secrets\" vs \"Private keys\" \u00b7 community \u00b7 Discussion #28581 \u00b7 GitHub",
+          "url": "https://github.com/orgs/community/discussions/28581",
+          "score": 0.51112944
+        }
+      ]
+    },
+    {
+      "query": "Raindrop.io API developer app client credentials",
+      "latency_ms": 421,
+      "count": 5,
+      "result_fields": [
+        "content",
+        "id",
+        "raw_content",
+        "score",
+        "title",
+        "url"
+      ],
+      "top": [
+        {
+          "title": "Obtain access token | API Documentation",
+          "url": "https://developer.raindrop.io/v1/authentication/token",
+          "score": 0.65035623
+        },
+        {
+          "title": "Raindrop credentials",
+          "url": "https://developer.transmitsecurity.com/guides/automated-workflows/integrations/builtin/credentials/raindrop",
+          "score": 0.6108598
+        },
+        {
+          "title": "Overview | API Documentation",
+          "url": "https://developer.raindrop.io",
+          "score": 0.24889915
+        },
+        {
+          "title": "Client Credentials Authorization Flow - Mendeley Developer Portal",
+          "url": "https://dev.mendeley.com/reference/topics/authorization_client_credentials.html",
+          "score": 0.1859472
+        },
+        {
+          "title": "Export | API Documentation",
+          "url": "https://developer.raindrop.io/v1/export",
+          "score": 0.09073549
+        }
+      ]
+    },
+    {
+      "query": "zzqx nonexistent app developer API keys",
+      "latency_ms": 621,
+      "count": 5,
+      "result_fields": [
+        "content",
+        "id",
+        "raw_content",
+        "score",
+        "title",
+        "url"
+      ],
+      "top": [
+        {
+          "title": "Api abuse - non-existing keys (or are there hidden legacy api-keys)? - API - OpenAI Developer Community",
+          "url": "https://community.openai.com/t/api-abuse-non-existing-keys-or-are-there-hidden-legacy-api-keys/1227111",
+          "score": 0.36139008
+        },
+        {
+          "title": "How to troubleshoot API error \"api key does not exist\" - Develop, Build & Integrate / APIs & Integrations - HubSpot Community",
+          "url": "https://community.hubspot.com/t/how-to-troubleshoot-api-error-api-key-does-not-exist/122918",
+          "score": 0.34953272
+        },
+        {
+          "title": "Cannot create API Key - \"Account Does Not Exist\" - Access/Accounts - NVIDIA Developer Forums",
+          "url": "https://forums.developer.nvidia.com/t/cannot-create-api-key-account-does-not-exist/339496",
+          "score": 0.25219983
+        },
+        {
+          "title": "Signup and API keys \u00a0|\u00a0 Google Awareness API (Deprecated) \u00a0|\u00a0 Google for Developers",
+          "url": "https://developers.google.com/awareness/android-api/get-a-key",
+          "score": 0.23704566
+        },
+        {
+          "title": "API keys: Create API keys for 3rd-party apps | Nutshell Help Center",
+          "url": "https://support.nutshell.com/en/articles/8429060-api-keys-create-api-keys-for-3rd-party-apps",
+          "score": 0.19482698
+        }
+      ]
+    }
+  ],
+  "extracts": [
+    {
+      "urls": [
+        "https://www.freecodecamp.org/news/how-to-set-up-a-github-oauth-application",
+        "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authenticating-to-the-rest-api-with-an-oauth-app"
+      ],
+      "latency_ms": 290,
+      "ok": [
+        {
+          "url": "https://www.freecodecamp.org/news/how-to-set-up-a-github-oauth-application",
+          "chars": 6383
+        },
+        {
+          "url": "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authenticating-to-the-rest-api-with-an-oauth-app",
+          "chars": 14455
+        }
+      ],
+      "failed": [],
+      "result_fields": [
+        "images",
+        "raw_content",
+        "title",
+        "url"
+      ]
+    }
+  ]
+}

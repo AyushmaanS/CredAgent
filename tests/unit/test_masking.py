@@ -56,3 +56,30 @@ def test_hex_secret_masked():
     hex40 = secrets.token_hex(20)  # like a 40-char hex client secret
     out = Masker().mask_text(f"Client secret {hex40} shown once")
     assert hex40 not in out
+
+
+def test_research_urls_survive_masking():
+    urls = [
+        "https://community.openai.com/t/how-do-i-get-an-api-key-for-my-project/1234567",
+        "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app",
+        "https://forums.developer.nvidia.com/t/where-to-find-developer-api-keys/2024123",
+        "https://support.example.test/en/articles/8128613-api-keys-create-api-keys-for-3rd-party-apps",
+    ]
+    for u in urls:
+        assert Masker().mask_text(f"see {u} for details") == f"see {u} for details"
+
+
+def test_secret_inside_url_still_masked():
+    import secrets
+    tok = secrets.token_urlsafe(30)
+    out = Masker().mask_text(f"https://api.example.test/cb?code=x&state={tok}")
+    assert tok not in out and out.startswith("https://api.example.test/cb?code=x&state=")
+    assert "client_secret=" in Masker().mask_text("https://x.test/t?client_secret=Ab12Cd34Ef56Gh78")
+    assert "Ab12Cd34Ef56Gh78" not in Masker().mask_text("https://x.test/t?client_secret=Ab12Cd34Ef56Gh78")
+
+
+def test_base64_secret_with_slash_outside_url_masked():
+    import base64
+    import secrets
+    b64 = base64.b64encode(secrets.token_bytes(30)).decode()  # may contain / and +
+    assert b64 not in Masker().mask_text(f"secret access key {b64}")
