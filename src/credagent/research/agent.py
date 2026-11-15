@@ -40,14 +40,26 @@ from credagent.state.models import Fact, Identification, Plan, PlanStep, Source
 
 @dataclass(frozen=True)
 class ResearchBudget:
-    max_searches: int = 6
+    max_searches: int = 8           # 3 fixed queries + up to 5 model-proposed follow-ups
     max_results_per_search: int = 5
-    max_extracts: int = 4
+    max_extracts: int = 6           # pages read in full (each ≤ max_chars_per_page)
     max_llm_calls: int = 4          # triage + synthesis, one retry each
     max_seconds: float = 180.0
     max_chars_per_page: int = 12_000
     max_snippet_chars: int = 700
     max_plan_steps: int = 15
+    extract_batch: int = 5          # URLs per Tavily extract request
+
+    @property
+    def max_follow_ups(self) -> int:
+        return max(0, self.max_searches - len(INITIAL_QUERIES))
+
+
+INITIAL_QUERIES = (
+    "{subject} developer API authentication credentials",
+    "{subject} create OAuth app client ID client secret developer console",
+    "{subject} API key developer documentation",
+)
 
 
 class ResearchError(Exception):
@@ -203,10 +215,18 @@ class ResearchAgent:
         self._check_time()
         urls = urls[: self.budget.max_extracts]
         self._extracts += len(urls)
-        try:
-            data = self.searcher.extract(urls)
-        except TavilyError as exc:
-            self.actions.append({"action": "extract", "urls": urls, "error": str(exc)[:200]})
+        data: dict[str, Any] = {"results": [], "failed_results": [], "latency_ms": 0}
+        for i in range(0, len(urls), self.budget.extract_batch):  # batches: no reliance on a per-request max
+            batch = urls[i: i + self.budget.extract_batch]
+            try:
+                part = self.searcher.extract(batch)
+            except TavilyError as exc:
+                self.actions.append({"action": "extract", "urls": batch, "error": str(exc)[:200]})
+                continue
+            data["results"] += part.get("results") or []
+            data["failed_results"] += part.get("failed_results") or []
+            data["latency_ms"] += part.get("latency_ms") or 0
+        if not data["results"] and not data["failed_results"]:
             return []
         pages = []
         for p in data.get("results") or []:
@@ -256,6 +276,7 @@ class ResearchAgent:
             except ValidationError as exc:
                 last_err = f"{exc.error_count()} schema errors: " + "; ".join(
                     f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:5])
+                self.actions.append({"action": f"llm_{name}", "error": f"invalid output: {last_err}"[:300]})
                 messages = [*messages, {"role": "assistant", "content": json.dumps(out["parsed"])[:4000]},
                             {"role": "user", "content": f"That output was invalid ({last_err}). "
                              "Return corrected JSON that matches the schema exactly."}]
@@ -267,10 +288,8 @@ class ResearchAgent:
         subject = f"{chosen.name} ({chosen.provider})" if chosen else app
         results: dict[str, dict[str, Any]] = {}
         errors: list[str] = []
-        for q in (f"{subject} developer API authentication credentials",
-                  f"{subject} create OAuth app client ID client secret developer console",
-                  f"{subject} API key developer documentation"):
-            self._search(q, results, errors)
+        for q in INITIAL_QUERIES:
+            self._search(q.format(subject=subject), results, errors)
         if not results:
             if errors:
                 raise ResearchUnavailable("tavily", errors[-1])
@@ -286,9 +305,11 @@ class ResearchAgent:
                 "(app_identified, identification_confidence)? Is the name ambiguous between "
                 "different products (ambiguous, candidates: up to 4, with homepage_url only if a "
                 "source shows it)? Which domains are the provider's own (official_domains, bare "
-                "hostnames such as 'example.com')? Which result URLs (copy exactly, up to 4) should "
+                "hostnames such as 'example.com')? Which result URLs (copy exactly, "
+                f"up to {self.budget.max_extracts}) should "
                 "be read in full to learn how to obtain credentials (urls_to_read, official docs "
-                "first)? Up to 2 follow_up_queries only if essential.\n\n"
+                f"first)? Up to {self.budget.max_follow_ups} follow_up_queries, only for credential setup details "
+                "the results above do not cover.\n\n"
                 + _sources_block(ranked, []))},
         ], max_tokens=1500)
 
@@ -300,7 +321,7 @@ class ResearchAgent:
                                   [] if chosen else triage.candidates[:4],
                                   self._sources(results, []), self.actions)
 
-        for q in triage.follow_up_queries[:2]:
+        for q in triage.follow_up_queries[: self.budget.max_follow_ups]:
             self._search(q, results, errors)
 
         retrieved_hosts = [host_of(r["url"]) for r in results.values()]

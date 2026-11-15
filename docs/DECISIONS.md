@@ -194,7 +194,7 @@ Sprint 2 live runs only read public documentation through Tavily and send it to 
 
 ## D-029 Research pipeline and budgets — Decided (resolves the research part of Q6)
 Fixed pipeline, not an open-ended loop: 3 searches → triage LLM → ≤2 follow-up searches → read ≤4 pages → synthesis LLM → code validation.
-Budgets (`ResearchBudget`): ≤6 searches × 5 results; ≤4 extracted pages, each truncated to 12,000 chars; 700-char snippets; ≤4 LLM calls (one retry each); 180 s total; ≤15 model-proposed steps. Exhaustion gives a resumable `failed: research budget exhausted`. *Observed:* 8–83 s per run, 2–3 LLM calls.
+Budgets (`ResearchBudget`, **raised by the owner 2026-11-15, see D-040**): ≤8 searches × 5 results; ≤6 pages read, each ≤12,000 chars (relevant sections for long pages, D-038); 700-char snippets; ≤4 LLM calls (one retry each); 180 s total; ≤15 model-proposed steps. Exhaustion gives a resumable `failed: research budget exhausted`. *Observed:* 8–83 s per run, 2–3 LLM calls.
 
 ## D-030 Code validates every research claim — Decided
 - A `sourced` fact, blocker or DCR claim must cite a URL that research actually retrieved. Otherwise code downgrades it to `inferred` (DCR claims to `unknown`) and records a correction note.
@@ -251,6 +251,14 @@ Every sourced fact, sourced blocker and documented-DCR claim must include a shor
 Sourced facts are also tagged by code when weaker: `[code: third-party source]` (cited host not an official domain) and/or `[code: search snippet only]` (page never opened).
 *Observed* (GitHub, 2 runs after the change): 7 and 8 sourced facts, all quotes verified, 0 downgrades. The console URL `github.com/settings/applications/new` is now labelled inferred, because no retrieved GitHub page prints it. The model's false "page truncated" unknown no longer appears.
 Limit: a quote proves the source *says* the words, not that the model's paraphrase in `statement` is faithful. The report shows the quote next to each statement so a reader can compare.
+
+## D-040 Research limits raised: 8 searches, 6 pages — Decided (owner request, 2026-11-15)
+Owner asked for 8 searches (was 6) and 6 pages read (was 4). Per-page size stays 12,000 chars.
+Two hidden caps had to change too, or the new limits would have had no effect:
+- Searches: 3 fixed queries + **up to 5** model-proposed follow-ups (was 2). Before, only 5 searches could ever run, so a limit of 6 was never reached. The triage prompt states the numbers from the budget.
+- Pages: the Tavily client sends at most 5 URLs per extract request. The agent now reads pages **in batches of 5**, so 6 pages = 5 + 1 requests, with no reliance on an unverified Tavily per-request maximum.
+*Observed* (GitHub, 2 live runs): 6 searches used (the model asked for 3 of 5 follow-ups); 6 pages read (2 in full, 4 partially); 8–9 sourced facts, all quotes verified, 0 downgrades; 60 s and 94 s (was 42–79 s). Synthesis input ≈ 80k chars.
+In one of the two runs the first synthesis answer failed schema validation and was retried (+37 s, +1 LLM call). The reason was not logged then. Schema-validation failures are now recorded in the run log (`research_action` with `invalid output: …`). The next run had no retry. Retries stay within the 4-call LLM budget.
 
 ---
 

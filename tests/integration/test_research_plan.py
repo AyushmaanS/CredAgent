@@ -266,9 +266,15 @@ def test_tavily_down_is_research_failure_not_provider_rejection(tmp_path):
 
 def test_invalid_output_retried_once(tmp_path):
     r = FakeReasoner({"triage": ["invalid", triage()], "synthesis": [findings()]})
-    run = orch(tmp_path, FakeSearcher(), r)[0].get("Acme")
+    o, store = orch(tmp_path, FakeSearcher(), r)
+    run = o.get("Acme")
+
+    def o_actions(run):
+        return [e["data"] for e in store.events(run.id) if e["type"] == "research_action"]
     assert run.phase == "planned"
     assert "invalid" in r.calls[1]["messages"][-1]["content"]
+    errs = [a for a in o_actions(run) if a.get("error", "").startswith("invalid output")]
+    assert errs and "schema errors" in errs[0]["error"]
 
 
 def test_invalid_output_twice_fails_resumably(tmp_path):
@@ -461,3 +467,21 @@ def test_sourced_facts_tagged_by_source_strength(tmp_path):
     st = [x.statement for x in p.facts if x.kind == "sourced"]
     assert st[0] == "Official, read"
     assert st[1] == "Blog snippet [code: third-party source; search snippet only]"
+
+
+def test_search_and_page_limits_8_and_6_with_batched_reads(tmp_path):
+    many = [result(f"https://docs.acme.example/page-{i}", f"Docs {i}", "oauth app client secret", 0.9 - i / 100)
+            for i in range(10)]
+    s = FakeSearcher(results=many)
+    r = FakeReasoner({"triage": [triage(urls_to_read=[m["url"] for m in many],
+                                        follow_up_queries=[f"q{i}" for i in range(10)])],
+                      "synthesis": [findings()]})
+    run = orch(tmp_path, s, r)[0].get("Acme")
+    assert run.phase == "planned"
+    assert len(s.searches) == 8                       # 3 fixed + 5 follow-ups, never more
+    assert [len(b) for b in s.extracted] == [5, 1]    # 6 pages, batched 5 + 1
+    assert sum(x.via == "extract" for x in run.plan.sources) == 6
+    triage_prompt = r.calls[0]["messages"][1]["content"]
+    assert "up to 6) should" in triage_prompt and "Up to 5 follow_up_queries" in triage_prompt
+    b = ResearchBudget()
+    assert (b.max_searches, b.max_extracts, b.max_chars_per_page, b.max_follow_ups) == (8, 6, 12_000, 5)

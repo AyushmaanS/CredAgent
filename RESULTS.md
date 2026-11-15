@@ -29,7 +29,9 @@ Sprint 2 live research through Tavily + FastRouter. Not demo runs; listed for co
 | 2026-11-15 | GitHub | 20261115-143914-github-7436 | planned | after D-034 fix |
 | 2026-11-15 | Notion | 20261115-143956-notion-3326 | planned | after D-034 fix |
 | 2026-11-15 | GitHub | 20261115-153255-github-839f | planned | after depth + quote checks (D-038/D-039): 7 sourced, all quotes verified |
-| 2026-11-15 | GitHub | 20261115-153458-github-9cfb | planned | adds weak-source tags; sample in docs/samples/plan-github.md |
+| 2026-11-15 | GitHub | 20261115-153458-github-9cfb | planned | adds weak-source tags |
+| 2026-11-15 | GitHub | 20261115-154201-github-9fc0 | planned | limits 8 searches / 6 pages (D-040); first synthesis answer invalid, retried once |
+| 2026-11-15 | GitHub | 20261115-154416-github-9a98 | planned | limits 8/6, no retry; sample in docs/samples/plan-github.md |
 
 No credential was obtained or tested in any of these runs.
 
