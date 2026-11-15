@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ValidationError
 
-from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
+from credagent.reasoning.fastrouter import ModelCallError, OutputTruncated, ServiceUnavailable
 from credagent.research.schemas import (
     FINDINGS_SCHEMA,
     TRIAGE_SCHEMA,
@@ -210,9 +210,17 @@ class ResearchAgent:
             self._llm_calls += 1
             try:
                 out = self.reasoner.chat(messages, model=self.model, json_schema=schema,
-                                         schema_name=name, max_tokens=max_tokens, timeout_s=120)
+                                         schema_name=name, max_tokens=max_tokens, timeout_s=180)
             except ServiceUnavailable as exc:
                 raise ResearchUnavailable("fastrouter", str(exc)) from None
+            except OutputTruncated as exc:
+                last_err = str(exc)
+                self.actions.append({"action": f"llm_{name}", "error": last_err[:200]})
+                max_tokens = min(max_tokens * 2, 16_000)
+                messages = [*messages, {"role": "user", "content": "Your previous answer was cut off before the "
+                            "JSON was complete. Answer again, more concisely: at most 12 facts, 12 setup steps, "
+                            "6 blockers, and short strings."}]
+                continue
             except ModelCallError as exc:
                 last_err = str(exc)
                 self.actions.append({"action": f"llm_{name}", "error": last_err[:200]})
@@ -314,7 +322,7 @@ class ResearchAgent:
                 "- facts: the key claims, each sourced (with url), inferred or unknown. unknowns: open "
                 "questions the browser must observe.\n\n"
                 + _sources_block(ranked, pages, self.budget.max_snippet_chars, self.budget.max_chars_per_page))},
-        ], max_tokens=4000)
+        ], max_tokens=8000)
 
         sources = self._sources(results, pages)
         plan = build_plan(findings, triage, official, sources, self.budget.max_plan_steps)
@@ -382,18 +390,30 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         facts.append(Fact(statement=f"Console URL {console} is inferred, not shown by a retrieved source.",
                           kind="inferred"))
 
-    steps = []
-    for i, s in enumerate(f.setup_steps[:max_steps], 1):
+    # Capture and verification are code-owned: the model's own capture/verify steps are not kept
+    # as steps (they could e.g. propose copying a different credential); their text is folded into
+    # the code-owned steps as research notes.
+    steps, capture_hints, verify_hints = [], [], []
+    for s in f.setup_steps:
         src = s.source_url if s.source_url and norm_url(s.source_url) in retrieved else None
-        steps.append(PlanStep(id=f"p{i}", description=s.description + ("" if src else " (inferred)"),
-                              kind=s.kind))
-    # Capture and verification are code-owned steps, always present and always last.
+        text = s.description + ("" if src else " (inferred)")
+        if s.kind == "capture":
+            capture_hints.append(text)
+        elif s.kind == "verify":
+            verify_hints.append(text)
+        elif len(steps) < max_steps:
+            steps.append(PlanStep(id=f"p{len(steps) + 1}", description=text, kind=s.kind))
+    if capture_hints or verify_hints:
+        notes.append(f"{len(capture_hints) + len(verify_hints)} model-written capture/verify step(s) folded "
+                     "into the code-owned capture and live-test steps (only the credential being created is "
+                     "captured).")
     n = len(steps)
-    steps.append(PlanStep(id=f"p{n + 1}", kind="capture",
-                          description="Capture the credential with plain browser code (never a model) "
-                                      "and store it outside the repo."))
-    steps.append(PlanStep(id=f"p{n + 2}", kind="verify",
-                          description=f"Live test: {f.verification.method}"))
+    steps.append(PlanStep(id=f"p{n + 1}", kind="capture", description=(
+        "Capture only the newly created credential with plain browser code (never a model) and store it "
+        "outside the repo." + (" Research notes: " + " | ".join(capture_hints) if capture_hints else ""))))
+    steps.append(PlanStep(id=f"p{n + 2}", kind="verify", description=(
+        f"Live test: {f.verification.method}"
+        + (" Research notes: " + " | ".join(verify_hints) if verify_hints else ""))))
 
     vproc = f.verification.method
     if f.verification.endpoint:
@@ -411,9 +431,24 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
             f.oauth_metadata.source_url, "Dynamic-registration claim downgraded to unknown"):
         dcr = "unknown"
 
+    gating = [b for b in f.likely_blockers if b.kind in ("provider_review", "business_verification",
+                                                         "partner_approval", "paid_plan")]
+    sourced_gating = [b for b in gating if b.basis == "sourced" and norm_url(b.source_url) in retrieved]
+    if f.predicted_outcome == "succeeded" and sourced_gating:
+        notes.append("Prediction 'succeeded' may be optimistic: research cites "
+                     + ", ".join(sorted({b.kind for b in sourced_gating}))
+                     + " requirement(s). The browser run must establish whether they apply.")
+
+    alternatives = [f"{o.kind}: {o.description}" for o in f.credential_options
+                    if o.kind != f.chosen_credential_kind][:5]
+    if alternatives:
+        notes.append(f"{len(alternatives)} other credential type(s) found; choosing between credential "
+                     "types is the person's decision (DECIDE) before the browser starts.")
+
     unknowns = list(f.unknowns)
     if f.chosen_credential_kind == "unknown":
         unknowns.insert(0, "Which credential type this app issues was not established.")
+    notes = list(dict.fromkeys(notes))  # dedupe, keep order
     return Plan(
         identification=Identification(canonical_name=triage.canonical_name, provider=triage.provider,
                                       confidence=triage.identification_confidence,
@@ -421,6 +456,7 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         credential_kind=f.chosen_credential_kind, console_url=console, allowed_domains=allowed,
         steps=steps, predicted_outcome=f.predicted_outcome,
         expected_blockers=blockers, verification_procedure=vproc, facts=facts, unknowns=unknowns,
+        alternatives=alternatives,
         sources=sources, needs_redirect_uri=f.needs_redirect_uri,
         scopes=[s.name for s in f.scopes_or_permissions][:20], dynamic_registration=dcr,
         metadata_url=meta_url if meta_url and on_domain(host_of(meta_url), allowed) else None,

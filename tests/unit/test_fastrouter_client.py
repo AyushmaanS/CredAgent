@@ -62,3 +62,14 @@ def test_4xx_is_model_call_error_without_key():
 def test_missing_key_is_plain_error():
     with pytest.raises(ModelCallError):
         FastRouterClient(Settings(), Masker())
+
+
+def test_truncated_structured_output_is_reported_as_truncation():
+    from credagent.reasoning.fastrouter import OutputTruncated
+
+    def handler(req):
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"a": [1, 2'},
+                                                      "finish_reason": "length"}]})
+
+    with pytest.raises(OutputTruncated):
+        client(handler).chat([{"role": "user", "content": "x"}], json_schema={"type": "object"})

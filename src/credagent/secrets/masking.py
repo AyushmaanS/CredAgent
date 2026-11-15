@@ -60,6 +60,15 @@ def _mask_url_segment(m: re.Match[str]) -> str:
     return m.group(0) if _SLUG_RE.fullmatch(m.group(0)) else _mask_match(m)
 
 
+def _secretish(value: str) -> bool:
+    """A labelled value ('token: X') is masked only if X looks like a credential, not a word:
+    letters mixed with digits, or 20+ characters without spaces. Prose like
+    'token: Fine-grained' is kept; exact registered secrets are always masked regardless."""
+    has_alpha = any(c.isalpha() for c in value)
+    has_digit = any(c.isdigit() for c in value)
+    return (has_alpha and has_digit) or len(value) >= 20
+
+
 def _mask_tokens(text: str) -> str:
     return _TOKEN_RE.sub(_mask_match, text)
 
@@ -113,7 +122,8 @@ class Masker:
         for label, pattern in PATTERNS:
             if label == "labelled_secret":
                 text = pattern.sub(
-                    lambda m: m.group(1) + PLACEHOLDER.format(label="labelled_secret"), text
+                    lambda m: m.group(1) + PLACEHOLDER.format(label="labelled_secret")
+                    if _secretish(m.group(2)) else m.group(0), text
                 )
             else:
                 text = pattern.sub(PLACEHOLDER.format(label=label), text)

@@ -188,6 +188,56 @@ The spec's `CredentialReference` has a single `storeRef`. An OAuth client has tw
 ## D-027 Real-browser tests are opt-in — Decided
 `tests/integration/test_fake_provider_browser.py` launches Chrome, so it runs only with `CREDAGENT_BROWSER_TESTS=1` (headed by default; `CREDAGENT_HEADLESS=1` hides the window). It calls no model API: Stagehand gets a recording callback. *Observed* (headed and headless, 2026-11-15): cookie "Reject all" by plain click; sign-in by the simulated person; **sign-in survived a full Chrome quit and relaunch**; terms left unticked by the agent; one real `observe()` model request containing the page minus the excluded credentials panel, with neither client ID nor secret in it; secret read by plain code on first view and hidden after reload; captured credential passed the token + `/api/me` live test; audit shows terms accepted once, by the person, and no forbidden events.
 
+## D-028 Research-only live runs are not "real-provider runs" under the protocol — Decided (interpretation)
+Sprint 2 live runs only read public documentation through Tavily and send it to the LLM. There is no browser, no provider account and no console. The protocol's consent rule (section 2) covers acting in a provider's console or account, so research-only runs need no per-provider consent. Every browser run against a real provider still does.
+**Incident (minor, disclosed):** once, while wiring up `get`, an existing CLI test still invoked `credagent get "GitHub"` before tests were isolated from the real `.env.local`. One unintended research-only run used the owner's FastRouter and Tavily keys (3 searches, 1 extract call, 2 LLM calls; run `20261115-142849-github-9979`). Nothing else happened, and no secret was exposed (keys are never printed; the run was masked as usual). Fix: `tests/conftest.py` now isolates every test from the real env file, keys and `~/.credagent`, so no test can reach the network through the real clients. The same fix exposed and corrected an env-file precedence bug (an explicit `env_file` argument now beats `CREDAGENT_ENV_FILE`).
+
+## D-029 Research pipeline and budgets — Decided (resolves the research part of Q6)
+Fixed pipeline, not an open-ended loop: 3 searches → triage LLM → ≤2 follow-up searches → read ≤4 pages → synthesis LLM → code validation.
+Budgets (`ResearchBudget`): ≤6 searches × 5 results; ≤4 extracted pages, each truncated to 12,000 chars; 700-char snippets; ≤4 LLM calls (one retry each); 180 s total; ≤15 model-proposed steps. Exhaustion gives a resumable `failed: research budget exhausted`. *Observed:* 8–83 s per run, 2–3 LLM calls.
+
+## D-030 Code validates every research claim — Decided
+- A `sourced` fact, blocker or DCR claim must cite a URL that research actually retrieved. Otherwise code downgrades it to `inferred` (DCR claims to `unknown`) and records a correction note.
+- Official domains must match the host of a retrieved source; others are dropped. The console URL must be on an allowed domain, otherwise it is not used.
+- Allowed domains = validated official domains + sign-in domains under them. A sign-in domain elsewhere becomes a DO handoff when navigating.
+- Pages to read can only be chosen from URLs already retrieved: triage cannot make the agent fetch an arbitrary URL. Web content is delimited as untrusted data, and a page cannot close the delimiter (tested).
+- A proposed live test that only proves the client ID exists is flagged: a pass would be `client_recognized`, never `succeeded`.
+- Prediction consistency: `succeeded` predicted alongside a sourced review/verification/partner/paid-plan blocker gets an "may be optimistic" note. The model's prediction is not overwritten; the browser run decides.
+All corrections are listed in the plan and the report under "Corrections made by code".
+
+## D-031 Unidentifiable or ambiguous app names — Decided
+Not identified → `blocked` (`app_not_identified`, not resumable), next step: re-run with the company name. No plan is invented, and synthesis is never called (*observed* for `zzqx`: 1 LLM call, 8 s).
+Ambiguous between products → DECIDE handoff listing up to 4 candidates plus "None of these". The chosen candidate is researched again; "None of these" → `blocked`. Without an answer, the run is saved with the DECIDE pending.
+
+## D-032 Pause after planning — Decided (Sprint 2 only)
+Until the browser loop exists, `get` stops after the plan: `status=running`, `phase=planned`, with the reason stated. It is resumable once browser execution lands (Sprint 3). This is not reported as an outcome.
+
+## D-033 Truncated structured output — Decided
+*Observed:* the first Notion synthesis failed twice with "not valid JSON". Cause: output cut off at `max_tokens=4000`, and the retry repeated the identical request. Fix: the FastRouter client reports `finish_reason` and raises `OutputTruncated`. Synthesis starts at 8,000 tokens; on truncation the retry doubles the limit (≤16,000) and asks for a shorter answer. *Observed after fix:* Notion planned on the first attempt (twice).
+
+## D-034 Capture and verification steps are code-owned — Decided
+*Observed:* the model wrote its own capture/verify steps, duplicating code's. One (Todoist) proposed also copying the account's **personal API token**, a credential other than the one being created (protocol hard stop 8). Now model capture/verify steps are never kept as steps: their text is folded into the single code-owned capture and live-test steps as research notes. The capture step says "capture only the newly created credential". Policy enforcement of this rule in the browser is Sprint 4.
+
+## D-035 Choosing between credential types is a DECIDE — Decided (implementation in Sprint 3)
+*Observed:* research often finds several credential types (GitHub: OAuth app / GitHub App / PATs; Notion: public OAuth connection / internal connection token / PAT). The model picks one ("integration ⇒ OAuth client"), but PRD §9 makes app-type choices the person's decision. The plan now lists the alternatives. **Before the browser starts (Sprint 3), CredAgent will ask a DECIDE with the model's recommendation first** whenever alternatives exist.
+
+## D-036 Masking of labelled values refined — Decided
+*Observed:* `token: Fine-grained personal access token` was masked as a secret, garbling the plan. A labelled value is now masked only if it mixes letters and digits, or is ≥ 20 characters without spaces. Exact registered secrets and prefixed key patterns are unaffected (tests both ways).
+
+## D-037 Live research quality, 2026-11-15 — Recorded
+| App | Result | Time | Quality notes |
+|---|---|---:|---|
+| GitHub | planned, oauth_client, predicted succeeded | 42–58 s | Console URL exactly right (`github.com/settings/applications/new`); 10 sourced facts. Alternatives (GitHub App, PATs) surfaced. Live test needs the authorization-code flow (a person approves). |
+| Notion (1st) | **failed**: synthesis truncated (D-033) | 66 s | Fixed; kept in RESULTS.md. |
+| Notion | planned, oauth_client (public connection), predicted succeeded + "optimistic" note | 44–83 s | Sourced provider-review step. Console `notion.so/developers` **rejected** because `notion.so` was not among retrieved hosts (conservative; see limitation 1). Proposed test was client_recognized only, and flagged. |
+| Todoist (not used in development before) | planned, oauth_client, predicted succeeded | 60 s | Console URL correct. Sourced blockers. Proposed copying a personal API token (now prevented, D-034). |
+| zzqx (nonsense) | blocked: app_not_identified | 8 s | No plan invented; Tavily returned only off-topic results. |
+Known limitations / failure modes:
+1. Official domains come only from retrieved hosts, so a provider's second domain (e.g. `notion.so` vs `notion.com`) can be missed. The browser run will then hand navigation there to the person. Sprint 3 can add redirect observation as *observed* evidence.
+2. Predictions tend to be optimistic. Code flags this but does not override it.
+3. OAuth-client live tests usually need the authorization-code flow (a person approves, a redirect URI receives the code). This makes **Q3 (default redirect URI) a decision needed by Sprint 5**.
+4. Ranking mixes tutorials with official docs. Triage prefers official docs, and code only cites retrieved URLs, but a tutorial can still be the cited source for a step.
+
 ---
 
 ## Discrepancies between documents
@@ -208,8 +258,8 @@ The spec's `CredentialReference` has a single `storeRef`. An OAuth client has tw
 ## Open questions (PRD §15 / spec §10)
 - ~~Q1. Jev model ID, format, latency.~~ Resolved: D-009, D-010, D-016 (version cannot be pinned; logged per call).
 - ~~Q2. Stagehand persistent profile and hiding page content from its model.~~ Resolved: D-012, D-013.
-- Q3. Default redirect URI: local placeholder vs. the integration's real callback (e.g. Composio's). **Open: owner decision, needed before Sprint 6.**
+- Q3. Default redirect URI: local placeholder vs. the integration's real callback (e.g. Composio's). **Open: owner decision, now needed before Sprint 5** (OAuth live tests need it, D-037).
 - Q4. Secret store: owner-only file (default, implemented) vs. OS keychain. **Open: evaluate in Sprint 5.** Input: Time Machine currently backs up `~/.credagent` (D-015).
 - Q5. Demo app list and each provider's automation terms. **Open: Sprint 6.**
 - ~~Spec open decision 5 (run-state format and location).~~ Resolved: D-024.
-- Q6. Budgets: research/search count, page observations, actions, per-call timeouts, retries, total run time, max plan steps. **Open: set in Sprints 2–4.** Current client defaults: LLM timeout 60 s, Jev 20 s, Tavily 30 s.
+- Q6 (research part resolved: D-029). Budgets: research/search count, page observations, actions, per-call timeouts, retries, total run time, max plan steps. **Open: set in Sprints 2–4.** Current client defaults: LLM timeout 60 s, Jev 20 s, Tavily 30 s.

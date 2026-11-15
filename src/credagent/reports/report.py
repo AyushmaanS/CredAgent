@@ -56,7 +56,7 @@ def build_report(run: Run, events: list[dict[str, Any]] | None = None) -> dict[s
         "plan": {"credential_kind": p.credential_kind, "console_url": p.console_url,
                  "allowed_domains": p.allowed_domains, "revision": p.revision,
                  "replans_used": run.replans_used,
-                 "steps": [s.model_dump() for s in p.steps],
+                 "steps": [s.model_dump() for s in p.steps], "alternatives": p.alternatives,
                  "expected_blockers": p.expected_blockers, "needs_redirect_uri": p.needs_redirect_uri,
                  "scopes": p.scopes, "dynamic_registration": p.dynamic_registration,
                  "metadata_url": p.metadata_url},
@@ -104,6 +104,7 @@ def render_markdown(r: dict[str, Any]) -> str:
     for s in r["steps"]["records"]:
         lines.append(f"- [{s['actor']}] {s['action']} → {s['outcome']}")
     lines += ["", "## Plan", f"- Credential type: {r['plan']['credential_kind']}",
+              f"- Alternatives found: {'; '.join(r['plan']['alternatives']) or 'none'}",
               f"- Console: {r['plan']['console_url'] or 'unknown'}",
               f"- Allowed domains: {', '.join(r['plan']['allowed_domains']) or '(none)'}",
               f"- Redirect URI needed: {r['plan']['needs_redirect_uri']} · Dynamic registration: "
@@ -153,6 +154,7 @@ def render_plan(run: Run, masker: Masker | None = None) -> str:
     out = [f"PLAN for {ident.canonical_name or run.app_input} ({ident.provider or 'provider unknown'}; "
            f"identification confidence: {ident.confidence})",
            f"  Credential: {p.credential_kind}   Predicted outcome: {p.predicted_outcome}",
+           *([f"  Alternatives found: {'; '.join(a[:90] for a in p.alternatives)}"] if p.alternatives else []),
            f"  Console: {p.console_url or 'unknown — will start from official docs'}",
            f"  Allowed domains: {', '.join(p.allowed_domains) or '(none)'}",
            f"  Redirect URI needed: {p.needs_redirect_uri}   Dynamic registration: {p.dynamic_registration}",

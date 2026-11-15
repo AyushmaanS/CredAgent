@@ -353,3 +353,37 @@ def test_cli_status_unknown_run():
     from credagent.cli.main import cli
     r = CliRunner().invoke(cli, ["status", "nope"])
     assert r.exit_code == 1 and "No run with id" in r.output
+
+
+def test_truncated_output_retried_with_more_tokens(tmp_path):
+    from credagent.reasoning.fastrouter import OutputTruncated
+    r = FakeReasoner({"triage": [triage()],
+                      "synthesis": [OutputTruncated("cut off at max_tokens=8000"), findings()]})
+    run = orch(tmp_path, FakeSearcher(), r)[0].get("Acme")
+    assert run.phase == "planned"
+    synth = [c for c in r.calls if c["schema_name"] == "synthesis"]
+    assert synth[1]["max_tokens"] == 2 * synth[0]["max_tokens"]
+    assert "cut off" in synth[1]["messages"][-1]["content"]
+
+
+def test_model_capture_steps_folded_and_other_credentials_not_planned(tmp_path):
+    f = findings(setup_steps=[
+        {"description": "Open Developer settings", "kind": "navigate", "source_url": DOCS},
+        {"description": "Generate a client secret and copy it", "kind": "capture", "source_url": DOCS},
+        {"description": "Also copy your personal API token", "kind": "capture", "source_url": None},
+        {"description": "Call /me", "kind": "verify", "source_url": None}],
+        credential_options=[
+            {"kind": "oauth_client", "description": "Public OAuth app", "best_for": "x", "source_url": DOCS},
+            {"kind": "token", "description": "Internal integration token", "best_for": "y", "source_url": DOCS}],
+        likely_blockers=[{"kind": "provider_review", "description": "Review before public use",
+                          "basis": "sourced", "source_url": DOCS}])
+    o, _ = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
+    p = o.get("Acme").plan
+    kinds = [s.kind for s in p.steps]
+    assert kinds == ["navigate", "capture", "verify"]  # exactly one code-owned capture + verify
+    assert "Generate a client secret" in p.steps[1].description
+    assert p.steps[1].description.startswith("Capture only the newly created credential")
+    assert p.alternatives == ["token: Internal integration token"]
+    assert any("optimistic" in n for n in p.validation_notes)
+    assert any("DECIDE" in n for n in p.validation_notes)
+    assert len(p.validation_notes) == len(set(p.validation_notes))

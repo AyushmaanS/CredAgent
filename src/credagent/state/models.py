@@ -119,6 +119,7 @@ class Plan(Strict):
     verification_procedure: str = ""
     facts: list[Fact] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+    alternatives: list[str] = Field(default_factory=list)  # other credential types research found
     sources: list[Source] = Field(default_factory=list)
     needs_redirect_uri: Literal["yes", "no", "unknown"] = "unknown"
     scopes: list[str] = Field(default_factory=list)

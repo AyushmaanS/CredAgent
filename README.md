@@ -6,8 +6,9 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> Status: **Sprint 1 (safety protocol, run model, fake provider).** The CLI commands exist but
-> are not implemented yet; they say so and exit with code 2. See
+> Status: **Sprint 2 (research and planning).** `get` researches an app and writes a plan, then
+> pauses (browser execution comes in Sprint 3). `status`, `runs` and `report` work. `resume`,
+> `verify` and `secret` say they are not implemented yet and exit with code 2. See
 > `docs/CHECKLIST.md` for progress and `docs/DECISIONS.md` for decisions.
 
 Requirements: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,

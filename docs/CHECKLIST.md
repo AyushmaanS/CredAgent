@@ -58,22 +58,22 @@ verified live, `[ ]` not started.
 
 Live research reads public docs via Tavily only: no browser, no provider account (D-028).
 
-- [ ] S2.1 `get` (research + plan, browser disabled), `status`, `runs`, `report` commands
-- [ ] S2.2 Orchestrator: create run → research → plan → checkpoint; resumable pause after planning
-- [ ] S2.3 Research budgets (searches, extracts, LLM calls, time, page size)
-- [ ] S2.4 Tavily wrapper: bounded queries, timeouts, URL dedup, source capture
-- [ ] S2.5 App/provider resolution (triage LLM call): identified / ambiguous / not identified; official domains
-- [ ] S2.6 Ambiguous app → DECIDE handoff with candidates; not identified → `blocked` with next steps
-- [ ] S2.7 Developer-console discovery + allowed domains derived from validated sources
-- [ ] S2.8 Structured synthesis: credential type, console URL, steps, blockers, OAuth metadata/DCR, verification, prediction, uncertainties
-- [ ] S2.9 Code validation: a "sourced" claim must cite a URL actually retrieved, otherwise it is downgraded to inferred and noted
-- [ ] S2.10 Untrusted content: research text delimited as data; no instructions followed; outputs validated
-- [ ] S2.11 Failure handling: FastRouter down → resumable `failed: service unavailable`; Tavily down → resumable failed (not provider rejection); invalid model output → one retry
-- [ ] S2.12 Re-plan function wired to the two-replan guard
-- [ ] S2.13 Markdown + JSON report with every required field (filled as later sprints land)
-- [ ] S2.14 Mocked tests: research→plan, nonsense, ambiguous, citation downgrade, off-domain console, service failures, CLI
-- [ ] S2.15 Live runs: GitHub, Notion, an unfamiliar app, a nonsense name; record quality and failure modes
-- [ ] S2.16 👤 Checkpoint: owner reviews one generated plan before browser execution is enabled
+- [x] S2.1 `get` (research + plan, browser disabled), `status`, `runs`, `report` commands
+- [x] S2.2 Orchestrator: create run → research → plan → checkpoint; resumable pause after planning
+- [x] S2.3 Research budgets (searches, extracts, LLM calls, time, page size)
+- [x] S2.4 Tavily wrapper: bounded queries, timeouts, URL dedup, source capture
+- [x] S2.5 App/provider resolution (triage LLM call): identified / ambiguous / not identified; official domains
+- [x] S2.6 Ambiguous app → DECIDE handoff with candidates; not identified → `blocked` with next steps
+- [x] S2.7 Developer-console discovery + allowed domains derived from validated sources
+- [x] S2.8 Structured synthesis: credential type, console URL, steps, blockers, OAuth metadata/DCR, verification, prediction, uncertainties
+- [x] S2.9 Code validation: a "sourced" claim must cite a URL actually retrieved, otherwise it is downgraded to inferred and noted
+- [x] S2.10 Untrusted content: research text delimited as data; no instructions followed; outputs validated
+- [x] S2.11 Failure handling: FastRouter down → resumable `failed: service unavailable`; Tavily down → resumable failed (not provider rejection); invalid model output → one retry
+- [x] S2.12 Re-plan function wired to the two-replan guard
+- [x] S2.13 Markdown + JSON report with every required field (filled as later sprints land)
+- [x] S2.14 Mocked tests: research→plan, nonsense, ambiguous, citation downgrade, off-domain console, service failures, CLI
+- [x] S2.15 Live runs: GitHub, Notion, an unfamiliar app, a nonsense name; record quality and failure modes
+- [ ] S2.16 👤 **Waiting:** checkpoint: owner reviews one generated plan before browser execution is enabled
 
 ## Sprint 3 — Metadata shortcut and browser loop
 - [ ] Per sprint plan

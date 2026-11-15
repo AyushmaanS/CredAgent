@@ -25,6 +25,10 @@ class ModelCallError(Exception):
     """FastRouter answered, but the request failed (4xx) or the output was unusable."""
 
 
+class OutputTruncated(ModelCallError):
+    """The model stopped at max_tokens, so structured output is incomplete."""
+
+
 class FastRouterClient:
     def __init__(
         self,
@@ -92,18 +96,23 @@ class FastRouterClient:
         latency_ms = round((time.monotonic() - started) * 1000)
         try:
             content = data["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError, TypeError):
+            finish = data["choices"][0].get("finish_reason")
+        except (KeyError, IndexError, TypeError, AttributeError):
             raise ModelCallError("chat completion response missing choices[0].message") from None
         parsed = None
         if json_schema is not None:
             try:
                 parsed = json.loads(_strip_fences(content))
             except json.JSONDecodeError:
-                raise ModelCallError("structured output was not valid JSON") from None
+                if finish in ("length", "max_tokens"):
+                    raise OutputTruncated(
+                        f"structured output cut off at max_tokens={max_tokens} ({len(content)} chars)") from None
+                raise ModelCallError(f"structured output was not valid JSON (finish_reason={finish})") from None
         return {
             "content": content,
             "parsed": parsed,
             "model": data.get("model"),
+            "finish_reason": finish,
             "usage": data.get("usage"),
             "latency_ms": latency_ms,
         }

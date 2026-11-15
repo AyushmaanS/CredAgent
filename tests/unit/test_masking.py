@@ -83,3 +83,11 @@ def test_base64_secret_with_slash_outside_url_masked():
     import secrets
     b64 = base64.b64encode(secrets.token_bytes(30)).decode()  # may contain / and +
     assert b64 not in Masker().mask_text(f"secret access key {b64}")
+
+
+def test_labelled_prose_is_not_masked():
+    for prose in ["token: Fine-grained personal access token", "api key: Internal connection token",
+                  "Password: Required"]:
+        assert Masker().mask_text(prose) == prose
+    assert "Ab12Cd34Ef56" not in Masker().mask_text("api_key=Ab12Cd34Ef56")
+    assert "abcdefghijklmnopqrstuvwxyz" not in Masker().mask_text("token: abcdefghijklmnopqrstuvwxyz")
