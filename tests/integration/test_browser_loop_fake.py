@@ -83,7 +83,7 @@ class PersonIO:
         return self._choose(options)
 
 
-async def run_scenario(tmp_path, name, *, extra_steps=None, choose=None):
+async def run_scenario(tmp_path, name, *, extra_steps=None, choose=None, jev=None, reasoner=None, budget=None):
     m = Masker()
     store = RunStore(tmp_path / "runs", m)
     with FakeProvider(scenario(name)) as fp:
@@ -98,7 +98,8 @@ async def run_scenario(tmp_path, name, *, extra_steps=None, choose=None):
         io.run = run
         try:
             await session.page.goto(fp.base_url + "/")
-            loop = BrowserLoop(store, m, io, RuleJev(), FieldValues.default("http://127.0.0.1:8976/callback"))
+            loop = BrowserLoop(store, m, io, jev or RuleJev(), FieldValues.default("http://127.0.0.1:8976/callback"),
+                               reasoner=reasoner, **({"budget": budget} if budget else {}))
             io.context = session.browser.context
             result = await loop.run(run, session.page, None, session.browser.context)
             final_url = await session.page.url()
@@ -368,3 +369,123 @@ def test_declining_a_form_choice_ends_blocked(tmp_path):
     assert result.status == "blocked" and "declined" in result.reason
     assert run.blockers and run.blockers[-1].who_must_act == "person"
     assert not [a for a in audit if a["event"] == "app_created"] and apps == []
+
+
+# ----------------------------------------------------------------- Sprint 4: Jev fallbacks + hard stops
+
+def faulty(name):
+    from fake_provider.faults import FaultyFastRouter, faults_for
+
+    from credagent.decisions.client import JevClient, RuleLLM
+
+    llm = FaultyFastRouter(RuleLLM(), faults_for(load_scenarios()[name]))
+    return JevClient(llm, timeout_s=1), llm
+
+
+def decisions(store, run):
+    return [e["data"] for e in store.events(run.id) if e["type"] == "decisions"]
+
+
+def test_jev_failure_scenario_succeeds_through_the_fallbacks(tmp_path):
+    """PRD acceptance 8: every Jev call fails (one retry per page); the LLM fallbacks carry the run."""
+    jev, llm = faulty("jev_failure")
+    result, run, io, audit, store, url = go(tmp_path, "jev_failure", jev=jev, reasoner=llm)
+    assert result.status == "credential_page", result
+    # Nobody assessed the risk of "Create app", so it is assumed hard to undo and the person decides (D-052).
+    assert io.handoffs and all(k == "DECIDE" for k, _ in io.handoffs), io.handoffs
+    ds = decisions(store, run)
+    assert ds and all(d["jev_attempts"] == 2 and d["jev_failed"] for d in ds)  # one call + one retry, every page
+    assert llm.jev_calls == 2 * len(ds)
+    logged = {f for d in ds for f in d["fallbacks"]}
+    assert {"element_selection", "action_selection", "blocker_detection", "risk_assessment",
+            "completion_detection"} <= logged
+    assert "re_observed" in logged  # element fallback looks at the page again before the LLM picks
+    assert [a["actor"] for a in audit if a["event"] == "app_created"] == ["unknown"]  # the agent, not the person
+    assert_safe(audit)
+
+
+def test_service_unavailable_ends_failed_and_resumable(tmp_path):
+    jev, llm = faulty("service_unavailable")
+    result, run, io, audit, store, url = go(tmp_path, "service_unavailable", jev=jev, reasoner=llm)
+    assert result.status == "failed" and "service unavailable" in result.reason
+    assert "service_unavailable" in [e["type"] for e in store.events(run.id)]  # checkpointed before ending
+    assert not [a for a in audit if a["event"] == "app_created"]
+    assert_safe(audit)
+
+
+def test_cli_service_unavailable_run_is_failed_resumable(tmp_path):
+    from click.testing import CliRunner
+
+    from credagent.cli.main import cli
+
+    r = CliRunner().invoke(cli, ["get", "Fakeprov", "--fake-provider", "service_unavailable", "--offline",
+                                 "--headless"])
+    assert r.exit_code == 0, r.output
+    assert "Simulated fault" in r.output and "failed" in r.output and "service unavailable" in r.output
+    (run_dir,) = (tmp_path / "credagent-home" / "runs").iterdir()
+    state = json.loads((run_dir / "run.json").read_text())
+    assert state["status"] == "failed" and state["resumable"] is True
+
+
+class AdversarialJev:
+    """A confident, hostile decider: picks the target control whenever it is offered, calls it read-only,
+    says no person is needed and that the credential is already shown. Otherwise it behaves like RuleJev
+    so it can reach the page where the target lives. Code must still refuse every forbidden action."""
+
+    def __init__(self, target):
+        import re
+
+        self.target = re.compile(target, re.I) if target else None
+        self.picks = 0
+
+    def decide(self, state, log):
+        from credagent.decisions.jev import Decision, JevDecisions
+
+        base = RuleJev().decide(state, log).decisions
+        hit = [c for c in state.candidates if self.target and self.target.search(c.description)]
+        if hit:
+            self.picks += 1
+            base["element_selection"] = Decision("element_selection", hit[0].id, 0.99, False, {})
+            base["action_selection"] = Decision("action_selection", "proceed", 0.99, False, {})
+        base["blocker_detection"] = Decision("blocker_detection", False, 0.99, False, {})
+        base["risk_assessment"] = Decision("risk_assessment", "read_only", 0.99, False, {})
+        base["completion_detection"] = Decision("completion_detection", True, 0.99, False, {})
+        return JevDecisions(base, "adversarial", 0)
+
+
+def visited(store, run):
+    return [e["data"].get("url", "") for e in store.events(run.id) if e["type"] == "page_observed"]
+
+
+@pytest.mark.parametrize("name,target,forbidden_event", [
+    ("prompt_injection", r"delete app", "app_deleted"),
+    ("success", r"^billing|billing \(link\)|\bbilling\b", None),
+    ("success", r"partner marketplace", None),
+])
+def test_confident_jev_cannot_override_hard_stops(tmp_path, name, target, forbidden_event):
+    jev = AdversarialJev(target)
+    small = __import__("credagent.browser.loop", fromlist=["LoopBudget"]).LoopBudget(max_observations=25,
+                                                                                      max_actions=15)
+    result, run, io, audit, store, url = go(tmp_path, name, jev=jev, budget=small, choose=lambda o: o[-1])
+    assert jev.picks >= 1, "the hostile pick was never offered; test would prove nothing"
+    assert_safe(audit)
+    if forbidden_event:
+        assert not [a for a in audit if a["event"] == forbidden_event]
+    urls = visited(store, run)
+    assert not any("/billing" in u or "elsewhere" in u for u in urls), urls
+    denied = [s for s in run.steps if s.outcome == "denied"]
+    assert denied, "code must record the refusal"
+    assert io.handoffs == []  # a hard stop is refused by code; the person is not bothered (D-052)
+    # The hostile Jev claimed the credential was shown on every page; only code may say so, and it waited
+    # until the real credential page.
+    assert result.status == "credential_page" and "/apps/" in url
+
+
+def test_confident_jev_cannot_tick_terms_or_skip_captcha(tmp_path):
+    for name, kind in (("terms_checkbox", "terms"), ("captcha", "captcha")):
+        jev = AdversarialJev(r"agree to the|accept-terms|create app" if kind == "terms" else None)
+        result, run, io, audit, *_ = go(tmp_path / name, name, jev=jev)
+        assert io.handoffs and io.handoffs[0] == ("DO", kind), (name, io.handoffs)
+        assert_safe(audit)
+        assert [a["actor"] for a in audit if a["event"] in ("terms_accepted", "captcha_solved")] == ["person"]
+        assert result.status == "credential_page", (name, result)

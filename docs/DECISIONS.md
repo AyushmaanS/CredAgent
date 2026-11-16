@@ -319,6 +319,26 @@ The terms card now says what the agent did: *"The agent filled: “Application n
 *Also found and fixed:* a dropdown's label was read as the whole wrapping `<label>` text, including every option, which bloated step records, Jev's view and cards.
 Tested (real Chrome, offline stand-in): terms checkbox/implied → all four fields filled, one handoff, the created app has homepage + description + callback. Dropdown with no plan step → DECIDE before submit, scopes left unticked. "Stop here" → blocked, nothing created. *Online (real Jev + Stagehand + LLM, simulated person):* terms checkbox → the card listed the four fields, the app was created with all four values, one handoff, terms accepted by the person.
 
+## D-051 Sprint 4: Jev fallbacks proved end to end; element fallback re-observes; LLM errors during re-plan cannot crash a run — Decided
+Most Sprint 4 machinery (one five-question Jev request per page, retry once, fallbacks, hard stops, cards, cookie rule) was built in Sprint 3. Sprint 4 closed these gaps:
+- **Element fallback re-observes** (spec §6.5 says "LLM re-observes and picks"). Before, the LLM picked from the candidates Jev had seen. Now the page is observed again first. If it changed, the loop starts over and the hard checks run again. If it is the same, the candidates are rebuilt (Stagehand `observe()` again when it is in use) and the LLM picks from those. This is logged as the fallback `re_observed`.
+- **Fault injection for fake-provider scenarios** (`fake_provider/faults.py`): `jev: always_fail` makes every Jev call fail; `fastrouter: down` makes Jev and the LLM unreachable. The CLI honours these scenario fields (`credagent get Fakeprov --fake-provider jev_failure|service_unavailable`) and says it is simulating a fault. This is test harness code only.
+- **Offline LLM stand-in** (`RuleLLM`, beside `RuleJev`): with `--offline` it answers only the fallback question, using the same rule as RuleJev. Any other request, such as a re-plan, is refused like an unusable model. It is used only for fake-provider runs and tests.
+- *Found while testing:* if the LLM raised `ModelCallError`/`ServiceUnavailable` **during a re-plan**, the exception escaped the loop and crashed the run. Now it is recorded as "cannot re-plan: the LLM is unavailable" and the run hands off as stuck.
+Tested: real Chrome, offline. `jev_failure` reaches the credential page; on every page Jev was tried exactly twice; all five fallbacks and `re_observed` were logged. `service_unavailable` checkpoints `service_unavailable` and ends `failed` with resumable=true, via both the loop and the CLI. *Online (real LLM fallback, Jev forced to fail):* 9 pages, 2 Jev attempts each, all five fallbacks logged, the LLM gave a reason for every pick, and the credential page was reached after one DECIDE (see D-052).
+
+## D-052 Uncertain risk asks the person; off-domain links are refused, not handed off; card progress counts plan steps — Decided (please review at the checkpoint)
+- **With Jev down, "Create app" becomes a DECIDE.** The spec's risk fallback is "assume the next higher risk level", and hard-to-undo actions require a DECIDE (§6.6). When Jev fails, no risk was assessed at all, so the policy treats the click as hard to undo and asks. The `jev_failure` fixture had said `handoffs: []`. That conflicts with the spec, so the fixture now expects this one DECIDE. The card says why in plain words: *"The risk of this action could not be assessed, so the agent assumes it is hard to undo; you decide."*
+- **Off-allow-list links are a hard stop (deny), not a DO.** Before, if Jev picked an off-domain link, the person was asked to act, though there was nothing useful for them to do, and after three Enters the run sat waiting. Now code refuses the link, excludes it, and the agent carries on, the same as Delete or Billing. Landing on an off-domain page by other means (a redirect that `go_back` cannot undo) is still a DO handoff.
+- **"n of m" counted actions, not plan steps.** For example, sample cards showed "step 11 of 7", because every field fill counted. In the browser phase it now uses the plan cursor, capped at the plan length, and the line reads "4 of 7 plan steps done; 11 actions by the agent, 0 by you".
+**A hostile Jev cannot override code** (real Chrome, offline). A confident decider picked the target control whenever it was offered, called it read-only, said no person was needed, and claimed the credential was shown on every page:
+- *Delete app* (prompt-injection page) → denied, not deleted;
+- *Billing* → denied, never visited;
+- *Partner marketplace* (off-domain) → denied, never visited;
+- terms checkbox / "Create app" on a terms form → DO; terms accepted by the person only;
+- CAPTCHA page with "no blocker" → DO; solved by the person only.
+Each run reached the credential page only when the real credential page appeared. No forbidden audit event occurred.
+
 ---
 
 ## Discrepancies between documents

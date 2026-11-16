@@ -33,7 +33,7 @@ def test_card_has_all_six_fields(kind):
     for label in ["1. Done so far", "2. Blocking", "3. What to do", "4. Then I will",
                   "5. To resume", "6. Do not"]:
         assert label in card
-    assert "step 2 of 6" in card
+    assert "2 of 6 plan steps done" in card
     assert "r1" in card and "resume" in card
     if kind == "DECIDE":
         assert "Option 1" in card and "Option 2" in card
@@ -54,3 +54,15 @@ def test_run_id_never_split_across_lines():
     run = Run(id=rid, app_input="x")
     card = render_card(run, Handoff(**DO))
     assert rid in card  # appears unbroken on one line
+
+
+def test_progress_counts_plan_steps_not_actions():
+    r = sample_run()
+    for i in range(9):  # many fills under one plan step must not inflate "n of m"
+        r.add_step(StepRecord(plan_step_id="p2", action=f"fill field {i}", actor="agent", outcome="done"))
+    r.phase = "browser"
+    r.plan_cursor = 3
+    card = render_card(r, Handoff(**DO))
+    assert "3 of 6 plan steps done" in card and "11 actions by the agent" in card
+    r.plan_cursor = 99
+    assert "6 of 6 plan steps done" in render_card(r, Handoff(**DO))

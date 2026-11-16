@@ -136,9 +136,11 @@ def evaluate(
 
     # 3. Navigation allow-list
     if action.href and not host_allowed(action.href, allowed):
-        return Verdict("DO", f"The link leads outside the allowed domains ({action.href[:80]}).", "off_allow_list")
-    if action.method == "navigate" and action.href and not host_allowed(action.href, allowed):
-        return Verdict("deny", "Navigation outside the allowed domains.", "off_allow_list")
+        # A hard stop, not a handoff: the agent simply never follows it and keeps working (D-052).
+        return Verdict(
+            "deny", f"The link leads outside the allowed domains ({action.href[:80]}); the agent never follows it.",
+            "off_allow_list",
+        )
 
     # 4. Field rules: only code-owned values, never human-only fields; choices belong to the person
     if action.method in ("fill", "select", "check") and HUMAN_ONLY_FIELDS.search(label):
@@ -173,9 +175,11 @@ def evaluate(
     if effective == "hard_to_undo":
         return Verdict(
             "DECIDE",
-            "Assessed as hard to undo"
+            "The risk of this action could not be assessed, so the agent assumes it is hard to undo; you decide."
+            if risk_uncertain and risk not in RISK_ORDER
+            else "Assessed as hard to undo"
             + (" (risk uncertain, assumed one level higher)" if risk_uncertain else "")
-            + "; the person decides.",
+            + "; you decide.",
             "hard_to_undo",
         )
     return Verdict("allow", f"risk {effective}")

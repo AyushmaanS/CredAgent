@@ -111,7 +111,7 @@ def test_terms_control_and_terms_submit_go_to_person():
 
 def test_navigation_and_fields():
     off = ProposedAction("click", "/a", "link 'Partner marketplace'", href="http://partner.elsewhere.localhost:1/p")
-    assert ev(off).decision == "DO" and ev(off).category == "off_allow_list"
+    assert ev(off).decision == "deny" and ev(off).category == "off_allow_list"  # D-052
     assert ev(ProposedAction("fill", "/i", "text field 'Password'", field_key=None)).decision == "DO"
     assert ev(ProposedAction("fill", "/i", "text field 'Email'", field_key="app_name", value="x")).decision == "DO"
     assert ev(ProposedAction("fill", "/i", "text field 'Favourite colour'")).decision == "deny"

@@ -158,10 +158,11 @@ def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
 def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> None:
     import asyncio
 
-    from fake_provider.app import FakeProvider, scenario
+    from fake_provider.app import FakeProvider, load_scenarios, scenario
+    from fake_provider.faults import FaultyFastRouter, faults_for
 
     from credagent.browser.chrome import ChromeError
-    from credagent.decisions.client import JevClient, RuleJev
+    from credagent.decisions.client import JevClient, RuleJev, RuleLLM
     from credagent.orchestrator import BrowserDeps, Orchestrator, execute_browser_phase, fake_provider_plan
     from credagent.secrets.store import SecretFileStore
     from credagent.state.models import Run, new_run_id
@@ -184,12 +185,21 @@ def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> No
         run.predicted_outcome = run.plan.predicted_outcome
         run.phase = "planned"
         store.create(run)
+        faults = faults_for(load_scenarios()[scenario_name])
+        if faults.any:
+            click.echo("Simulated fault for this scenario: "
+                       + ("Jev and the LLM are unreachable." if faults.llm_down else "every Jev call fails."))
         if offline:
             jev, reasoner, cb = RuleJev(), None, None
+            if faults.any:  # the offline LLM stand-in answers the fallbacks, as the real LLM would
+                llm = FaultyFastRouter(RuleLLM(), faults)
+                jev, reasoner = JevClient(llm), llm
         else:
             from credagent.browser.stagehand_llm import make_generate
             from credagent.reasoning.fastrouter import FastRouterClient
             fr = FastRouterClient(s, m)
+            if faults.any:
+                fr = FaultyFastRouter(fr, faults)  # type: ignore[assignment]
             jev, reasoner, cb = JevClient(fr), fr, make_generate(fr, s.stagehand_model)
         deps = BrowserDeps(jev=jev, reasoner=reasoner, llm_model=s.llm_model, model_callback=cb,
                            secret_store=SecretFileStore(s.secrets_dir),

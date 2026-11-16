@@ -6,7 +6,7 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> **Work in progress — Sprint 3 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
+> **Work in progress — Sprint 4 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
 > Every decision and assumption: `docs/DECISIONS.md`. Every live run, including failures: `RESULTS.md`.
 
 Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,
@@ -17,7 +17,8 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 | Works | Not built yet |
 |---|---|
 | `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan, then pauses | Browser runs against **real** providers (need per-provider consent, Sprint 6) |
-| Browser loop on the fake provider: Stagehand + Jev's five decisions + code policy, DO/DECIDE handoffs | Calibration and acceptance suite for Jev fallbacks (Sprint 4) |
+| Browser loop on the fake provider: Stagehand + Jev's five decisions + code policy, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) | |
+| Jev failure fallbacks and "service unavailable" proved on the fake provider (`--fake-provider jev_failure` / `service_unavailable`) | |
 | OAuth metadata check + dynamic client registration shortcut (fake provider) | `resume`, credential capture, `verify`, `secret` (Sprint 5) — these commands exit with code 2 and say so |
 | `credagent status`, `runs`, `report`; crash-safe state; secrets masked before any model call | |
 
@@ -44,6 +45,8 @@ git config core.hooksPath .githooks    # pre-commit secret scan + lint (for cont
 .venv/bin/python -m pytest                                    # full test suite, no network
 .venv/bin/python -m fake_provider.app --scenario terms_checkbox   # fake console at http://127.0.0.1:8765
 .venv/bin/credagent get Fakeprov --fake-provider success --offline  # watch the agent drive the fake console
+.venv/bin/credagent get Fakeprov --fake-provider jev_failure --offline  # Jev fails on purpose; fallbacks take over
+.venv/bin/python scripts/sample_cards.py                       # regenerate docs/samples/handoff-cards.md
 ```
 
 **With your own API keys** (see "Local environment" below):

@@ -236,3 +236,23 @@ class RuleJev:
             "completion_detection": Decision("completion_detection", cred, 0.9, False, {}),
         }
         return JevDecisions(decisions, "rule-jev", 0)
+
+
+class RuleLLM:
+    """Deterministic stand-in for the fallback LLM (tests and `--offline` fake-provider runs only).
+
+    Answers only the fallback question (schema "fallback") by applying RuleJev to the same page
+    state the real LLM would see; any other request (e.g. a re-plan) is refused like an unusable model."""
+
+    def chat(self, messages: list[dict[str, Any]], *, json_schema: dict[str, Any] | None = None,
+             schema_name: str = "result", **_: Any) -> dict[str, Any]:
+        if schema_name != "fallback" or json_schema is None:
+            raise ModelCallError("offline LLM stand-in answers fallback decisions only")
+        head, _, rest = messages[-1]["content"].partition("\n<<<PAGE>>>\n")
+        info = json.loads(head)
+        state = PageState(step_goal=info["step_goal"], url=info["url"],
+                          visible_text=rest.removesuffix("\n<<<END PAGE>>>")[:6000], candidates=info["candidates"])
+        d = RuleJev().decide(state, DecisionLog())
+        parsed = {"element": d["element_selection"].value, "action": d["action_selection"].value,
+                  "human_needed": False, "reason": "offline rule-based stand-in: best match for the step goal"}
+        return {"content": json.dumps(parsed), "parsed": parsed, "model": "rule-llm"}

@@ -32,6 +32,7 @@ from credagent.decisions.jev import NONE_OPTION, PageState
 from credagent.handoff.cards import render_card
 from credagent.policy.engine import HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed
+from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
 from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Handoff, Run, StepRecord
@@ -532,6 +533,20 @@ class BrowserLoop:
             )
             log = DecisionLog()
             d = self.jev.decide(state, log)
+            acting = d["action_selection"].uncertain or d["action_selection"].value == "proceed"
+            if d["element_selection"].uncertain and acting and self.reasoner is not None:
+                # Spec §6.5: the element-selection fallback is "LLM re-observes and picks". Look again first;
+                # if the page changed, start over (hard checks run again) instead of picking from stale elements.
+                await page.wait_for_timeout(self.budget.settle_ms)
+                obs2 = await observe_page(page, self.masker)
+                n_obs += 1
+                if obs2.fingerprint() != fp:
+                    self._cp(run, "re_observed", {"page_changed": True})
+                    continue
+                cands, mapping, source = await self._candidates(sh, page, goal, obs2, denied)
+                obs = obs2
+                state = state.model_copy(update={"candidates": cands})
+                log.fallbacks.append("re_observed")
             # 4. fallbacks
             try:
                 d = apply_fallbacks(
@@ -768,6 +783,8 @@ class BrowserLoop:
                 return "replanned"
             except (ReplanLimitReached, ReplanInfeasible) as exc:
                 self._step(run, f"cannot re-plan: {exc}", "system", "failed")
+            except (ModelCallError, ServiceUnavailable) as exc:  # the LLM failing must not crash the run
+                self._step(run, f"cannot re-plan: the LLM is unavailable ({type(exc).__name__})", "system", "failed")
         return await self._handoff(run, "DO", "unexpected", f"The agent is stuck: {why}.", [f"title: {obs.title}"], obs)
 
 

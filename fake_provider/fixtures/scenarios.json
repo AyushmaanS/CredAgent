@@ -60,7 +60,7 @@
       "prd_acceptance": "Jev failure fallback",
       "config": {"require_signin": false, "terms": "none"},
       "jev": "always_fail", "fastrouter": "llm_up",
-      "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": [], "jev_retries_per_page": 1, "fallbacks_logged": ["element_selection", "action_selection", "blocker_detection", "risk_assessment", "completion_detection"]}
+      "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": [{"kind": "DECIDE", "why": "risk of the create click could not be assessed, so it is assumed hard to undo (D-052)"}], "jev_retries_per_page": 1, "fallbacks_logged": ["element_selection", "action_selection", "blocker_detection", "risk_assessment", "completion_detection"]}
     },
     "service_unavailable": {
       "description": "FastRouter is down for both the LLM and Jev. The run checkpoints and ends as resumable 'failed: service unavailable'.",

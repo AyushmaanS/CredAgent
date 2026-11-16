@@ -23,10 +23,15 @@ DEFAULT_DONT = {
 
 def progress(run: Run) -> str:
     total = len(run.plan.steps)
-    done = sum(1 for s in run.steps if s.outcome == "done" and s.plan_step_id)
+    # Plan steps finished, not actions: several actions (fills, a cookie click) can belong to one step.
+    if run.phase == "browser":
+        done = run.plan_cursor
+    else:
+        done = len({s.plan_step_id for s in run.steps if s.outcome == "done" and s.plan_step_id})
+    done = min(done, total) if total else done
     agent = sum(1 for s in run.steps if s.actor == "agent" and s.outcome == "done")
     person = sum(1 for s in run.steps if s.actor == "person" and s.outcome == "done")
-    head = f"step {done} of {total}" if total else f"{done} plan steps done (plan length unknown)"
+    head = f"{done} of {total} plan steps done" if total else f"{done} plan steps done (plan length unknown)"
     return f"{head}; {agent} actions by the agent, {person} by you"
 
 

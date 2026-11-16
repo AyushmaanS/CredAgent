@@ -103,7 +103,21 @@ until the Sprint 6 per-provider consent flow (protocol §2).
 - [x] S3.18 👤 Checkpoint: owner watched the `terms_checkbox` fake-provider run after the D-048–D-050 fixes and confirmed it on 2026-11-16 ("works"); pushed to GitHub at the owner's request
 
 ## Sprint 4 — Jev decisions, policy, handoffs
-- [ ] Per sprint plan
+Most of the Sprint 4 machinery was built in Sprint 3 so the loop could run; this sprint closes the gaps against spec §6.5–6.7 and proves each rule with tests.
+- [x] S4.1 One Jev request per page with exactly the five closed decisions (built in S3.13; unit-tested)
+- [x] S4.2 Retry once on Jev error/timeout, then all five uncertain (built in S3.13; unit-tested)
+- [x] S4.3 Element-selection fallback re-observes the page before the LLM picks (spec: "LLM re-observes and picks")
+- [x] S4.4 Fake-provider fault injection: scenarios `jev_failure` (Jev always fails, LLM up) and `service_unavailable` (both down) are honoured by the CLI and tests; clearly-labelled offline LLM stand-in for `--offline`
+- [x] S4.5 Acceptance test: `jev_failure` reaches the credential page through the fallbacks, one retry per page, all five fallbacks logged
+- [x] S4.6 Acceptance test: `service_unavailable` checkpoints and ends `failed: service unavailable`, resumable
+- [x] S4.7 Policy hard stops: terms, payment, identity/business verification, CAPTCHA, review submission, deletion, off-allow-list (built in S3.10–S3.11)
+- [x] S4.8 Test (D-052; off-domain links now denied): a confident, adversarial Jev (picks terms box, delete, review, billing, off-domain link; says read-only, no blocker, credential shown) cannot cause any forbidden action or a false success
+- [x] S4.9 DO and DECIDE cards with all six fields (built in S3.14; D-048/D-050 refinements)
+- [x] S4.10 Cookie banner: most limited option, else DO (built in S3.10; tested)
+- [x] S4.11 Terms checkbox and implied-agreement detection tests (unit + real Chrome)
+- [x] S4.12 Sample DO and DECIDE cards generated from real offline fake-provider runs → `docs/samples/handoff-cards.md` (`scripts/sample_cards.py`); fixed "n of m" progress (D-052)
+- [x] S4.13 Lint, tests (default + real Chrome), secret scan, docs (DECISIONS, README), commit
+- [ ] S4.14 👤 **Waiting:** checkpoint: owner reviews sample DO and DECIDE cards; remind owner to push
 
 ## Sprint 5 — Resume, secret handling, verification
 - [ ] Per sprint plan
