@@ -472,6 +472,18 @@ Fixes:
 
 Tested with a new `discord_like` fake scenario: implied terms on create, the ID in the URL, the secret on an OAuth2 page behind "Reset Secret". It creates exactly one app and succeeds. A replay decider that goes back and keeps proposing "Create app" is denied, and the audit shows one app.
 
+## D-064 Moving past "create" skips one step, not every step that mentions it; the agent can find its own app on a list — Decided (found in the second resume of the Discord run)
+*Found in real run `20261116-171020-discord-1588`, after the D-063 fix:*
+- **The cursor skipped too far.** D-063 moved the plan cursor past the *last* plan step that mentioned creating an app. The run had been re-planned, and a later step mentioned "New Application" again, so the cursor jumped to the live-test step. The person was then shown a card asking them to act on "Live test…", which needs nothing from them.
+- **The agent couldn't open its own app.** Before that, on the app list, it could not tell which card was its app (the plan assumed it would already be inside the app), and it showed a generic "stuck" card.
+
+Fixes:
+- **One step only:** the cursor now moves past only the first create action step at or after the current step (navigate, click, fill or handoff kinds). Later steps are never skipped.
+- **Its own app is marked:** a clickable candidate whose text contains this run's app name is described to Jev as "(the app this run created)".
+- **"Stuck" cards quote the current plan step** and ask the person to do it, as the "person needed" card already does (D-061).
+
+The owner finished the run by hand from the app page (OAuth2 → Add Redirect → Save → Reset Secret). The agent then re-checks the page, captures by plain code and runs the live test.
+
 ---
 
 ## Discrepancies between documents

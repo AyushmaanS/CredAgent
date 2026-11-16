@@ -408,10 +408,13 @@ class BrowserLoop:
         first = not run.created
         if first:
             run.created.append(what[:200])
-        last_create = max((i for i, st in enumerate(run.plan.steps) if CREATE_RE.search(st.description)),
-                          default=-1)
-        if last_create >= run.plan_cursor:
-            run.plan_cursor = last_create + 1
+        # Move past the create step the run was on (the first one at or after the cursor), and nothing more:
+        # later steps may mention "created" too, and must not be skipped (D-064).
+        nxt = next((i for i, st in enumerate(run.plan.steps)
+                    if i >= run.plan_cursor and st.kind in ("click", "handoff", "navigate", "fill")
+                    and CREATE_RE.search(st.description)), None)
+        if nxt is not None:
+            run.plan_cursor = nxt + 1
         if first:
             self._step(run, f"recorded: this run created {what[:160]}; it will not create another", "system",
                        "done")
@@ -517,6 +520,12 @@ class BrowserLoop:
                 raw = []
         if not raw:
             raw, source = dom_candidates(obs), "dom"
+        # Help the decider find the app this run created on a list page (D-064): mark it by its name.
+        if self.values.app_name:
+            from dataclasses import replace as _replace
+
+            raw = [_replace(r, description=r.description + " (the app this run created)")
+                   if r.method == "click" and self.values.app_name in r.description else r for r in raw]
         cands, mapping = normalise(raw, exclude=denied)
         return cands, mapping, source
 
@@ -987,7 +996,15 @@ class BrowserLoop:
                 self._step(run, f"cannot re-plan: {exc}", "system", "failed")
             except (ModelCallError, ServiceUnavailable) as exc:  # the LLM failing must not crash the run
                 self._step(run, f"cannot re-plan: the LLM is unavailable ({type(exc).__name__})", "system", "failed")
-        return await self._handoff(run, "DO", "unexpected", f"The agent is stuck: {why}.", [f"title: {obs.title}"], obs)
+        step = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+        instruction = (
+            f"The agent's current step is: “{step.description[:220]}” It could not find what to click for it. "
+            "Do that step yourself in the browser window (or bring the page to where it can continue), then "
+            "press Enter."
+            if step else None
+        )
+        return await self._handoff(run, "DO", "unexpected", f"The agent is stuck: {why}.", [f"title: {obs.title}"], obs,
+                                   instruction=instruction)
 
 
 _BLOCKER_KINDS = {

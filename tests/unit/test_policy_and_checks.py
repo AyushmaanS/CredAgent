@@ -277,3 +277,26 @@ def test_one_app_per_run_rule_d063():
                         already_created=True).category == "already_created"
     for label in ["button 'Add Redirect'", "button 'Save Changes'", "button 'Reset Secret'", "link 'OAuth2'"]:
         assert not CREATE_RE.search(label), label
+
+
+def test_mark_created_moves_only_past_the_current_create_step_d064():
+    """Resumed Discord run: the cursor jumped to the live-test step because a later step mentioned creating."""
+    from credagent.browser.candidates import FieldValues
+    from credagent.browser.loop import BrowserLoop
+    from credagent.secrets.masking import Masker
+    from credagent.state.models import Plan, PlanStep, Run
+
+    steps = [PlanStep(id="a", kind="navigate", description="Open the portal"),
+             PlanStep(id="b", kind="click", description="Click 'New Application' and create the app"),
+             PlanStep(id="c", kind="navigate", description="Open the OAuth2 page"),
+             PlanStep(id="d", kind="click", description="If no app exists yet, click 'New Application' first"),
+             PlanStep(id="e", kind="verify", description="Live test")]
+    run = Run(id="r", app_input="x", plan=Plan(steps=steps), plan_cursor=1)
+
+    class NullStore:
+        def checkpoint(self, *a, **k):
+            return 0
+
+    loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"))
+    loop._mark_created(run, "an app")
+    assert run.plan_cursor == 2 and run.created == ["an app"]
