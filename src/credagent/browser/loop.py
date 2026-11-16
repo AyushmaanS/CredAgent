@@ -31,7 +31,7 @@ from credagent.browser.observe import Observation, observe_page
 from credagent.decisions.client import DecisionLog, ServiceDown, apply_fallbacks
 from credagent.decisions.jev import NONE_OPTION, PageState
 from credagent.handoff.cards import render_card
-from credagent.policy.engine import HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
+from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed
 from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
 from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
@@ -111,6 +111,25 @@ def terms_instruction(obs: Observation, gates: list) -> tuple[str, str]:
         f"In the browser window: read the terms linked on the page. If you agree, click {btn}: clicking it "
         f"accepts the terms.{stop}"
     ), missing
+
+
+IMPLIED_BUTTON = re.compile(r"by (clicking|selecting|tapping|pressing) [“\"'‘]?([A-Za-z][\w &-]{0,30}?)[”\"'’]?[,.]?\s+"
+                            r"you (agree|accept|consent)", re.I)
+
+
+def terms_submit_text(obs: Observation, gates: list) -> str | None:
+    """The button that submits the terms form: the form's submit button, or the one named in the agreement
+    wording ("By clicking Create, you agree…")."""
+    form = terms_form(obs, gates)
+    submit = next((b for b in obs.buttons if form and b["form"] == form and b["type"] in ("submit", "")), None)
+    if submit and submit["text"]:
+        return submit["text"]
+    g = next((x for x in gates if x.kind == "terms"), None)
+    for text in (g.evidence if g else []):
+        m = IMPLIED_BUTTON.search(text)
+        if m:
+            return m.group(2).strip()
+    return None
 
 
 def terms_form(obs: Observation, gates: list) -> str | None:
@@ -280,6 +299,14 @@ class BrowserLoop:
             run.resolve_handoff(h.id)
             self._step(run, f"person: {h.person_instruction[:120]}", "person", "done")
             self._cp(run, "handoff_resolved", {"handoff_id": h.id})
+            submit = terms_submit_text(obs, gates) if blocker_kind == "terms" else None
+            if submit and CREATE_RE.search(f"button '{submit}'") and page is not None:
+                try:
+                    moved = (await page.url()) != obs.url
+                except Exception:  # noqa: BLE001 - unknown: assume the form was submitted (the safe side)
+                    moved = True
+                if moved:
+                    self._mark_created(run, f"an app (created when the person clicked “{submit}”)")
             return "done"
         w0 = time.monotonic()
         answer = self.io.choose("Your decision", h.options)
@@ -375,6 +402,21 @@ class BrowserLoop:
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
 
+    def _mark_created(self, run: Run, what: str) -> None:
+        """Record that this run created an app at the provider (D-063): never create a second one, and move
+        the plan past its create step(s) so the agent does not go back to them."""
+        first = not run.created
+        if first:
+            run.created.append(what[:200])
+        last_create = max((i for i, st in enumerate(run.plan.steps) if CREATE_RE.search(st.description)),
+                          default=-1)
+        if last_create >= run.plan_cursor:
+            run.plan_cursor = last_create + 1
+        if first:
+            self._step(run, f"recorded: this run created {what[:160]}; it will not create another", "system",
+                       "done")
+            self._cp(run, "resource_created", {"what": what[:200], "cursor": run.plan_cursor})
+
     async def _reveal(self, run: Run, page: Any, obs: Observation, gates: list, ctl: dict) -> bool:
         """Click a read-only "View/Show secret" control so the credential being created becomes readable
         by plain code. Policy still decides; a regenerate/reset control never matches (see reveal_control)."""
@@ -401,6 +443,7 @@ class BrowserLoop:
                             plan_kind=run.plan.credential_kind)
         self.store.end_action(run, seq, "done", {"observed": res.observed()})
         if res.credential is not None:
+            self._mark_created(run, "an app (its credential page was reached)")
             if run.credential is not None and not res.has_secret:
                 res.credential.parts = {**run.credential.parts, **res.credential.parts}
             run.credential = res.credential
@@ -508,6 +551,11 @@ class BrowserLoop:
         self._allowed = allowed
         self._page = page
         self._gates: list = []
+        if not run.created and run.credential is not None:
+            # Resumed after an interruption: an app was already created earlier in this run (D-063).
+            self._mark_created(run, "an app (created earlier in this run, before the interruption)")
+        self._maybe_created = not run.created and any(
+            h.blocker_kind == "terms" and h.status == "completed" for h in run.handoffs)
         await self._domain_guard(run, on=True)
         self._cp(run, "browser_loop_started", {"allowed_domains": allowed, "domain_guard": context is not None})
 
@@ -741,6 +789,7 @@ class BrowserLoop:
                 allowed,
                 risk=d["risk_assessment"].value,
                 risk_uncertain=d["risk_assessment"].uncertain,
+                already_created=bool(run.created),
             )
             self._cp(
                 run,
@@ -791,6 +840,30 @@ class BrowserLoop:
                     )
                     return LoopResult("blocked", f"person declined: {cand.description}", n_obs, n_act)
 
+            # D-063: the person submitted a terms form earlier in this run, but CredAgent cannot tell whether
+            # it created an app (e.g. the run was interrupted). Ask before anything that could make a duplicate.
+            if getattr(self, "_maybe_created", False) and cand.method == "click" \
+                    and CREATE_RE.search(cand.description):
+                self._maybe_created = False
+                answer = await self._handoff(
+                    run, "DECIDE", "unexpected",
+                    f"{cand.description} would create an app, but you submitted a form with terms earlier in this "
+                    "run, which may already have created one. Creating another makes a duplicate.",
+                    [cand.description], obs,
+                    instruction="Look at the provider's app list in the browser. If the app already exists, choose "
+                    "“No”: the agent will not create another, and you can open the existing app yourself.",
+                    options=["Yes, create it (none exists yet)", "No, one already exists"],
+                    after="Create it once (if yes) and continue.",
+                )
+                if answer is None:
+                    return LoopResult("handoff_pending", "possible duplicate app: waiting for you", n_obs, n_act)
+                if answer.startswith("No"):
+                    self._mark_created(run, "an app (created earlier in this run; confirmed by the person)")
+                    denied.add(cand.xpath)
+                    self._step(run, f"not repeated (person: an app already exists): {cand.description}", "system",
+                               "denied")
+                    continue
+
             # Resume (spec §6.8): an action that was started before an interruption but never confirmed is
             # never repeated without asking. Clicking it again could, e.g., create a second app.
             doubt = self.in_doubt
@@ -840,6 +913,13 @@ class BrowserLoop:
                 continue
             self.store.end_action(run, seq, "done")
             n_act += 1
+            if cand.method == "click" and form_of_btn and CREATE_RE.search(cand.description):
+                try:
+                    moved = (await page.url()) != obs.url
+                except Exception:  # noqa: BLE001
+                    moved = True
+                if moved:
+                    self._mark_created(run, f"an app (created by the agent clicking {cand.description})")
             shown = f"{cand.method} {cand.description}" + (f" = {value}" if value and cand.field_key else "")
             self._step(
                 run,

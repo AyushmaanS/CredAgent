@@ -264,3 +264,16 @@ def test_choices_and_permissions_are_decide_not_autonomous():
     assert ev(ProposedAction("select", "/s", "dropdown 'Application type'")).decision == "DECIDE"
     assert ev(ProposedAction("check", "/c", "checkbox 'admin:org — Full administrative access'"), risk="read_only").decision == "DECIDE"
     assert ev(ProposedAction("check", "/c", "checkbox 'Password reset'"), risk="read_only").decision == "DO"
+
+
+def test_one_app_per_run_rule_d063():
+    from credagent.policy.engine import CREATE_RE
+
+    for label in ["button 'New Application'", "button 'Create app'", "link 'Create new app'", "button 'Create'"]:
+        assert CREATE_RE.search(label), label
+        a = ProposedAction("click", "/b", label)
+        assert ev(a).decision != "deny" or ev(a).category != "already_created"
+        assert evaluate(a, obs(), [], ["127.0.0.1"], risk="read_only", risk_uncertain=False,
+                        already_created=True).category == "already_created"
+    for label in ["button 'Add Redirect'", "button 'Save Changes'", "button 'Reset Secret'", "link 'OAuth2'"]:
+        assert not CREATE_RE.search(label), label

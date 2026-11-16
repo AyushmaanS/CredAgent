@@ -52,7 +52,7 @@ class Person(PersonIO):
         if h.blocker_kind == "secret_hidden":
             self.handoffs.append((h.kind, h.blocker_kind))
             await self._as_person("Array.from(document.querySelectorAll('button')).find(b => "
-                                  "b.innerText.includes('Regenerate')).click()")
+                                  "/Regenerate|Reset/.test(b.innerText)).click()")
             return True
         return await super().wait_enter(prompt)
 
@@ -326,3 +326,64 @@ def test_unlabelled_token_before_creation_does_not_end_the_run(tmp_path):
         run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "decoy"), deps_for(tmp_path), io))
     assert any("nothing labelled to capture; continuing" in s.action for s in run.steps)
     assert run.status == "succeeded" and run.verification.label == "verified"
+
+
+class CreateAgainJev:
+    """Replays real run 20261116-171020 (D-063): after the app exists, the decider goes back to the create
+    form and keeps proposing to create another app, confidently and as read-only."""
+
+    def __init__(self):
+        import re
+
+        self.create = re.compile(r"create app|new app|new application", re.I)
+        self.went_back = 0
+        self.proposed_again = 0
+
+    def decide(self, state, log):
+        import re
+
+        from credagent.decisions.jev import Decision, JevDecisions
+
+        base = RuleJev().decide(state, log).decisions
+        on_app = re.search(r"/apps/\d+$", state.url)
+        if on_app and self.went_back == 0:
+            self.went_back = 1
+            base["action_selection"] = Decision("action_selection", "go_back", 0.99, False, {})
+            return JevDecisions(base, "create-again", 0)
+        hit = [c for c in state.candidates if self.create.search(c.description)]
+        if hit and self.went_back == 1:
+            self.proposed_again += 1
+            base["element_selection"] = Decision("element_selection", hit[0].id, 0.99, False, {})
+            base["action_selection"] = Decision("action_selection", "proceed", 0.99, False, {})
+            base["risk_assessment"] = Decision("risk_assessment", "read_only", 0.99, False, {})
+            return JevDecisions(base, "create-again", 0)
+        if "/apps/new" in state.url and self.went_back == 1:
+            self.went_back = 2
+            base["action_selection"] = Decision("action_selection", "go_back", 0.99, False, {})
+        return JevDecisions(base, "create-again", 0)
+
+
+def test_discord_like_portal_creates_exactly_one_app(tmp_path):
+    with FakeProvider(scenario("discord_like")) as fp:
+        io = LateIO()
+        run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "dlike"), deps_for(tmp_path), io))
+        created = [a for a in fp.audit() if a["event"] == "app_created"]
+        secrets_ = fake_secrets(fp)
+    assert run.status == "succeeded", (run.status, run.status_reason)
+    assert len(created) == 1 and created[0]["actor"] == "person"  # implied terms: the person clicked Create
+    assert set(run.credential.parts) == {"client_id", "client_secret"} and run.created
+    assert_no_leak(tmp_path, run.id, secrets_, io.out)
+
+
+def test_eager_decider_cannot_create_a_second_app(tmp_path):
+    with FakeProvider(scenario("discord_like")) as fp:
+        io = LateIO()
+        deps = deps_for(tmp_path)
+        jev = CreateAgainJev()
+        deps.jev = jev
+        run, store = asyncio.run(_phase(tmp_path, fp, new_run(fp, "again"), deps, io))
+        created = [a for a in fp.audit() if a["event"] == "app_created"]
+    assert jev.proposed_again >= 1, "the replay never proposed a second app; the test would prove nothing"
+    assert len(created) == 1, f"{len(created)} apps created"
+    assert any("would create another app" in json.dumps(e["data"]) for e in store.events(run.id) if e["type"] == "policy")
+    # (Where the replay then wanders is the replay's doing; what matters is that no second app was created.)

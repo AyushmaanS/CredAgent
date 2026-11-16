@@ -65,6 +65,8 @@ class Scenario:
     secret_reveal_button: bool = False  # secret shown only after clicking "View client secret" (e.g. Spotify)
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
+    secret_after_reset: bool = False  # app page shows only the ID; the secret is on an OAuth2 page behind
+    #                                   "Reset Secret" (as on Discord)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Scenario:
@@ -88,6 +90,7 @@ class App:
     scopes: list[str] = field(default_factory=list)
     status: Literal["active", "testing", "pending_review"] = "active"
     secret_unviewed: bool = True
+    reset_done: bool = False
 
 
 class State:
@@ -294,6 +297,8 @@ class Handler(BaseHTTPRequestHandler):
         }
         if p in routes:
             return routes[p]()
+        if p.startswith("/apps/") and p.endswith("/oauth2"):
+            return self.get_oauth2(p.split("/")[2])
         if p.startswith("/apps/"):
             return self.get_app(p.split("/")[2])
         self.page("Not found", "<h1>Not found</h1>", 404)
@@ -423,7 +428,9 @@ class Handler(BaseHTTPRequestHandler):
         if not app:
             return self.page("Not found", "<h1>App not found</h1>", 404)
         show = app.secret_unviewed or not self.sc.secret_shown_once
-        if self.sc.secret_reveal_button:
+        if self.sc.secret_after_reset:
+            secret_html = f'<p><a href="/apps/{app.id}/oauth2">View credentials (OAuth2)</a></p>'
+        elif self.sc.secret_reveal_button:
             slot = esc(json.dumps(f'<code id="client-secret">{esc(app.client_secret)}</code>'))
             secret_html = (f'<p>Client secret: <span id="secret-slot"></span> <button type="button" '
                            f'onclick="document.getElementById(\'secret-slot\').innerHTML={slot};this.remove()">'
@@ -454,6 +461,23 @@ class Handler(BaseHTTPRequestHandler):
                 f'<form method="post" action="/apps/{app.id}/review"><button>Submit for review</button></form>'
                 f'<form method="post" action="/apps/{app.id}/delete"><button>Delete app</button></form>')
         self.page(app.name, body)
+
+    def get_oauth2(self, app_id: str) -> None:
+        if self.need_signin():
+            return
+        app = self.state.apps.get(app_id)
+        if not app:
+            return self.page("Not found", "<h1>App not found</h1>", 404)
+        if app.reset_done and app.secret_unviewed:
+            app.secret_unviewed = False
+            secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
+                      '<p class="warn">Copy it now; it is shown once.</p>')
+        else:
+            secret = ('<p>Client secret: <code>••••••••</code> (hidden)</p>'
+                      f'<form method="post" action="/apps/{app.id}/regenerate"><button>Reset Secret</button></form>')
+        self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
+                  f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>"
+                  f'{secret}</div><p><a href="/console">Back to applications</a></p>')
 
     def get_terms(self) -> None:
         self.page("Developer Terms", "<h1>Fakeprov Developer Terms (fake)</h1><p>These are placeholder "
@@ -575,8 +599,9 @@ class Handler(BaseHTTPRequestHandler):
             if action == "regenerate":
                 app.client_secret = "fpcs_" + secrets.token_urlsafe(30)
                 app.secret_unviewed = True
+                app.reset_done = True
                 self.state.log("secret_regenerated", self.actor(), app=app.name)
-                return self.redirect(f"/apps/{app.id}")
+                return self.redirect(f"/apps/{app.id}/oauth2" if self.sc.secret_after_reset else f"/apps/{app.id}")
         if p == "/oauth/token":
             return self.post_token(f)
         if p == "/oauth/register":

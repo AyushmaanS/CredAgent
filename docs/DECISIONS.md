@@ -448,6 +448,30 @@ Fixes:
 
 Tested: the `numeric_client_id` fake scenario now matches Discord's layout, with the ID in the URL and the label two levels up. Unit tests check that an ID in a URL is not treated as a secret.
 
+## D-063 One run creates at most one app; the plan moves past "create" once it exists — Decided (found in the resumed Discord run, which created three apps)
+*Found in real run `20261116-171020-discord-1588`, resumed after the D-062 fix:*
+1. **The plan never moved past "create".** The person had created the app (in the earlier session), but the plan cursor was still on step 3, "Click 'New Application'…".
+2. **The agent went back and offered to create again.** On resume, it left the app's page for the app list and asked to click "New Application" again: a DECIDE, because the risk was uncertain.
+3. **Each yes made another app.** Each "yes" plus the person's Create made another app.
+4. **Nothing in code stopped it.** No rule limited a run to one app.
+
+**Result: three apps named `credagent-demo-20261116` now exist in the owner's Discord account** (IDs ending 3211, 5969 and 9347). They must be deleted by the owner (cleanup; the agent never deletes).
+
+Fixes:
+- **Hard rule in the policy engine:** once a run has created an app (`run.created`), any click that would create another is **denied**, whatever Jev, the LLM or the person's earlier answers say. That means "New Application", "Create app", "Create new app" and a bare "Create", but not "Add Redirect", "Save Changes", "Reset Secret" or "OAuth2". The person can still do anything themselves in the browser.
+- **When a run counts as having created an app:**
+  - the person resolves a terms handoff whose submit button creates something (the button named on the form, or in the "By clicking Create, you agree" wording), and the page then moves;
+  - the agent's own create-submit click moves the page;
+  - a credential part is captured.
+  Each time, the plan cursor moves past every create step, so the agent does not go back to them.
+- **Resume:**
+  - A run with a captured credential counts as created.
+  - If the person submitted a terms form earlier but CredAgent cannot tell whether it created an app, the next create click becomes a DECIDE that warns about a duplicate: "Yes, create it (none exists yet)" or "No, one already exists". "No" records the app as existing.
+  - The report's Cleanup section now lists what the run created.
+- **Ctrl+C:** a second Ctrl+C while the browser was detaching printed a traceback. Detaching now never raises, and the CLI says "Stopped. The run is saved…".
+
+Tested with a new `discord_like` fake scenario: implied terms on create, the ID in the URL, the secret on an OAuth2 page behind "Reset Secret". It creates exactly one app and succeeds. A replay decider that goes back and keeps proposing "Create app" is denied, and the audit shows one app.
+
 ---
 
 ## Discrepancies between documents

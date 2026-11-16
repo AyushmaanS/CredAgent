@@ -71,7 +71,10 @@ def build_report(run: Run, events: list[dict[str, Any]] | None = None) -> dict[s
         "blockers": [b.model_dump() for b in run.blockers],
         "next_steps": next_steps(run),
         "untested": run.untested,
-        "cleanup": ("Nothing was created at the provider (no browser actions were taken)."
+        "cleanup": ("Created at the provider by this run: " + "; ".join(run.created)
+                    + ". Delete it in the provider's console when you no longer need it (the agent never deletes)."
+                    if run.created else
+                    "Nothing was created at the provider (no browser actions were taken)."
                     if run.phase in ("created", "research", "planned") and not run.credential else
                     "See handoffs and steps for anything created at the provider."),
         "metadata_check": run.metadata_check,

@@ -256,6 +256,9 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     except ChromeError as exc:
         click.echo(f"Browser problem: {exc}", err=True)
         sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo(f"\nStopped. The run is saved; continue with: credagent resume {run.id}", err=True)
+        sys.exit(130)
     except SecretLeakError:
         click.echo("\nCredAgent stopped itself: it was about to write a value registered as secret into the run's "
                    "log, which it never does. Nothing was written. This is a CredAgent bug; the run is saved up "

@@ -271,6 +271,7 @@ class Run(Strict):
     metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run
+    created: list[str] = Field(default_factory=list)  # what this run created at the provider (cleanup; D-063)
     checkpoint_seq: int = 0
 
     @model_validator(mode="after")

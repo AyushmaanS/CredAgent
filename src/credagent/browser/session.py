@@ -25,7 +25,10 @@ class Session:
 
     async def detach(self) -> None:
         """Leave Chrome running (e.g. a handoff is pending) — the profile and window stay."""
-        await self.browser.disconnect()
+        try:
+            await self.browser.disconnect()
+        except Exception:  # noqa: BLE001, S110 - Chrome stays open either way; the run is already saved
+            pass
 
     async def close(self) -> str:
         """Detach Stagehand, then quit Chrome gracefully so the profile is flushed (D-012)."""

@@ -68,6 +68,12 @@ HUMAN_ONLY_FIELDS = re.compile(
 ACCOUNT_CREATION = re.compile(r"\b(sign up|create (an |your )?account|register (an |your )?account|join now)\b", re.I)
 SIGN_IN = re.compile(r"^(sign in|log ?in|continue with [a-z]+)$", re.I)
 RISK_ORDER = ("read_only", "reversible", "hard_to_undo", "irreversible")
+# Controls that create a new app/client/project. One run creates at most one (D-063).
+CREATE_RE = re.compile(
+    r"\b(new|create|add|register)\b[^\n']{0,20}\b(app|apps|application|project|client|integration|"
+    r"credentials?|api key|oauth app)\b|'(create|new)'",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,7 @@ def evaluate(
     *,
     risk: str | None,
     risk_uncertain: bool,
+    already_created: bool = False,
 ) -> Verdict:
     label = action.description or ""
     # 1. Hard-stop categories (never, whatever any model says)
@@ -110,6 +117,11 @@ def evaluate(
             return Verdict(
                 "deny", f"'{label[:80]}' is a {cat.replace('_', ' ')} action; the agent never does this.", cat
             )
+    if already_created and action.method == "click" and CREATE_RE.search(label):
+        return Verdict(
+            "deny", f"'{label[:80]}' would create another app, and this run already created one. The agent never "
+            "creates a second one (D-063).", "already_created"
+        )
     if ACCOUNT_CREATION.search(label):
         return Verdict("DO", "Account creation is the person's step.", "account_creation")
     if action.method == "click" and SIGN_IN.match(label.strip()):

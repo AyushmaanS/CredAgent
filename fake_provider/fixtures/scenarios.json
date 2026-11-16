@@ -122,6 +122,12 @@
       "config": {"require_signin": false, "terms": "none", "decoy_token": true},
       "jev": "live_or_stub", "fastrouter": "up",
       "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
+    },
+    "discord_like": {
+      "description": "Mirrors Discord's portal: implied terms on create, an all-digit ID in the URL, the app page shows only the ID, and the secret is on an OAuth2 page behind 'Reset Secret'. The agent must create exactly one app (real run 20261116-171020 created three, D-063).",
+      "config": {"require_signin": false, "terms": "implied", "numeric_client_id": true, "secret_after_reset": true},
+      "jev": "live_or_stub", "fastrouter": "up",
+      "expect": {"outcome": "succeeded", "verification": "verified", "apps_created": 1}
     }
   }
 }
