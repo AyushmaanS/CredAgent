@@ -336,3 +336,14 @@ def test_replan_keeps_code_owned_steps_once_at_the_end_d065():
     new, cur = normalise_steps(steps, 6)
     assert [x.kind for x in new] == ["navigate", "click", "navigate", "click", "handoff", "capture", "verify"]
     assert new[cur].id == "s6"
+
+
+def test_rank_for_goal_keeps_the_named_link_within_the_cap_d066():
+    from credagent.browser.candidates import RawCandidate as R
+    from credagent.browser.loop import rank_for_goal
+
+    cands = ([R(f"/f{i}", "fill", f"text field 'F{i}'") for i in range(9)]
+             + [R(f"/b{i}", "click", f"button 'B{i}'") for i in range(11)]
+             + [R("/l1", "click", "link 'General Information'"), R("/l2", "click", "link 'OAuth2'")])
+    ranked = rank_for_goal(cands, "In the left sidebar of the application, open the OAuth2 page.")
+    assert ranked[0].description == "link 'OAuth2'" and ranked[1:] == [c for c in cands if c.xpath != "/l2"]

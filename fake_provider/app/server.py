@@ -429,7 +429,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.page("Not found", "<h1>App not found</h1>", 404)
         show = app.secret_unviewed or not self.sc.secret_shown_once
         if self.sc.secret_after_reset:
-            secret_html = f'<p><a href="/apps/{app.id}/oauth2">View credentials (OAuth2)</a></p>'
+            # Discord's app page: many settings fields and buttons come before the sidebar link (D-066).
+            crowd = ("<form id=settings>" + "".join(f'<label>Setting {i} <input name="s{i}"></label>' for i in range(9))
+                     + "".join(f'<button type="button">Option {i}</button>' for i in range(11)) + "</form>")
+            secret_html = f'{crowd}<p><a href="/apps/{app.id}/oauth2">OAuth2</a></p>'
         elif self.sc.secret_reveal_button:
             slot = esc(json.dumps(f'<code id="client-secret">{esc(app.client_secret)}</code>'))
             secret_html = (f'<p>Client secret: <span id="secret-slot"></span> <button type="button" '

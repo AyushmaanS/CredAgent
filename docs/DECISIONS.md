@@ -500,6 +500,11 @@ Fixes:
 
 Simulated on this run's saved plan: 12 steps after normalising, and the resume starts at "open the OAuth2 page". Online fake check: candidates came from `stagehand+dom`.
 
+## D-066 Rank the page's own candidates by the current step before capping them — Decided (found in the fourth resume of the Discord run)
+*Found in real run `20261116-171020-discord-1588`:* on the app's General Information page, the step was "In the left sidebar of the application, open the OAuth2 page." The page has an `OAuth2` link, and plain-code observation saw it. But Jev is offered at most 20 candidates, and the page's own candidates came in page order: fields first, then buttons, then links. Discord's page has 9 fields and 11 buttons before the sidebar links, so **the one element the step named was never offered**. Stagehand, which ranks by the goal, is not used on pages showing credential-like values (D-044). So Jev answered "none of these", the agent showed a "stuck" card, and the owner was asked to click a sidebar link: *"why should I do small trivial steps"*.
+
+**Fix:** the page's own candidates are ranked by how many of the step's words their description contains, before the cap (`rank_for_goal`). The ranking is stable, so equal scores keep page order. It is deterministic and runs in code; no model is involved. A regression test crowds the Discord-like fake app page with 9 fields and 11 buttons before the `OAuth2` link: it fails without the ranking and passes with it.
+
 ---
 
 ## Discrepancies between documents

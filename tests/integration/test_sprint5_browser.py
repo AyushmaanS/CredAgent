@@ -128,9 +128,16 @@ async def _phase(tmp_path, fp, run, deps, io, *, resume=False, in_doubt=None, ma
         sess.open_session = real_open
 
 
-def new_run(fp, name):
-    return Run(id=f"t5-{name}", app_input="Fakeprov", provider="Fakeprov (local)",
-               plan=fake_provider_plan(fp.base_url))
+def new_run(fp, name, *, oauth_step=False):
+    plan = fake_provider_plan(fp.base_url)
+    if oauth_step:  # as in Discord's real plan: after creating, open the OAuth2 page from the app's sidebar
+        from credagent.state.models import PlanStep
+
+        steps = list(plan.steps)
+        steps.insert(5, PlanStep(id="p5b", kind="navigate", description="In the left sidebar of the application, "
+                                 "open the OAuth2 page."))
+        plan = plan.model_copy(update={"steps": steps})
+    return Run(id=f"t5-{name}", app_input="Fakeprov", provider="Fakeprov (local)", plan=plan)
 
 
 @pytest.mark.parametrize("name", ["success", "shown_once_secret", "terms_checkbox", "secret_behind_reveal", "numeric_client_id", "decoy_token"])
@@ -366,7 +373,7 @@ class CreateAgainJev:
 def test_discord_like_portal_creates_exactly_one_app(tmp_path):
     with FakeProvider(scenario("discord_like")) as fp:
         io = LateIO()
-        run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "dlike"), deps_for(tmp_path), io))
+        run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "dlike", oauth_step=True), deps_for(tmp_path), io))
         created = [a for a in fp.audit() if a["event"] == "app_created"]
         secrets_ = fake_secrets(fp)
     assert run.status == "succeeded", (run.status, run.status_reason)
@@ -381,7 +388,7 @@ def test_eager_decider_cannot_create_a_second_app(tmp_path):
         deps = deps_for(tmp_path)
         jev = CreateAgainJev()
         deps.jev = jev
-        run, store = asyncio.run(_phase(tmp_path, fp, new_run(fp, "again"), deps, io))
+        run, store = asyncio.run(_phase(tmp_path, fp, new_run(fp, "again", oauth_step=True), deps, io))
         created = [a for a in fp.audit() if a["event"] == "app_created"]
     assert jev.proposed_again >= 1, "the replay never proposed a second app; the test would prove nothing"
     assert len(created) == 1, f"{len(created)} apps created"

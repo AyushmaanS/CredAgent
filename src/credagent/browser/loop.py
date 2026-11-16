@@ -61,6 +61,25 @@ REVEAL_RE = re.compile(r"^(view|show|reveal|display)\b[^\n]{0,30}\b(secret|key|t
 NEVER_REVEAL = re.compile(r"regenerate|rotate|reset|new|create|delete|revoke", re.I)
 
 
+_GOAL_WORD = re.compile(r"[a-z0-9]{3,}")
+_GOAL_STOP = {"the", "and", "for", "with", "this", "that", "page", "click", "open", "your", "from", "into", "left",
+              "side", "sidebar", "application", "button", "link", "field", "text"}
+
+
+def rank_for_goal(cands: list, goal: str) -> list:
+    """Order the page's own candidates by how well they match the current step, before the list is capped at
+    20 (D-066). On Discord's app page nine fields and eleven buttons came before the sidebar's "OAuth2" link,
+    so the one element the step named was never offered to Jev. Stable: equal scores keep page order."""
+    words = set(_GOAL_WORD.findall(goal.lower())) - _GOAL_STOP
+
+    def score(c) -> int:
+        desc = c.description.lower()
+        hit = sum(1 for w in words if w in desc)
+        return -(hit * 2 + (1 if c.method == "click" and hit else 0))
+
+    return sorted(cands, key=score)
+
+
 def reveal_control(obs: Observation) -> dict | None:
     """A button or link that only shows the secret (e.g. Spotify's "View client secret")."""
     for c in list(obs.buttons) + list(obs.links):
@@ -524,7 +543,7 @@ class BrowserLoop:
                 raw = []
         # Stagehand's few, goal-ranked candidates first, then the page's own links/buttons/fields, so a plain
         # link Stagehand did not return (e.g. an app card on a list page) is still offered (D-065).
-        dom = dom_candidates(obs)
+        dom = rank_for_goal(dom_candidates(obs), goal)
         if raw:
             have = {r.xpath for r in raw}
             raw = raw + [d for d in dom if d.xpath not in have]
