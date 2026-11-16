@@ -70,8 +70,8 @@ SIGN_IN = re.compile(r"^(sign in|log ?in|continue with [a-z]+)$", re.I)
 RISK_ORDER = ("read_only", "reversible", "hard_to_undo", "irreversible")
 # Controls that create a new app/client/project. One run creates at most one (D-063).
 CREATE_RE = re.compile(
-    r"\b(new|create|add|register)\b[^\n']{0,20}\b(app|apps|application|project|client|integration|"
-    r"credentials?|api key|oauth app)\b|'(create|new)'",
+    r"\b(new|create|add|register)\b[^\n']{0,20}\b(app|apps|application|project|client(?![\s_-]*secret)|"
+    r"integration|api key|oauth app)\b|'(create|new)'",
     re.I,
 )
 

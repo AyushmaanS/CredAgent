@@ -431,13 +431,13 @@ class BrowserLoop:
         first = not run.created
         if first:
             run.created.append(what[:200])
-        # Move past the create step the run was on (the first one at or after the cursor), and nothing more:
-        # later steps may mention "created" too, and must not be skipped (D-064).
-        nxt = next((i for i, st in enumerate(run.plan.steps)
-                    if i >= run.plan_cursor and st.kind in ("click", "handoff", "navigate", "fill")
-                    and CREATE_RE.search(st.description)), None)
-        if nxt is not None:
-            run.plan_cursor = nxt + 1
+        # Move past the create step only if that is the step the run is on; nothing else moves the cursor.
+        # Later steps may mention creating too ("generate a new client secret"), and must not be skipped (D-064,
+        # D-067). A capture elsewhere (e.g. on resume) records the app but leaves the plan where it is.
+        cur = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+        if cur is not None and cur.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(
+                cur.description):
+            run.plan_cursor += 1
         if first:
             self._step(run, f"recorded: this run created {what[:160]}; it will not create another", "system",
                        "done")

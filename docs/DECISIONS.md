@@ -505,6 +505,17 @@ Simulated on this run's saved plan: 12 steps after normalising, and the resume s
 
 **Fix:** the page's own candidates are ranked by how many of the step's words their description contains, before the cap (`rank_for_goal`). The ranking is stable, so equal scores keep page order. It is deterministic and runs in code; no model is involved. A regression test crowds the Discord-like fake app page with 9 fields and 11 buttons before the `OAuth2` link: it fails without the ranking and passes with it.
 
+## D-067 "Generate a new client secret" is not creating an app; only the step being performed moves the cursor — Decided (found in the fifth resume of the Discord run)
+*Found in real run `20261116-171020-discord-1588`:*
+- **Capturing the client ID moved the plan.** On resume, the agent captured the client ID on the app page, which records "an app exists" (D-063), and moved the cursor past the next create step.
+- **The wrong step counted as "create".** The create-detection pattern matched step 8, "click 'Reset Secret' to generate a **new client** secret".
+- **So the agent skipped OAuth2, the redirect and Reset Secret,** and showed the owner a card for the code-owned capture step.
+
+Fixes:
+- **The pattern ignores "client secret":** it no longer treats "client" as an app when "secret" follows.
+- **`_mark_created` moves the cursor only if the step the run is on is itself a create step.** Recording an app on resume or at capture never moves the plan.
+- On this run's saved plan, only step 1 ("Click 'New Application'…") now counts as a create step. On restart the agent continues from "open the OAuth2 page".
+
 ---
 
 ## Discrepancies between documents

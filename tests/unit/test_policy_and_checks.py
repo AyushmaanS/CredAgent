@@ -300,6 +300,10 @@ def test_mark_created_moves_only_past_the_current_create_step_d064():
     loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"))
     loop._mark_created(run, "an app")
     assert run.plan_cursor == 2 and run.created == ["an app"]
+    # D-067: recording the app again elsewhere (e.g. a capture on resume) never moves the cursor
+    run.plan_cursor = 2
+    loop._mark_created(run, "an app")
+    assert run.plan_cursor == 2
 
 
 def test_resume_corrects_a_cursor_past_the_console_steps_d064():
@@ -347,3 +351,10 @@ def test_rank_for_goal_keeps_the_named_link_within_the_cap_d066():
              + [R("/l1", "click", "link 'General Information'"), R("/l2", "click", "link 'OAuth2'")])
     ranked = rank_for_goal(cands, "In the left sidebar of the application, open the OAuth2 page.")
     assert ranked[0].description == "link 'OAuth2'" and ranked[1:] == [c for c in cands if c.xpath != "/l2"]
+
+
+def test_reset_secret_step_is_not_a_create_step_d067():
+    from credagent.policy.engine import CREATE_RE
+
+    assert not CREATE_RE.search("On the OAuth2 page, click 'Reset Secret' to generate a new client secret.")
+    assert CREATE_RE.search("Create a new OAuth client") and CREATE_RE.search("button 'New Application'")
