@@ -41,6 +41,7 @@ def test_store_capture_keeps_values_out_of_the_result(tmp_path):
     assert SEC not in dumped and CID not in dumped
     assert st.get(res.credential.parts["client_secret"].store_ref) == SEC
     assert m.contains_known(SEC)  # registered before anything else could write it
+    assert not m.contains_known(CID)  # an ID is not a secret: it may legitimately appear in URLs (D-062)
 
 
 def test_unlabelled_and_ambiguous_values_are_not_stored(tmp_path):
@@ -237,3 +238,18 @@ def test_numeric_client_id_is_captured_by_label(tmp_path):
     res = store_capture(its, obs(), store=SecretFileStore(tmp_path / "s"), masker=Masker(), run_id="r1",
                         plan_kind="oauth_client")
     assert res.captured == ["client_id", "client_secret"]
+
+
+def test_label_two_levels_up_and_ids_not_registered(tmp_path):
+    """Discord: <h2>Application ID</h2><div><div>1234…</div><button>Copy</button></div>"""
+    m = Masker()
+    its = [{"value": "1234567890123456789", "own": "", "label": "", "prev": "", "around": "Copy",
+            "pprev": "Application ID", "up": "Application ID Copy"},
+           {"value": "f" * 64, "own": "", "label": "", "prev": "", "around": "Copy", "pprev": "Public Key",
+            "up": "Public Key Copy"}]
+    res = store_capture(its, obs(), store=SecretFileStore(tmp_path / "s"), masker=m, run_id="r1",
+                        plan_kind="oauth_client")
+    assert res.captured == ["client_id"] and res.unlabelled == 1
+    assert not m.contains_known("1234567890123456789") and not m.contains_known("f" * 64)
+    url = "https://discord.com/developers/applications/1234567890123456789/information"
+    assert m.mask_text(url) == url and not m.contains_known(url)  # the page URL is not treated as a secret

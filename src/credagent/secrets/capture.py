@@ -4,8 +4,9 @@
 2. CAPTURE_JS reads exactly those elements' values plus a short label context, in the page.
 3. Code classifies each by its label (client ID / client secret / API key / token / signing secret).
    Unlabelled values are not guessed at: they are counted and left alone.
-4. Each value is registered with the Masker *before* anything else happens to it, written to the
+4. Each secret value is registered with the Masker *before* anything else happens to it, written to the
    owner-only store, and dropped. Only store references and masked displays leave this module.
+   IDs (client/application ID) are stored too but not registered as secrets: they appear in URLs.
 
 Shown-once secrets: capture happens on the first view, on the page as it is (no reload, no navigation).
 If the page shows the secret label but the value is hidden, the result says so (`secret_hidden`), and
@@ -38,8 +39,12 @@ CAPTURE_JS = r"""
     let lab = '';
     if (el.labels && el.labels.length) lab = Array.from(el.labels).map(l => clean(l.innerText)).join(' ');
     const prev = el.previousElementSibling ? clean(el.previousElementSibling.innerText) : '';
+    // Labels are often a heading one or two levels up (e.g. <h2>Application ID</h2><div><div>123…</div></div>).
+    const p1 = el.parentElement, p2 = p1 && p1.parentElement;
+    const pprev = p1 && p1.previousElementSibling ? clean(p1.previousElementSibling.innerText) : '';
+    const up = p2 ? clean(p2.innerText) : '';
     return { xpath: x, value, own: own.slice(0, 120), label: lab.slice(0, 120), prev: prev.slice(0, 120),
-             around: around.slice(0, 240) };
+             around: around.slice(0, 240), pprev: pprev.slice(0, 120), up: up.slice(0, 240) };
   });
 })()
 """
@@ -93,7 +98,7 @@ class CaptureResult:
 def classify(item: dict[str, str]) -> str | None:
     """Name a captured element from its own attributes first, then its label, the text right before it,
     then the surrounding text. None = no recognisable label (never guessed)."""
-    for key in ("own", "label", "prev", "around"):
+    for key in ("own", "label", "prev", "around", "pprev", "up"):
         text = item.get(key) or ""
         for name, rx in PART_PATTERNS:
             if rx.search(text):
@@ -129,17 +134,13 @@ def store_capture(
 ) -> CaptureResult:
     """Pure code: classify, register, store. `items` hold raw values and are cleared before returning."""
     values = [str(i.get("value") or "") for i in items]
-    # Register every secret-looking value first, so nothing below can leak one even by accident.
-    for v in values:
-        if VALUE_OK.match(v):
-            masker.register(v, label="captured")
     named: dict[str, str] = {}
     res = CaptureResult(credential=None)
     for item, value in zip(items, values, strict=True):
         if not VALUE_OK.match(value):
             continue
         # Labels may contain other values from the same row: remove every captured value first.
-        for k in ("own", "label", "prev", "around"):
+        for k in ("own", "label", "prev", "around", "pprev", "up"):
             t = str(item.get(k) or "")
             for v in values:
                 if v:
@@ -155,6 +156,13 @@ def store_capture(
         named[name] = value
     for name in res.ambiguous:
         named.pop(name, None)
+    # Register secrets with the Masker before anything else touches them. IDs (client/application ID) are
+    # not secrets and often appear in URLs; registering them made the leak guard refuse a normal page URL
+    # (Discord run 20261116-171020, D-062). Unlabelled values are not stored or written by CredAgent; the
+    # observer already removed them from page text, and the high-entropy masking rule still applies.
+    for name, value in named.items():
+        if name in SECRET_PARTS:
+            masker.register(value, label=name)
     parts: dict[str, CredentialPart] = {}
     for name, value in named.items():
         ref = store.put(run_id, name, value)

@@ -246,6 +246,8 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     io = TerminalIO()
     orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (research is done)
     click.echo(f"\nOpening the CredAgent browser window (profile: {_tilde(deps.profile_dir)}).")
+    from credagent.state.store import SecretLeakError
+
     try:
         if resume:
             run = asyncio.run(resume_browser_phase(orch, run, deps, io, in_doubt))
@@ -254,6 +256,11 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     except ChromeError as exc:
         click.echo(f"Browser problem: {exc}", err=True)
         sys.exit(1)
+    except SecretLeakError:
+        click.echo("\nCredAgent stopped itself: it was about to write a value registered as secret into the run's "
+                   "log, which it never does. Nothing was written. This is a CredAgent bug; the run is saved up "
+                   f"to the last safe step and can be continued after the fix: credagent resume {run.id}", err=True)
+        sys.exit(4)
     _end_message(run)
 
 

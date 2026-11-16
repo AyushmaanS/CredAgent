@@ -438,6 +438,16 @@ Also from that run: Jev's "a person needs to act" card was generic ("Check the b
 
 Tested with a new fake scenario, `decoy_token`: an unlabelled token on the console before any app exists. The run continues and succeeds.
 
+## D-062 Only secrets are registered with the Masker; IDs are captured from labels further up — Decided (found in the second Discord run)
+*Found in real run `20261116-171020-discord-1588`:* the person created the app. On Discord's General Information page the agent read the credential-like values: the all-digit Application ID and the Public Key. Capture **registered every value it read with the Masker before classifying it**. The Application ID is also in the page URL (`/developers/applications/<id>/information`), which run state records, so the leak guard (`SecretLeakError`) refused the next write and the CLI crashed with a traceback. **Nothing secret was written.** The guard worked as designed; the false positive was the bug. The Application ID was also not recognised: its label ("Application ID") is a heading two levels above the number.
+
+Fixes:
+- **Only values classified as secrets** (client secret, signing secret, API key, token) are registered with the Masker, still before they are stored. IDs are stored but not registered, as the DCR path already did. Unlabelled values are not stored or written by CredAgent. The observer already removes them from page text, and the high-entropy masking rule still applies.
+- **Labels are looked for further up:** the parent's previous sibling (a heading) and the grandparent's text. This applies both in the observer (for all-digit IDs) and in capture.
+- **If the leak guard ever trips again, the CLI says so plainly** (exit code 4): nothing was written, and the run can be resumed after the fix.
+
+Tested: the `numeric_client_id` fake scenario now matches Discord's layout, with the ID in the URL and the label two levels up. Unit tests check that an ID in a URL is not treated as a secret.
+
 ---
 
 ## Discrepancies between documents

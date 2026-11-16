@@ -103,10 +103,11 @@ class State:
             self._new_app("credagent-demo", "http://127.0.0.1:8976/callback", record=False)
 
     def _new_app(self, name: str, redirect_uri: str, record: bool = True, **kw: Any) -> App:
+        cid = (str(10**17 + secrets.randbelow(9 * 10**17)) if self.scenario.numeric_client_id
+               else "fpcid_" + secrets.token_hex(8))
         app = App(
-            id=secrets.token_hex(4), name=name,
-            client_id=(str(10**17 + secrets.randbelow(9 * 10**17)) if self.scenario.numeric_client_id
-                       else "fpcid_" + secrets.token_hex(8)),
+            id=cid if self.scenario.numeric_client_id else secrets.token_hex(4),  # Discord: the ID is in the URL
+            name=name, client_id=cid,
             client_secret="fpcs_" + secrets.token_urlsafe(30), redirect_uri=redirect_uri,
             status="testing" if self.scenario.testing_mode else "active", **kw,
         )
@@ -443,7 +444,10 @@ class Handler(BaseHTTPRequestHandler):
         elif app.status == "pending_review":
             status = '<div class="notice" id="pending-review">Review pending.</div>'
         body = (f"<h1>{esc(app.name)}</h1>{status}<div id=credentials><h2>Credentials</h2>"
-                f'<p>Client ID: <code id="client-id">{esc(app.client_id)}</code></p>{secret_html}</div>'
+                + (f'<h3>Application ID</h3><div><div>{esc(app.client_id)}</div><button type="button">Copy'
+                   '</button></div>' if self.sc.numeric_client_id else
+                   f'<p>Client ID: <code id="client-id">{esc(app.client_id)}</code></p>')
+                + f"{secret_html}</div>"
                 f"<p>Callback URL: <code>{esc(app.redirect_uri)}</code></p>"
                 f'<form method="post" action="/apps/{app.id}/regenerate"><button>Regenerate secret'
                 f"</button></form>"
