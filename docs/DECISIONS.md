@@ -525,6 +525,23 @@ Fixes:
 
 Tested: a real-Chrome case starts on the app list with Jev forced to "stuck". The navigator opens the run's existing app, the run reaches OAuth2, and it captures and live-tests with no new app created. 74 of 74 real-Chrome tests pass.
 
+## D-069 Formless terms buttons, unlabelled fields, repeated clicks, and "… and save" steps — Decided (found in the fresh Discord run)
+*Found in real run `20261116-190534-discord-a839`* (fresh; one app created by the owner, as it should be):
+1. **The agent clicked Discord's terms-carrying "Create" itself.** The owner had answered "yes" to a generic "hard to undo" DECIDE. Discord's create dialog is not an HTML `<form>`, so the rule "a submit in a terms form is the person's" found no form. The checkbox was unticked, so nothing was created, but the rule had a hole. **Fix:** any control named in the agreement wording ("By clicking **Create**, you agree…") is a terms DO, with or without a form.
+2. **"Add Another" was clicked 14 times** and the redirect was never typed. Discord's redirect box has no label, so it had no approved value; Jev kept choosing the button that matched "add" until the step budget ran out. Those rows were never saved.
+   **Fixes:**
+   - The observer records each field's section heading (e.g. "Redirects"), and an unlabelled field is described and mapped by it.
+   - A control with the same text is clicked at most twice on one page; after that it is no longer offered.
+   - The form-completion pass fills each approved value once per form, not into every empty row.
+3. **"… and save" steps now finish properly.** When a step says to save, after the agent has typed on the page, it clicks the page's Save / Save Changes once. The step is then complete (code rule), so Save is not clicked again.
+
+Tested: the `discord_like` fake now copies those quirks:
+- the create button sits outside its form and is named in the agreement;
+- the Redirects box has no label, with "Add Redirect" → "Add Another" and "Save Changes";
+- "Reset Secret" has no "hidden" marker.
+
+The run hands Create to the person, saves exactly one redirect (the callback), asks before Reset Secret, and captures and live-tests. Unit tests cover the formless terms button and the section mapping.
+
 ---
 
 ## Discrepancies between documents

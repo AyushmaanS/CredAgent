@@ -39,6 +39,16 @@ OBSERVE_JS = r"""
     return clean(t).slice(0, 160);
   };
   const ctx = el => { const p = el.parentElement; return clean(p ? p.innerText : '').slice(0, 200); };
+  // The nearest heading above an element (e.g. "Redirects"), for fields that have no label of their own.
+  const sectionOf = el => {
+    for (let a = el, d = 0; a && d < 8; a = a.parentElement, d++) {
+      for (let s = a.previousElementSibling; s; s = s.previousElementSibling) {
+        const h = /^H[1-6]$/.test(s.tagName) ? s : s.querySelector && s.querySelector('h1,h2,h3,h4,h5,h6,[role=heading]');
+        if (h && clean(h.innerText)) return clean(h.innerText).slice(0, 80);
+      }
+    }
+    return '';
+  };
 
   // credential-looking elements
   const secretEls = [];
@@ -70,7 +80,7 @@ OBSERVE_JS = r"""
   const inputs = Array.from(document.querySelectorAll('input,textarea,select')).filter(el => vis(el) && el.type !== 'hidden').map(el => ({
     xpath: xp(el), tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(), name: el.name || '',
     id: el.id || '', label: labelOf(el), required: !!el.required, checked: !!el.checked, readonly: !!el.readOnly,
-    autocomplete: el.getAttribute('autocomplete') || '', value_len: (el.value || '').length,
+    autocomplete: el.getAttribute('autocomplete') || '', value_len: (el.value || '').length, section: sectionOf(el),
     value_secretlike: secretEls.includes(el),
     options: el.tagName === 'SELECT' ? Array.from(el.options).map(o => clean(o.text).slice(0, 80)).slice(0, 20) : [],
     form: el.form ? xp(el.form) : null,

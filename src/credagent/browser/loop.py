@@ -355,6 +355,7 @@ class BrowserLoop:
         if not form:
             return obs, gates, "ok", summary
         terms_xpaths = {g.target_xpath for g in gates if g.kind == "terms" and g.target_xpath}
+        used_keys: set[str | None] = set()
         changed = False
         for i in list(obs.inputs):
             if i["form"] != form or i["type"] in ("hidden", "submit", "button", "image", "reset"):
@@ -374,6 +375,7 @@ class BrowserLoop:
             if i["value_len"]:
                 if i["tag"] != "select":
                     summary["filled"].append(f"“{label[:60]}”")
+                    used_keys.add(field_key_for(label))
                 continue
             if i["tag"] == "select":
                 cand = RawCandidate(i["xpath"], "select", f"dropdown '{label}'")
@@ -394,9 +396,12 @@ class BrowserLoop:
                 continue
             key = field_key_for(label)
             value = self.values.get(key)
+            if key and key in used_keys:  # D-069: one value once per form (not the callback into every empty row)
+                continue
             if not value:
                 summary["left_empty"].append(f"“{label[:60]}”" + (" (required)" if i["required"] else ""))
                 continue
+            used_keys.add(key)
             act = ProposedAction(
                 method="fill", xpath=i["xpath"], description=f"text field '{label}'", field_key=key, value=value
             )
@@ -424,6 +429,36 @@ class BrowserLoop:
             obs = await observe_page(page, self.masker)
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
+
+    async def _save_if_step_says_so(self, run: Run, page: Any, obs: Observation, gates: list, goal: str,
+                                    saved_on: set[str]) -> bool:
+        """D-069: a step that says "… and save" is not complete while the page's Save button is unclicked. After the
+        agent typed into a field on this page, click the visible Save / Save Changes button once (policy decides)."""
+        if not re.search(r"\bsave\b", goal, re.I) or obs.url in saved_on:
+            return False
+        typed = any(s.action.startswith("fill ") and s.actor == "agent" for s in run.steps[-6:])
+        btn = next((b for b in obs.buttons if not b["disabled"]
+                    and re.fullmatch(r"save( changes)?", (b["text"] or "").strip(), re.I)), None)
+        if not (typed and btn):
+            return False
+        saved_on.add(obs.url)
+        desc = f"button '{btn['text']}'"
+        verdict = evaluate(ProposedAction(method="click", xpath=btn["xpath"], description=desc), obs, gates,
+                           self._allowed, risk="reversible", risk_uncertain=False, already_created=bool(run.created))
+        self._cp(run, "policy", {"candidate": desc, "verdict": verdict.decision, "reason": verdict.reason,
+                                 "category": verdict.category})
+        if verdict.decision != "allow":
+            return False
+        seq = self.store.begin_action(run, "click", {"target": desc, "why": "the step says save"})
+        await page.locator("xpath=" + btn["xpath"]).click()
+        await page.wait_for_timeout(self.budget.settle_ms)
+        self.store.end_action(run, seq, "done")
+        self._step(run, f"click {desc} (the step says to save)", "agent", "done")
+        # The step said "enter … and save": filled and saved, so it is complete (no second Save, D-069).
+        self._step(run, f"step complete: {goal[:120]} (code: filled and saved)", "agent", "done")
+        run.plan_cursor += 1
+        self._cp(run, "plan_step_complete", {"cursor": run.plan_cursor, "by": "code: filled and saved"})
+        return True
 
     def _mark_created(self, run: Run, what: str) -> None:
         """Record that this run created an app at the provider (D-063): never create a second one, and move
@@ -584,6 +619,8 @@ class BrowserLoop:
         revealed = False
         seen_cred: set[tuple] = set()
         toward_tried: set[str] = set()
+        clicks: dict[tuple[str, str], int] = {}
+        saved_on: set[str] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
         run.phase = "browser"
@@ -802,6 +839,9 @@ class BrowserLoop:
                                        instruction=instruction) is None:
                     return LoopResult("handoff_pending", why, n_obs, n_act)
                 continue
+            if act == "step_complete" and await self._save_if_step_says_so(run, page, obs, gates, goal, saved_on):
+                n_act += 1
+                continue
             if act == "step_complete":
                 self._step(run, f"step complete: {goal[:120]}", "agent", "done", inferred=["decided by Jev"])
                 run.plan_cursor += 1
@@ -834,6 +874,10 @@ class BrowserLoop:
 
             # 5. policy (code) — the model's choice is an input, never a permission
             cand = mapping[el]
+            if cand.method in ("fill", "select") and cand.filled and await self._save_if_step_says_so(
+                    run, page, obs, gates, goal, saved_on):
+                n_act += 1
+                continue
             if cand.method in ("fill", "select") and cand.filled:
                 # Code rule (D-044): re-filling a field that already holds a value is a no-op, so the step is done.
                 self._step(
@@ -975,6 +1019,19 @@ class BrowserLoop:
                 if status == "declined":
                     self._stop = "person declined a choice in the form"
                     return LoopResult("blocked", self._stop, n_obs, n_act)
+            # D-069: clicking the same control again and again on one page is not progress (Discord: "Add Another"
+            # ×14). After two clicks of a control with the same text on this page, it is no longer offered.
+            if cand.method == "click":
+                norm = lambda t: re.sub(r"\s+", " ", (t or "").lower()).strip()  # noqa: E731
+                text = norm(next((b.get("text") for b in obs.buttons + obs.links if b["xpath"] == cand.xpath), ""))
+                ctl = (obs.url.split("#")[0], text or norm(cand.description))
+                clicks[ctl] = clicks.get(ctl, 0) + 1
+                if clicks[ctl] > 2:
+                    denied.add(cand.xpath)
+                    self._step(run, f"not repeated a third time on this page: {cand.description}", "system", "denied")
+                    if text:  # the same control text elsewhere on this page is not offered again either
+                        denied.update(b["xpath"] for b in obs.buttons + obs.links if norm(b.get("text")) == text)
+                    continue
             # 6. act  7. record  8. checkpoint
             seq = self.store.begin_action(run, cand.method, {"target": cand.description, "field": cand.field_key})
             try:
@@ -986,6 +1043,15 @@ class BrowserLoop:
                 continue
             self.store.end_action(run, seq, "done")
             n_act += 1
+            btn_text = next((b.get("text") or "" for b in obs.buttons if b["xpath"] == cand.xpath), "")
+            if cand.method == "click" and re.fullmatch(r"save( changes)?", btn_text.strip(), re.I) and re.search(
+                    r"\bsave\b", goal, re.I):
+                saved_on.add(obs.url)
+                self._step(run, f"click {cand.description}", "agent", "done")
+                self._step(run, f"step complete: {goal[:120]} (code: saved)", "agent", "done")
+                run.plan_cursor += 1
+                self._cp(run, "plan_step_complete", {"cursor": run.plan_cursor, "by": "code: saved"})
+                continue
             if cand.method == "click" and form_of_btn and CREATE_RE.search(cand.description):
                 try:
                     moved = (await page.url()) != obs.url

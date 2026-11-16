@@ -133,7 +133,7 @@ def evaluate(
             continue
         if g.target_xpath and action.xpath == g.target_xpath:
             return Verdict("DO", "Accepting terms is always the person's action.", "terms")
-        if action.method == "click" and _is_submit(action, obs, g.form_xpath):
+        if action.method == "click" and (_is_submit(action, obs, g.form_xpath) or _named_in_agreement(label, g)):
             return Verdict(
                 "DO",
                 "Submitting this form accepts terms (checkbox or implied wording); the person reviews and submits.",
@@ -195,6 +195,23 @@ def evaluate(
             "hard_to_undo",
         )
     return Verdict("allow", f"risk {effective}")
+
+
+_AGREE_BY = re.compile(r"by (clicking|selecting|tapping|pressing) [“\"'‘]?([A-Za-z][\w &-]{0,30}?)[”\"'’]?[,.]?\s+"
+                       r"you (agree|accept|consent)", re.I)
+
+
+def _named_in_agreement(label: str, g: Gate) -> bool:
+    """A control named in the agreement wording ("By clicking Create, you agree…") carries the agreement, even
+    when the page has no <form> to tie it to the terms (Discord's create dialog, D-069)."""
+    m = label.lower()
+    for text in g.evidence:
+        found = _AGREE_BY.search(text)
+        if found:
+            name = found.group(2).strip().lower()
+            if name and (f"'{name}'" in m or f"[{name}]" in m or m.endswith(name) or f"“{name}”" in m):
+                return True
+    return False
 
 
 def _is_button(action: ProposedAction, obs: Observation) -> bool:

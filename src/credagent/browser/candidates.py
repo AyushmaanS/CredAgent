@@ -100,12 +100,18 @@ def dom_candidates(obs: Observation) -> list[RawCandidate]:
             continue
         else:
             filled = i["value_len"] > 0
+            key = field_key_for(label)
+            section = i.get("section") or ""
+            if not i["label"] and section:
+                # No label of its own (e.g. Discord's redirect boxes): describe and map it by its section heading.
+                label = f"{section}: {label}" if label not in ("text", "url", "") else section
+                key = key or field_key_for(section)
             out.append(
                 RawCandidate(
                     i["xpath"],
                     "fill",
                     f"text field '{label}'" + (" (already filled)" if filled else ""),
-                    field_key=field_key_for(label),
+                    field_key=key,
                     filled=filled,
                 )
             )
@@ -140,7 +146,7 @@ def from_stagehand(actions: list[Any], obs: Observation) -> list[RawCandidate]:
         if method not in ("click", "fill", "select", "check"):
             continue
         el = by_xpath.get(xp)
-        label = (el.get("label") or el.get("text") or "") if el else ""
+        label = (el.get("label") or el.get("text") or el.get("section") or "") if el else ""
         desc = a.description if not label else f"{a.description} [{label}]"
         filled = bool(el and el.get("value_len"))
         out.append(

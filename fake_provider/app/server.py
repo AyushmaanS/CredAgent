@@ -91,6 +91,7 @@ class App:
     status: Literal["active", "testing", "pending_review"] = "active"
     secret_unviewed: bool = True
     reset_done: bool = False
+    redirects: list[str] = field(default_factory=list)
 
 
 class State:
@@ -411,7 +412,9 @@ class Handler(BaseHTTPRequestHandler):
                 f'<label>Authorization callback URL <input name="redirect_uri" '
                 f'value="{esc(v.get("redirect_uri", ""))}" required></label>'
                 f"{types}{scopes}{overwrite}{terms}"
-                f'<button type="submit" id="create-app">Create app</button></form>')
+                + ('</form><button type="button" id="create-app" onclick="document.getElementById(\'new-app-form\')'
+                   '.submit()">Create app</button>' if self.sc.secret_after_reset else
+                   '<button type="submit" id="create-app">Create app</button></form>'))
 
     def get_new_app(self) -> None:
         if self.need_signin() or self.need_captcha("before_console") or self.need_captcha("on_create"):
@@ -476,11 +479,19 @@ class Handler(BaseHTTPRequestHandler):
             secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
                       '<p class="warn">Copy it now; it is shown once.</p>')
         else:
-            secret = ('<p>Client secret: <code>••••••••</code> (hidden)</p>'
+            secret = ('<h3>Client Secret</h3>'
                       f'<form method="post" action="/apps/{app.id}/regenerate"><button>Reset Secret</button></form>')
+        saved = "".join(f"<li><code>{esc(u)}</code></li>" for u in app.redirects)
+        add = ("const d=document.getElementById('redirect-rows');const i=document.createElement('input');"
+               "i.type='text';i.name='redirect';d.appendChild(i);this.innerText='Add Another';")
+        redirects = (f'<h3>Redirects</h3><ul id="saved-redirects">{saved}</ul>'
+                     f'<form method="post" action="/apps/{app.id}/redirects" id="redirects-form">'
+                     '<div id="redirect-rows"></div>'
+                     f'<button type="button" onclick="{add}">Add Redirect</button>'
+                     '<button type="submit">Save Changes</button></form>')
         self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
                   f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>"
-                  f'{secret}</div><p><a href="/console">Back to applications</a></p>')
+                  f'{secret}</div>{redirects}<p><a href="/console">Back to applications</a></p>')
 
     def get_terms(self) -> None:
         self.page("Developer Terms", "<h1>Fakeprov Developer Terms (fake)</h1><p>These are placeholder "
@@ -599,6 +610,10 @@ class Handler(BaseHTTPRequestHandler):
                 app.status = "pending_review"
                 self.state.log("submitted_for_review", self.actor(), app=app.name)
                 return self.redirect(f"/apps/{app.id}")
+            if action == "redirects":
+                app.redirects = [u for u in (f.get("redirect") or []) if u.strip()] or app.redirects  # keep saved
+                self.state.log("redirects_saved", self.actor(), app=app.name, count=len(app.redirects))
+                return self.redirect(f"/apps/{app.id}/oauth2")
             if action == "regenerate":
                 app.client_secret = "fpcs_" + secrets.token_urlsafe(30)
                 app.secret_unviewed = True

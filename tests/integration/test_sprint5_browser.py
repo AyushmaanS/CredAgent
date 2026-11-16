@@ -134,8 +134,14 @@ def new_run(fp, name, *, oauth_step=False):
         from credagent.state.models import PlanStep
 
         steps = list(plan.steps)
-        steps.insert(5, PlanStep(id="p5b", kind="navigate", description="In the left sidebar of the application, "
-                                 "open the OAuth2 page."))
+        steps[5:5] = [
+            PlanStep(id="p5b", kind="navigate", description="In the left sidebar of the application, open the OAuth2 "
+                     "page.", expected_page="/oauth2"),
+            PlanStep(id="p5c", kind="fill", description="Under Redirects, click 'Add Redirect', enter the exact "
+                     "callback URL, and save."),
+            PlanStep(id="p5d", kind="click", description="On the OAuth2 page, click 'Reset Secret' to generate a new "
+                     "client secret."),
+        ]
         plan = plan.model_copy(update={"steps": steps})
     return Run(id=f"t5-{name}", app_input="Fakeprov", provider="Fakeprov (local)", plan=plan)
 
@@ -376,10 +382,16 @@ def test_discord_like_portal_creates_exactly_one_app(tmp_path):
         run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "dlike", oauth_step=True), deps_for(tmp_path), io))
         created = [a for a in fp.audit() if a["event"] == "app_created"]
         secrets_ = fake_secrets(fp)
+        app_redirects = [a.redirects for a in fp.state.apps.values()][0]
     assert run.status == "succeeded", (run.status, run.status_reason)
     assert len(created) == 1 and created[0]["actor"] == "person"  # implied terms: the person clicked Create
     assert set(run.credential.parts) == {"client_id", "client_secret"} and run.created
     assert_no_leak(tmp_path, run.id, secrets_, io.out)
+    # D-069: the formless Create button was handed to the person (never clicked by the agent after a DECIDE);
+    # the unlabelled redirect box was filled with the callback and saved; "Add Another" was not clicked on and on.
+    assert ("DO", "terms") in io.person.handoffs
+    assert app_redirects == [CB], app_redirects
+    assert sum(s.action.startswith("click") and "Add Another" in s.action for s in run.steps) <= 2
 
 
 def test_eager_decider_cannot_create_a_second_app(tmp_path):

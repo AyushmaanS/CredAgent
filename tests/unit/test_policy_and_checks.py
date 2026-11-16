@@ -358,3 +358,26 @@ def test_reset_secret_step_is_not_a_create_step_d067():
 
     assert not CREATE_RE.search("On the OAuth2 page, click 'Reset Secret' to generate a new client secret.")
     assert CREATE_RE.search("Create a new OAuth client") and CREATE_RE.search("button 'New Application'")
+
+
+def test_formless_button_named_in_agreement_is_the_persons_d069():
+    """Discord's create dialog has no <form>: the Create button must still be the person's (D-069)."""
+    from credagent.policy.hard_checks import Gate
+
+    g = Gate("terms", "INFO", "x", ['checkbox: "By clicking Create, you agree to the Discord Developer Terms"'],
+             target_xpath="/cb", form_xpath=None)
+    o = obs(buttons=[btn("/d/b1", "Create", form=None), btn("/d/b2", "Cancel", form=None)])
+    create = evaluate(ProposedAction("click", "/d/b1", "button 'Create'"), o, [g], ALLOWED, risk="read_only",
+                      risk_uncertain=False)
+    assert create.decision == "DO" and create.category == "terms"
+    cancel = evaluate(ProposedAction("click", "/d/b2", "button 'Cancel'"), o, [g], ALLOWED, risk="read_only",
+                      risk_uncertain=False)
+    assert cancel.category != "terms"
+
+
+def test_unlabelled_field_is_mapped_by_its_section_heading_d069():
+    from credagent.browser.candidates import dom_candidates
+
+    o = obs(inputs=[inp("/f/i1", "", type_="text", section="Redirects")])
+    (c,) = [c for c in dom_candidates(o) if c.method == "fill"]
+    assert c.field_key == "redirect_uri" and "Redirects" in c.description
