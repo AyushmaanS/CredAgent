@@ -563,6 +563,20 @@ class BrowserLoop:
         if not run.created and run.credential is not None:
             # Resumed after an interruption: an app was already created earlier in this run (D-063).
             self._mark_created(run, "an app (created earlier in this run, before the interruption)")
+        cur = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+        has_secret = bool(run.credential and set(run.credential.parts) & {"client_secret", "api_key", "token",
+                                                                          "signing_secret"})
+        if run.created and not has_secret and (cur is None or cur.kind in ("capture", "verify")):
+            # The cursor is past every console step but no secret was captured (e.g. D-064's skip-ahead): go back
+            # to the first step after the run's create step, so the agent does the remaining console steps.
+            first = next((i for i, st in enumerate(run.plan.steps)
+                          if st.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(st.description)),
+                         None)
+            if first is not None and first + 1 < run.plan_cursor:
+                self._cp(run, "plan_cursor_corrected", {"from": run.plan_cursor, "to": first + 1})
+                self._step(run, f"plan position corrected: back to step {first + 2} (the console steps after "
+                           "creating the app are not done yet)", "system", "done")
+                run.plan_cursor = first + 1
         self._maybe_created = not run.created and any(
             h.blocker_kind == "terms" and h.status == "completed" for h in run.handoffs)
         await self._domain_guard(run, on=True)

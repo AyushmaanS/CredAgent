@@ -482,7 +482,9 @@ Fixes:
 - **Its own app is marked:** a clickable candidate whose text contains this run's app name is described to Jev as "(the app this run created)".
 - **"Stuck" cards quote the current plan step** and ask the person to do it, as the "person needed" card already does (D-061).
 
-For this run, the owner was asked to do the remaining console steps by hand from the app page (OAuth2 → Add Redirect → Save → Reset Secret) and then press Enter. The agent then re-checks the page, captures by plain code and runs the live test. The outcome is recorded in RESULTS.md.
+First I asked the owner to do the remaining console steps by hand. The owner objected, rightly: *"why does agent want me to [do the] remaining steps — it has to be done by it."* Those steps are the agent's job: only the "Reset Secret" yes/no and any 2FA code belong to the person.
+
+So a run whose saved cursor is already past every console step while no secret has been captured is now **corrected on resume**. The cursor goes back to the first step after the create step, and that correction is logged. The agent then does the remaining steps itself. The outcome is recorded in RESULTS.md.
 
 ---
 

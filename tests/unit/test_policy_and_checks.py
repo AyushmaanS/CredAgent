@@ -300,3 +300,28 @@ def test_mark_created_moves_only_past_the_current_create_step_d064():
     loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"))
     loop._mark_created(run, "an app")
     assert run.plan_cursor == 2 and run.created == ["an app"]
+
+
+def test_resume_corrects_a_cursor_past_the_console_steps_d064():
+    import asyncio
+
+    from credagent.browser.candidates import FieldValues
+    from credagent.browser.loop import BrowserLoop, LoopBudget
+    from credagent.secrets.masking import Masker
+    from credagent.state.models import Plan, PlanStep, Run
+
+    steps = [PlanStep(id="a", kind="navigate", description="Open the portal"),
+             PlanStep(id="b", kind="click", description="Click 'New Application' and create the app"),
+             PlanStep(id="c", kind="navigate", description="Open the OAuth2 page"),
+             PlanStep(id="d", kind="capture", description="Capture"),
+             PlanStep(id="e", kind="verify", description="Live test")]
+    run = Run(id="r", app_input="x", plan=Plan(steps=steps), plan_cursor=4, created=["an app"])
+
+    class NullStore:
+        def checkpoint(self, *a, **k):
+            return 0
+
+    loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"),
+                       budget=LoopBudget(max_observations=0))
+    asyncio.run(loop.run(run, page=None))
+    assert run.plan_cursor == 2
