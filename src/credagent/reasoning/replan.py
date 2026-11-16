@@ -41,6 +41,26 @@ class ReplanInfeasible(Exception):
     """The LLM judged the plan no longer feasible from the current page."""
 
 
+def code_owned_tail(steps: list[PlanStep]) -> list[PlanStep]:
+    """The code-owned capture and live-test steps: one of each (the last one written), capture first."""
+    tail = []
+    for kind in ("capture", "verify"):
+        found = [s for s in steps if s.kind == kind]
+        if found:
+            tail.append(found[-1])
+    return tail
+
+
+def normalise_steps(steps: list[PlanStep], cursor: int) -> tuple[list[PlanStep], int]:
+    """Keep browser steps in order, then the code-owned tail. Maps the cursor to the first browser step at or
+    after it (or to the tail if none is left)."""
+    body = [s for s in steps if s.kind not in ("capture", "verify")]
+    new = body + code_owned_tail(steps)
+    ahead = [s.id for s in steps[cursor:] if s.kind not in ("capture", "verify")]
+    new_cursor = next((i for i, s in enumerate(body) if s.id in ahead), len(body))
+    return new, new_cursor
+
+
 def replan(run: Run, reasoner: Any, observation: str, *, model: str | None = None,
            max_steps: int = 12) -> Plan:
     """`observation` must already be masked page text (never raw page content with secrets)."""
@@ -65,9 +85,9 @@ def replan(run: Run, reasoner: Any, observation: str, *, model: str | None = Non
     if not r.still_feasible:
         raise ReplanInfeasible(r.reason)
 
-    kept = [s for s in run.plan.steps if s.id in done]
+    kept = [s for s in run.plan.steps if s.id in done and s.kind not in ("capture", "verify")]
     proposed = [s for s in r.remaining_steps if s.kind not in ("capture", "verify")][:max_steps]
-    tail = [s for s in run.plan.steps if s.kind in ("capture", "verify")]  # code-owned, unchanged
+    tail = code_owned_tail(run.plan.steps)  # code-owned, once each, always last (D-065)
     rev = run.replans_used + 1
     steps = kept + [PlanStep(id=f"r{rev}-{i}", description=s.description, kind=s.kind)
                     for i, s in enumerate(proposed, 1)] + tail

@@ -486,6 +486,20 @@ First I asked the owner to do the remaining console steps by hand. The owner obj
 
 So a run whose saved cursor is already past every console step while no secret has been captured is now **corrected on resume**. The cursor goes back to the first step after the create step, and that correction is logged. The agent then does the remaining steps itself. The outcome is recorded in RESULTS.md.
 
+## D-065 Jev always sees the page's own links; code-owned steps stay at the end of the plan — Decided (found in the third resume of the Discord run)
+*Found in real run `20261116-171020-discord-1588`:* the agent stayed on Discord's **My Applications** list and never opened the app.
+- **The app link wasn't offered to Jev.** The card is an ordinary link (`a[href=/developers/applications/<id>]`), and plain-code observation sees it. But whenever Stagehand returned any candidates, only Stagehand's were offered, and Stagehand returned at most one, never the app link.
+- **Re-plans had scattered live-test steps through the plan.** The re-plan kept "done" steps, and code-owned verify steps counted as done because actions carry the current step's id. So the plan had live-test steps at positions 2, 4 and 12, and the D-064 correction moved the cursor onto one of them.
+- **Jev then marked steps done without doing them.** The run reached a "2FA" step while still on the list.
+
+Fixes:
+- **Merged candidates:** Stagehand's goal-ranked candidates come first, then the page's own links, buttons and fields (deduplicated, capped at 20). The app this run created is still marked by its name (D-064).
+- **Code-owned steps:** re-plans keep exactly one capture step and one live-test step, at the end. A plan saved earlier is normalised when the run starts or resumes, and the cursor is mapped to the same browser step.
+- **The browser goal skips capture and live-test steps:** code does those.
+- **On start or resume, if an app exists but no secret has been captured,** the agent continues from the step right after the create step. Steps that are already done are marked complete quickly, and a second app can never be created (D-063).
+
+Simulated on this run's saved plan: 12 steps after normalising, and the resume starts at "open the OAuth2 page". Online fake check: candidates came from `stagehand+dom`.
+
 ---
 
 ## Discrepancies between documents

@@ -34,7 +34,7 @@ from credagent.handoff.cards import render_card
 from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed
 from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
-from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
+from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, normalise_steps, replan
 from credagent.secrets.capture import CaptureResult, capture
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Handoff, Run, StepRecord
@@ -217,6 +217,10 @@ class BrowserLoop:
 
     def _goal(self, run: Run) -> str:
         steps = run.plan.steps
+        # Capture and the live test are done by code, never browser goals: aim at the next browser step.
+        while run.plan_cursor < len(steps) and steps[run.plan_cursor].kind in ("capture", "verify") and any(
+                x.kind not in ("capture", "verify") for x in steps[run.plan_cursor:]):
+            run.plan_cursor += 1
         if run.plan_cursor >= len(steps) or steps[run.plan_cursor].kind in ("capture", "verify"):
             return "Reach the page that shows the newly created credential"
         s = steps[run.plan_cursor]
@@ -518,8 +522,15 @@ class BrowserLoop:
                 source = "stagehand"
             except Exception:  # noqa: BLE001 - observe failure falls back to plain code
                 raw = []
-        if not raw:
-            raw, source = dom_candidates(obs), "dom"
+        # Stagehand's few, goal-ranked candidates first, then the page's own links/buttons/fields, so a plain
+        # link Stagehand did not return (e.g. an app card on a list page) is still offered (D-065).
+        dom = dom_candidates(obs)
+        if raw:
+            have = {r.xpath for r in raw}
+            raw = raw + [d for d in dom if d.xpath not in have]
+            source = "stagehand+dom"
+        else:
+            raw, source = dom, "dom"
         # Help the decider find the app this run created on a list page (D-064): mark it by its name.
         if self.values.app_name:
             from dataclasses import replace as _replace
@@ -563,12 +574,20 @@ class BrowserLoop:
         if not run.created and run.credential is not None:
             # Resumed after an interruption: an app was already created earlier in this run (D-063).
             self._mark_created(run, "an app (created earlier in this run, before the interruption)")
+        steps2, cursor2 = normalise_steps(run.plan.steps, run.plan_cursor)
+        if [x.id for x in steps2] != [x.id for x in run.plan.steps]:
+            # Older re-plans could leave live-test steps in the middle (D-065): put code-owned steps last.
+            self._cp(run, "plan_normalised",
+                     {"steps": len(steps2), "cursor_from": run.plan_cursor, "cursor_to": cursor2})
+            run.plan = run.plan.model_copy(update={"steps": steps2})
+            run.plan_cursor = cursor2
         cur = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
         has_secret = bool(run.credential and set(run.credential.parts) & {"client_secret", "api_key", "token",
                                                                           "signing_secret"})
-        if run.created and not has_secret and (cur is None or cur.kind in ("capture", "verify")):
-            # The cursor is past every console step but no secret was captured (e.g. D-064's skip-ahead): go back
-            # to the first step after the run's create step, so the agent does the remaining console steps.
+        if run.created and not has_secret and cur is not None:
+            # Starting (or resuming) with an app that exists but no secret captured: continue from the first step
+            # after the create step. Steps that are already done are marked complete quickly; a second app can
+            # never be created (D-063). This repairs a saved cursor that skipped console steps (D-064/D-065).
             first = next((i for i, st in enumerate(run.plan.steps)
                           if st.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(st.description)),
                          None)

@@ -325,3 +325,14 @@ def test_resume_corrects_a_cursor_past_the_console_steps_d064():
                        budget=LoopBudget(max_observations=0))
     asyncio.run(loop.run(run, page=None))
     assert run.plan_cursor == 2
+
+
+def test_replan_keeps_code_owned_steps_once_at_the_end_d065():
+    from credagent.reasoning.replan import normalise_steps
+    from credagent.state.models import PlanStep
+
+    k = ["navigate", "click", "verify", "navigate", "verify", "click", "handoff", "capture", "verify"]
+    steps = [PlanStep(id=f"s{i}", kind=kind, description=f"{kind} {i}") for i, kind in enumerate(k)]
+    new, cur = normalise_steps(steps, 6)
+    assert [x.kind for x in new] == ["navigate", "click", "navigate", "click", "handoff", "capture", "verify"]
+    assert new[cur].id == "s6"
