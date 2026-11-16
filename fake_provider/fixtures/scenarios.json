@@ -104,6 +104,12 @@
       "config": {"require_signin": true, "terms": "none", "dcr": true},
       "jev": "live_or_stub", "fastrouter": "up",
       "expect": {"outcome": "succeeded", "verification": "verified", "used_browser": false}
+    },
+    "secret_behind_reveal": {
+      "description": "The app page shows the client ID; the secret appears only after clicking 'View client secret' (as on Spotify's dashboard). Clicking it is read-only, so the agent may do it.",
+      "config": {"require_signin": false, "terms": "none", "secret_shown_once": false, "secret_reveal_button": true},
+      "jev": "live_or_stub", "fastrouter": "up",
+      "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
     }
   }
 }

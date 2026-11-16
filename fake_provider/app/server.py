@@ -62,6 +62,7 @@ class Scenario:
     existing_app: bool = False
     injection: bool = False
     dcr: bool = False
+    secret_reveal_button: bool = False  # secret shown only after clicking "View client secret" (e.g. Spotify)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Scenario:
@@ -415,7 +416,12 @@ class Handler(BaseHTTPRequestHandler):
         if not app:
             return self.page("Not found", "<h1>App not found</h1>", 404)
         show = app.secret_unviewed or not self.sc.secret_shown_once
-        if show:
+        if self.sc.secret_reveal_button:
+            slot = esc(json.dumps(f'<code id="client-secret">{esc(app.client_secret)}</code>'))
+            secret_html = (f'<p>Client secret: <span id="secret-slot"></span> <button type="button" '
+                           f'onclick="document.getElementById(\'secret-slot\').innerHTML={slot};this.remove()">'
+                           "View client secret</button></p>")
+        elif show:
             app.secret_unviewed = False
             secret_html = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
                            + ('<p class="warn">Copy your client secret now. You won’t be able to see '

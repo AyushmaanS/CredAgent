@@ -137,7 +137,7 @@ def test_research_to_plan_with_code_corrections(tmp_path):
     run = o.get("Acme")
     p = run.plan
     assert run.status == "running" and run.phase == "planned"
-    assert "real providers stay disabled until the per-provider consent flow" in run.status_reason
+    assert "terms check and your consent" in run.status_reason
     assert p.credential_kind == "oauth_client" and p.console_url == CONSOLE
     assert p.allowed_domains == ["acme.example", "login.acme.example"]
     assert [x.kind for x in p.steps][-2:] == ["capture", "verify"]

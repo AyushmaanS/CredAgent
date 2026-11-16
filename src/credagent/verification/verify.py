@@ -11,8 +11,9 @@ Built-in test (generic, needs no provider-specific code):
   OAuth client with a secret + a token endpoint observed in the provider's public OAuth metadata
   → RFC 6749 §4.4 client-credentials token request with the client ID and secret.
   An issued access token proves the pair is live; the token is registered with the Masker and dropped.
-Anything else is `untested` with the reason. Provider-specific tests (e.g. an API key's "who am I"
-call, or the authorization-code flow a person approves) arrive with the real providers in Sprint 6.
+If the provider publishes no OAuth metadata, the token endpoint that research established from a
+retrieved source (never an inferred one) is used, still only on the allowed domains over HTTPS.
+Anything else is `untested` with the reason (e.g. API keys, or the authorization-code flow a person approves).
 """
 
 from __future__ import annotations
@@ -42,6 +43,17 @@ def _endpoint_ok(url: str, allowed: list[str]) -> bool:
     return secure and host_allowed(url, allowed)
 
 
+def researched_token_endpoint(run: Run) -> str | None:
+    """The token endpoint research established from a retrieved source (never an inferred one)."""
+    if run.plan.token_endpoint:
+        return run.plan.token_endpoint
+    vp = run.plan.verification_procedure  # plans written before the field existed
+    if "[inferred]" in vp or "— endpoint " not in vp:
+        return None
+    ep = vp.split("— endpoint ", 1)[1].split()[0].rstrip(".,;)")
+    return ep if ep.startswith("https://") and "token" in ep.lower() else None
+
+
 def verify_run(run: Run, store: SecretFileStore, masker: Masker, http: httpx.Client) -> VerificationResult:
     cred = run.credential
     if cred is None:
@@ -60,11 +72,14 @@ def verify_run(run: Run, store: SecretFileStore, masker: Masker, http: httpx.Cli
     meta = (run.metadata_check or {}).get("metadata") or {}
     token_ep = meta.get("token_endpoint")
     grants = meta.get("grant_types_supported")
-    test = f"OAuth client-credentials token request (RFC 6749 §4.4) at {token_ep}"
+    where = "from the provider's OAuth metadata"
     if not isinstance(token_ep, str) or not token_ep:
+        token_ep, where = researched_token_endpoint(run), "from sourced research (no OAuth metadata was found)"
+    test = f"OAuth client-credentials token request (RFC 6749 §4.4) at {token_ep} ({where})"
+    if not token_ep:
         return _result("untested", "none",
-                       "No token endpoint was observed in the provider's public OAuth metadata; a provider-specific "
-                       "test is needed (Sprint 6).", tested=False)
+                       "No token endpoint was observed in the provider's OAuth metadata or established by sourced "
+                       "research; a provider-specific test is needed.", tested=False)
     if not _endpoint_ok(token_ep, run.plan.allowed_domains):
         return _result("untested", test, "The token endpoint is not on the allowed domains (or not HTTPS); the "
                        "secret was not sent.", tested=False)

@@ -191,3 +191,22 @@ def test_secret_reveal_prints_only_after_confirmation(tmp_path, monkeypatch):
     r = CliRunner().invoke(main.cli, ["secret", "r-sec", "--reveal", "client_secret", "--print"],
                            input="client_secret\n")
     assert r.exit_code == 0 and SEC in r.output and "scrollback" in r.output
+
+
+def test_researched_token_endpoint_used_when_no_metadata(tmp_path):
+    run, st = run_with(tmp_path)
+    run.metadata_check = {"metadata": None}
+    run.plan = run.plan.model_copy(update={
+        "allowed_domains": ["spotify.com"],
+        "verification_procedure": "POST a client_credentials token request — endpoint https://accounts.spotify.com/api/token"})
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"access_token": "BQ" + "x9" * 20})
+    v = verify_run(run, st, Masker(), httpx.Client(transport=httpx.MockTransport(handler)))
+    assert v.label == "verified" and seen["url"] == "https://accounts.spotify.com/api/token"
+    assert "sourced research" in v.test_description
+    # an inferred endpoint is never used
+    run.plan = run.plan.model_copy(update={"verification_procedure": run.plan.verification_procedure + " [inferred]"})
+    assert verify_run(run, st, Masker(), client(200, {})).label == "untested"

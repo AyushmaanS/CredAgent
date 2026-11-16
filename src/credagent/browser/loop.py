@@ -13,6 +13,7 @@ Sprint 3 scope: stops when a credential page is reached (capture + verification:
 from __future__ import annotations
 
 import inspect
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -56,6 +57,17 @@ DO_INSTRUCTIONS = {
 
 
 MAX_HANDOFF_TRIES = 3
+REVEAL_RE = re.compile(r"^(view|show|reveal|display)\b[^\n]{0,30}\b(secret|key|token)s?$", re.I)
+NEVER_REVEAL = re.compile(r"regenerate|rotate|reset|new|create|delete|revoke", re.I)
+
+
+def reveal_control(obs: Observation) -> dict | None:
+    """A button or link that only shows the secret (e.g. Spotify's "View client secret")."""
+    for c in list(obs.buttons) + list(obs.links):
+        text = (c.get("text") or "").strip()
+        if REVEAL_RE.match(text) and not NEVER_REVEAL.search(text) and not c.get("disabled"):
+            return {"xpath": c["xpath"], "text": text, "href": c.get("href")}
+    return None
 HIDDEN_VALUE_INSTRUCTION = (
     "The secret is no longer shown (providers show it only once). To get a working one, click “Regenerate "
     "secret” in the browser yourself: the old secret stops working, so this is your decision. The agent then "
@@ -248,9 +260,11 @@ class BrowserLoop:
             await self._domain_guard(run, on=False)
             try:
                 for attempt in range(1, MAX_HANDOFF_TRIES + 1):
+                    w0 = time.monotonic()
                     done = self.io.wait_enter("Press Enter when you are done (Ctrl+C to stop; the run is saved)")
                     if inspect.isawaitable(done):
                         done = await done
+                    self._waited = getattr(self, "_waited", 0.0) + time.monotonic() - w0
                     if not done:
                         return None
                     still = await self._still_needed(page, obs, blocker_kind)
@@ -267,9 +281,11 @@ class BrowserLoop:
             self._step(run, f"person: {h.person_instruction[:120]}", "person", "done")
             self._cp(run, "handoff_resolved", {"handoff_id": h.id})
             return "done"
+        w0 = time.monotonic()
         answer = self.io.choose("Your decision", h.options)
         if inspect.isawaitable(answer):
             answer = await answer
+        self._waited = getattr(self, "_waited", 0.0) + time.monotonic() - w0
         if answer is None:
             return None
         run.resolve_handoff(h.id, answer=answer)
@@ -358,6 +374,24 @@ class BrowserLoop:
             obs = await observe_page(page, self.masker)
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
+
+    async def _reveal(self, run: Run, page: Any, obs: Observation, gates: list, ctl: dict) -> bool:
+        """Click a read-only "View/Show secret" control so the credential being created becomes readable
+        by plain code. Policy still decides; a regenerate/reset control never matches (see reveal_control)."""
+        desc = f"{'link' if ctl.get('href') else 'button'} '{ctl['text'][:60]}'"
+        action = ProposedAction(method="click", xpath=ctl["xpath"], description=desc, href=ctl.get("href"))
+        verdict = evaluate(action, obs, gates, self._allowed, risk="read_only", risk_uncertain=False)
+        self._cp(run, "policy", {"candidate": desc, "verdict": verdict.decision, "reason": verdict.reason,
+                                 "category": verdict.category})
+        if verdict.decision != "allow":
+            return False
+        seq = self.store.begin_action(run, "click", {"target": desc, "why": "show the new credential"})
+        await page.locator("xpath=" + ctl["xpath"]).click()
+        await page.wait_for_timeout(self.budget.settle_ms)
+        self.store.end_action(run, seq, "done")
+        self._step(run, f"clicked {desc} to show the new credential (read-only; nothing is changed)", "agent",
+                   "done")
+        return True
 
     async def _capture(self, run: Run, page: Any, obs: Observation) -> CaptureResult:
         """Plain-code capture of the credential on this page (spec §6.9). Values go straight to the
@@ -465,6 +499,8 @@ class BrowserLoop:
         no_progress = 0
         last_fp = ""
         denied: set[str] = set()
+        revealed = False
+        self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
         run.phase = "browser"
         self.context = context
@@ -478,7 +514,7 @@ class BrowserLoop:
             if (
                 n_obs >= self.budget.max_observations
                 or n_act >= self.budget.max_actions
-                or time.monotonic() - t0 > self.budget.max_seconds
+                or time.monotonic() - t0 - self._waited > self.budget.max_seconds
             ):
                 self._cp(run, "loop_budget_exhausted", {"observations": n_obs, "actions": n_act})
                 return LoopResult("budget", "browser-loop budget exhausted", n_obs, n_act)
@@ -542,6 +578,12 @@ class BrowserLoop:
                                [g.evidence[0] for g in gates if g.kind == "credential_shown"])
                     return LoopResult("credential_page", "credential page reached", n_obs, n_act)
                 res = await self._capture(run, page, obs)
+                if not res.has_secret and not revealed:
+                    ctl = reveal_control(obs)
+                    if ctl is not None and await self._reveal(run, page, obs, gates, ctl):
+                        revealed = True
+                        n_act += 1
+                        continue  # re-observe; the next pass captures what the page now shows
                 if res.secret_hidden:
                     if await self._handoff(
                         run, "DO", "secret_hidden",

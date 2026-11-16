@@ -140,11 +140,121 @@ def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
         sys.exit(CONFIG_EXIT)
     m = _masker(s)
     agent = ResearchAgent(TavilyClient(s, m), FastRouterClient(s, m), model=s.llm_model)
-    run = Orchestrator(_store(s, m), m, agent, TerminalIO()).get(app)
+    store = _store(s, m)
+    run = Orchestrator(store, m, agent, TerminalIO()).get(app)
     if run.status != "running":
         click.echo(f"\nRun {run.id} ended: {run.status} — {run.status_reason}")
         click.echo(f"Report: credagent report {run.id}")
         sys.exit(0 if run.status in ("succeeded", "partial") else 3)
+    if run.phase == "planned" and run.pending_handoff is None:
+        _real_browser(s, m, store, run, resume=False)
+
+
+def _intended_actions(s: Settings, run, check) -> str:
+    from credagent.browser.candidates import FieldValues
+
+    v = FieldValues.default(s.redirect_uri)
+    p = run.plan
+    lines = [
+        "",
+        f"Before the browser opens (ATTEMPT-PROTOCOL §2), this is what will happen at {run.provider or run.app_name}:",
+        f"  Credential:     {p.credential_kind.replace('_', ' ')}",
+        f"  Console:        {p.console_url}   (allowed domains: {', '.join(p.allowed_domains)})",
+        f"  Will create:    one app named {v.app_name!r}, description {v.description!r}",
+        f"  Callback URL:   {v.redirect_uri}" if p.needs_redirect_uri != "no" else "  Callback URL:   not needed",
+        "  Permissions:    none requested when creating the app; any permission or app-type choice is asked here",
+        "  You do:         sign in, codes/2FA, CAPTCHA, accepting terms, anything unexpected (in the browser)",
+        f"  Predicted:      {p.predicted_outcome}",
+    ]
+    lines += [f"  Known blocker:  {b[:150]}" for b in p.expected_blockers[:6]]
+    lines += [f"  Live test:      {p.verification_procedure[:200]}",
+              "  Afterwards:     delete the app in the provider's console yourself when you no longer need it "
+              "(the agent never deletes).",
+              f"  Terms check:    {check.finding.replace('_', ' ')} ({check.checked_on}; {check.record}). "
+              + check.summary]
+    if check.finding == "unclear":
+        lines.append("                  Unclear wording is automated by default (your decision, protocol v2). "
+                     "You remain responsible for activity on your account.")
+    return "\n".join(lines)
+
+
+def _ask_consent(s: Settings, run, check) -> str | None:
+    """Per-provider, per-session consent in the owner's own words (ATTEMPT-PROTOCOL §2.2, §2.4)."""
+    click.echo(_intended_actions(s, run, check))
+    provider = check.provider
+    try:
+        account = click.prompt(f"\nWhich {provider} account will you sign in with? Describe it (no password, no "
+                               "email), or press Enter to stop", default="", show_default=False)
+        if not account.strip():
+            return None
+        yes = click.prompt(f'Type "yes" to run CredAgent against {provider} using {account.strip()!r}',
+                           default="", show_default=False)
+    except (click.Abort, EOFError):
+        return None
+    return account.strip()[:120] if yes.strip().lower() == "yes" else None
+
+
+def _real_deps(s: Settings, m: Masker, run):
+    import re
+
+    from credagent.browser.stagehand_llm import make_generate
+    from credagent.decisions.client import JevClient
+    from credagent.orchestrator import BrowserDeps
+    from credagent.reasoning.fastrouter import FastRouterClient
+    from credagent.secrets.store import SecretFileStore
+
+    fr = FastRouterClient(s, m)
+    slug = re.sub(r"[^a-z0-9]+", "-", (run.app_name or run.app_input).lower()).strip("-")[:40] or "provider"
+    return BrowserDeps(jev=JevClient(fr), reasoner=fr, llm_model=s.llm_model,
+                       model_callback=make_generate(fr, s.stagehand_model), secret_store=SecretFileStore(s.secrets_dir),
+                       profile_dir=s.profiles_dir / slug, redirect_uri=s.redirect_uri, headless=False,
+                       allow_dcr=False, ephemeral_profile=False)
+
+
+def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool, in_doubt: dict | None = None):
+    """Real-provider browser phase: terms check → consent → browser (new or resumed)."""
+    import asyncio
+
+    from credagent.browser.chrome import ChromeError
+    from credagent.consent.terms import lookup
+    from credagent.orchestrator import Orchestrator, execute_browser_phase, resume_browser_phase
+    from credagent.state.models import Consent
+
+    check = lookup(run.app_name, run.provider, run.app_input)
+    name = run.app_name or run.app_input
+    if check is None:
+        click.echo(f"\n{name}'s terms on automated console use have not been checked yet, so the browser is not "
+                   "started (ATTEMPT-PROTOCOL §2.3). The plan is saved; once the terms are checked: "
+                   f"credagent resume {run.id}")
+        return
+    if not check.may_automate:
+        click.echo(f"\n{name}'s terms prohibit automated use of the console ({check.record}), so CredAgent will "
+                   "not drive it. Follow the plan by hand if you want the credential.")
+        return
+    if not s.fastrouter_api_key:
+        click.echo("FASTROUTER_API_KEY is missing; the browser needs Jev and the LLM.", err=True)
+        sys.exit(CONFIG_EXIT)
+    account = _ask_consent(s, run, check)
+    if account is None:
+        click.echo(f"\nNo consent given, so the browser was not started. The run is saved: credagent resume {run.id}")
+        return
+    run.consent.append(Consent(provider=check.provider, account=m.mask_text(account),
+                               scope=f"this run ({run.id}): create one app and capture its credential",
+                               terms_finding=check.finding, terms_record=check.record))
+    store.checkpoint(run, "consent_given", {"provider": check.provider, "terms": check.finding})
+    deps = _real_deps(s, m, run)
+    io = TerminalIO()
+    orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (research is done)
+    click.echo(f"\nOpening the CredAgent browser window (profile: {_tilde(deps.profile_dir)}).")
+    try:
+        if resume:
+            run = asyncio.run(resume_browser_phase(orch, run, deps, io, in_doubt))
+        else:
+            run = asyncio.run(execute_browser_phase(orch, run, deps, run.plan.console_url, io))
+    except ChromeError as exc:
+        click.echo(f"Browser problem: {exc}", err=True)
+        sys.exit(1)
+    _end_message(run)
 
 
 def _fake_dir(s: Settings, run_id: str):
@@ -297,9 +407,13 @@ def resume(run_id: str, headless: bool) -> None:
             run = Orchestrator(store, m, agent, TerminalIO())._research_and_plan(run, None)
             _end_message(run)
             return
-        click.echo("Browser runs on real providers arrive in Sprint 6 (they need your per-provider consent). "
-                   "This run has nothing to resume yet.", err=True)
-        sys.exit(NOT_IMPLEMENTED_EXIT)
+        if run.status != "running":
+            run.transition("running", "resumed", resume=True)
+        store.checkpoint(run, "resumed", {"in_doubt": bool(doubt), "pending_handoff": bool(run.pending_handoff)})
+        # A planned run starts its browser phase; a browser run continues where it stopped. Either way the
+        # owner consents again for this session (ATTEMPT-PROTOCOL §2.2).
+        _real_browser(s, m, store, run, resume=run.phase != "planned", in_doubt=doubt)
+        return
     import json as _json
 
     launch = _json.loads((_fake_dir(s, run.id) / "launch.json").read_text(encoding="utf-8"))

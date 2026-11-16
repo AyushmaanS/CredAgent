@@ -532,8 +532,12 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         notes.append("The proposed live test only proves the client ID is recognised; a pass would be "
                      "labelled client_recognized, which is not 'working' and cannot give 'succeeded'.")
         vproc += " (a pass = client_recognized only)"
-    if not cite(f.verification.source_url, "Verification method source not retrieved"):
+    verify_sourced = cite(f.verification.source_url, "Verification method source not retrieved")
+    if not verify_sourced:
         vproc += " [inferred]"
+    ep = f.verification.endpoint or ""
+    token_ep = ep if (verify_sourced and ep.startswith("https://") and "token" in ep.lower()
+                      and on_domain(host_of(ep), allowed)) else None
 
     meta_url = f.oauth_metadata.metadata_url
     dcr = f.oauth_metadata.dynamic_registration
@@ -576,5 +580,6 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         sources=sources, needs_redirect_uri=f.needs_redirect_uri,
         scopes=[s.name for s in f.scopes_or_permissions][:20], dynamic_registration=dcr,
         metadata_url=meta_url if meta_url and on_domain(host_of(meta_url), allowed) else None,
+        token_endpoint=token_ep,
         validation_notes=notes,
     )

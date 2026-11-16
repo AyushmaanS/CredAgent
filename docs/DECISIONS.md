@@ -381,6 +381,36 @@ Each run reached the credential page only when the real credential page appeared
 - **`--reveal <name>`** works only in an interactive terminal (never to a pipe or script), and only after the person types the name to confirm. It then **copies the value to the clipboard** (`pbcopy`), so it does not land in terminal scrollback. The message warns that clipboard managers may keep a history. `--print` shows it in the terminal instead, with a scrollback warning.
 - I (the coding agent) never run `--reveal`. The tests use fake values in temporary folders.
 
+## D-058 Spotify terms check (ATTEMPT-PROTOCOL §2.3) — Unclear; automated by the owner's decision (D-059)
+Read 2026-11-16:
+- [Developer Terms](https://developer.spotify.com/terms), version 10, effective 2025-05-15;
+- [Developer Policy](https://developer.spotify.com/policy), effective 2025-05-15;
+- [Terms of Use](https://www.spotify.com/us/legal/end-user-agreement/), last updated 2026-09-04;
+- the Platform Rules they incorporate. The separate User Guidelines page was **not** read.
+Reading the terms is not accepting them.
+
+**Nothing addresses the Developer Dashboard UI, supervised automation or Development Mode.** Relevant clauses (paraphrased):
+- **Dev Terms IV.2.4.1:** no robot, spider or other tool used to *retrieve, duplicate or index* Spotify Service content. "Spotify Service" includes Spotify's websites, so the Dashboard is arguably covered. But the clause targets content retrieval, and creating one app is not that.
+- **IV.2.4.3:** do not obtain users' authentication credentials except as the Platform provides. CredAgent never types or reads passwords: the person signs in.
+- **IV.2.1.4:** do not interfere with the Platform's functioning.
+- **VI.1.4:** the account holder is responsible for all activity on the account, including by a third party or tool.
+- **Developer Policy II.2:** no bots or scripts to *artificially* inflate plays or follows. Not relevant to creating an app.
+- **Terms of Use §3:** a general "not expressly permitted" catch-all. No robot or automation clause was found in the text read.
+- **Licence III.1.1:** personal, private use. That fits one test app.
+
+**Assessment: unclear, not clearly prohibited.** Owner decision (2026-11-16): unclear wording means the console **is** automated (protocol v2, D-059). Spotify is therefore automated, and the report says the wording was unclear.
+
+Research (run `20261116-153856-spotify-058d`, sourced) adds two facts:
+- **Premium.** Spotify's Web API documentation says a **Premium** account is required, including for Development Mode.
+- **Limits.** New apps are in Development Mode: one Client ID per developer, a few users, and fewer endpoints. That predicts `partial`.
+
+## D-059 Attempt protocol v2: unclear terms → automate by default — Decided (owner, 2026-11-16)
+Owner: *"by default if it's unclear; the console should be automated."* ATTEMPT-PROTOCOL §2.3 now has three findings:
+- **prohibited**: not automated. This is unchanged and matches the original brief: "If automated console use is prohibited, do not run it."
+- **unclear**: automated, and the report says the wording was unclear.
+- **not prohibited**: automated.
+A provider whose terms were never checked is still never automated. Findings live in code (`src/credagent/consent/terms.py`, one entry per provider with date and source URLs), so the CLI refuses unchecked or prohibited providers. Per-provider consent (§2.2) is still asked for in the terminal at the start of every session.
+
 ---
 
 ## Discrepancies between documents

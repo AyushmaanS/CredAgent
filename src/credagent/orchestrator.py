@@ -21,9 +21,8 @@ from credagent.state.models import Blocker, Evidence, Handoff, Run, StepRecord, 
 from credagent.state.store import RunStore
 
 NONE_OF_THESE = "None of these — I will re-run with a more specific name"
-BROWSER_PENDING = ("Paused after planning: browser runs against real providers stay disabled until the per-provider "
-                   "consent flow (Sprint 6, docs/ATTEMPT-PROTOCOL.md section 2). Try the browser on the fake "
-                   "provider: credagent get Fakeprov --fake-provider success")
+BROWSER_PENDING = ("Plan ready. The browser starts only after the provider's terms check and your consent "
+                   "(docs/ATTEMPT-PROTOCOL.md section 2).")
 UNTESTED_AT_PLAN = ["Browser execution (not available yet)", "Credential capture", "Live credential test"]
 
 
@@ -280,8 +279,8 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
                 return verify_and_finish(o, run, deps, http, how="obtained by dynamic registration (no browser)")
         elif meta.dcr_eligible:
             o.io.say(
-                "Dynamic registration looks available, but creating a client at a real provider needs "
-                "your per-provider consent (Sprint 6); using the browser path is also disabled until then."
+                "Dynamic registration looks available, but it is not used at real providers yet (it creates a "
+                "client without the console steps you consented to); continuing in the browser."
             )
 
     # 2. Browser loop

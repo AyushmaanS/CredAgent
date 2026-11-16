@@ -145,6 +145,7 @@ class Plan(Strict):
     dynamic_registration: Literal[
         "documented_open", "documented_restricted", "not_documented", "unknown"] = "unknown"
     metadata_url: str | None = None
+    token_endpoint: str | None = None  # from sourced research; used by the live test if no metadata is found
     validation_notes: list[str] = Field(default_factory=list)  # what code corrected in the model's plan
     revision: int = 0  # 0 = original plan, 1..MAX_REPLANS = re-plans
 
@@ -225,6 +226,17 @@ class VerificationResult(Strict):
     production_limitations: list[str] = Field(default_factory=list)
 
 
+class Consent(Strict):
+    """ATTEMPT-PROTOCOL §2.6: what the owner agreed to for this provider in this session (no passwords)."""
+
+    provider: str
+    account: str  # the owner's own description, e.g. "my test Spotify account (Premium)"
+    given_at: str = Field(default_factory=now)
+    scope: str
+    terms_finding: Literal["prohibited", "unclear", "not_prohibited"]
+    terms_record: str = ""
+
+
 class BrowserSession(Strict):
     chrome_pid: int | None = None
     cdp_port: int | None = None
@@ -258,6 +270,7 @@ class Run(Strict):
     plan_cursor: int = 0  # index of the current plan step during browser execution
     metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
+    consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run
     checkpoint_seq: int = 0
 
     @model_validator(mode="after")

@@ -1,7 +1,7 @@
 # CredAgent — Attempt protocol for real-provider runs
 
-Status: **APPROVED v1 (2026-11-15).** Real-provider walkthroughs additionally need
-per-provider consent (section 2) every time.
+Status: **APPROVED v2 (2026-11-16)**; v1 was approved 2026-11-15. Real-provider
+walkthroughs additionally need per-provider consent (section 2) every time.
 
 Derived from the PRD (`docs/CredAgent-PRD.md`) §5 (principles), §6.2 (out of
 scope), §7 (flows), §9 (handoffs) and §13 (risks). Where this protocol and
@@ -28,9 +28,14 @@ A real-provider run may start only when **all** of these are true:
    is not implied by approving a plan or a demo list.
 3. **Terms on automation checked.** The provider's developer terms / acceptable-use
    policy have been read for rules on automated or scripted use of the console.
-   The finding is recorded with the source URL and the date. If automated console
-   use is prohibited, or the wording is unclear, the console is **not** automated:
-   the run is not started and the restriction is recorded in `RESULTS.md`.
+   The finding is recorded with the source URL and the date, as one of:
+   - **prohibited**: the console is **not** automated. The run is not started, and
+     the restriction is recorded in `RESULTS.md`;
+   - **unclear**: the terms neither clearly allow nor clearly forbid it. The console
+     **is** automated by default (owner decision, v2), and the run report and
+     `RESULTS.md` say the wording was unclear. The owner is told before consenting;
+   - **not prohibited**: the console may be automated.
+   A provider whose terms have not been checked is never automated.
    Reading the terms is not accepting them.
 4. **Account.** The owner names the account to use. It must be the owner's own
    account, preferably a dedicated test account or test org. Never a production
@@ -216,10 +221,10 @@ screenshot, a recording or chat):
 
 | Field | Value |
 |---|---|
-| Protocol version | v1 |
+| Protocol version | v2 |
 | Approved by owner | Yes (owner, in the CredAgent working session) |
-| Date | 2026-11-15 |
-| Owner's changes requested | None |
+| Date | v1 2026-11-15; v2 2026-11-16 |
+| Owner's changes requested | v2: "by default if it's unclear; the console should be automated" (§2.3). Prohibited terms still stop the run. |
 
 Approval of this protocol is not consent for any provider. Each real-provider
 run still needs the per-provider consent in section 2.
