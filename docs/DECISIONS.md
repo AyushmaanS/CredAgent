@@ -429,6 +429,15 @@ No support article on self-bots was found or read.
 
 **Assessment: unclear**, so it is automated by default under protocol v2 (D-059). But it carries **a higher risk than Spotify**: Discord explicitly polices automated user accounts, and the penalty falls on the Discord account used. The consent screen says so. Recommendation to the owner: use a dedicated test Discord account.
 
+## D-061 Seeing a credential-like value is not having the credential — Decided (found in the first Discord run)
+*Found in real run `20261116-164345-discord-11f0`:* after the owner signed in, Discord's **My Applications** list showed one credential-like value with no label (probably an existing ID). The loop treated any `credential_shown` page as *the* credential page. Plain-code capture correctly refused to guess, and the run then ended **`blocked`, wrongly**, before anything had been created.
+
+Fix: the loop ends at a credential page only once a **secret** has been captured. If nothing labelled was found, or only a client ID was captured (Discord's secret needs "Reset Secret" first), the step is recorded as "seen, nothing labelled to capture; continuing" and the loop keeps following the plan. Each credential-like page state is examined once, never re-captured. The terms of the run are unchanged: capture still never guesses.
+
+Also from that run: Jev's "a person needs to act" card was generic ("Check the browser window…"). It now quotes the agent's current plan step and says "if it is already done, just press Enter".
+
+Tested with a new fake scenario, `decoy_token`: an unlabelled token on the console before any app exists. The run continues and succeeds.
+
 ---
 
 ## Discrepancies between documents

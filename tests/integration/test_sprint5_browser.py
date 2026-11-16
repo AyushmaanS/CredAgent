@@ -133,7 +133,7 @@ def new_run(fp, name):
                plan=fake_provider_plan(fp.base_url))
 
 
-@pytest.mark.parametrize("name", ["success", "shown_once_secret", "terms_checkbox", "secret_behind_reveal", "numeric_client_id"])
+@pytest.mark.parametrize("name", ["success", "shown_once_secret", "terms_checkbox", "secret_behind_reveal", "numeric_client_id", "decoy_token"])
 def test_capture_and_live_test_succeed_without_leaks(tmp_path, name):
     with FakeProvider(scenario(name)) as fp:
         io = LateIO()
@@ -317,3 +317,12 @@ def test_cli_get_then_resume_from_a_new_process(tmp_path):
     assert state["audit"] == [] or all(a["event"] != "app_created" for a in state["audit"])
     mode = oct((home / "fakeprov" / run_dir.name / "state.json").stat().st_mode & 0o777)
     assert mode == "0o600"
+
+
+def test_unlabelled_token_before_creation_does_not_end_the_run(tmp_path):
+    """Discord run 20261116-164345: an unlabelled ID on the app list ended the run as blocked (D-061)."""
+    with FakeProvider(scenario("decoy_token")) as fp:
+        io = LateIO()
+        run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "decoy"), deps_for(tmp_path), io))
+    assert any("nothing labelled to capture; continuing" in s.action for s in run.steps)
+    assert run.status == "succeeded" and run.verification.label == "verified"

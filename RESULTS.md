@@ -13,6 +13,7 @@ Real runs need the owner's explicit consent for each provider (`docs/ATTEMPT-PRO
 | # | Date | App | Access path | Predicted | Actual outcome | Verification | Human steps | Notes |
 |---|------|-----|-------------|-----------|----------------|--------------|-------------|-------|
 | 1 | 2026-11-16 | Spotify | browser (Developer Dashboard) | partial | **stopped by the owner** at the first handoff (switched to Discord) | untested | consent given in the terminal | Run 20261116-153856-spotify-058d. The browser opened on the dashboard and the agent paused ("a person needs to act") before any action. Nothing was created at Spotify; no credential. Cleanup: none at Spotify; close the CredAgent Chrome window. |
+| 2 | 2026-11-16 | Discord | browser (Developer Portal) | succeeded | **blocked — CredAgent bug** (D-061) | untested | consent (test account); signed in | Run 20261116-164345-discord-11f0. After sign-in, an unlabelled ID on My Applications was mistaken for the credential page; capture refused to guess and the run ended blocked. Nothing created at Discord. Fixed in D-061; re-run as #3. |
 
 ## Research-only runs (no browser, no provider account)
 

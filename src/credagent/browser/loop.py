@@ -409,8 +409,8 @@ class BrowserLoop:
             self._step(run, f"captured the credential by plain browser code ({', '.join(res.captured)}); "
                        "stored outside the repo", "agent", "done", [res.observed(), shown] + res.limitations[:2])
         else:
-            self._step(run, "credential page reached, but nothing could be captured safely", "system", "failed",
-                       [res.observed()])
+            self._step(run, "credential-like value(s) seen, but nothing labelled to capture; continuing the plan",
+                       "system", "skipped", [res.observed()])
         self._cp(run, "credential_captured" if res.credential else "credential_not_captured",
                  {"parts": res.captured, "unlabelled": res.unlabelled, "ambiguous": res.ambiguous,
                   "secret_hidden": res.secret_hidden, "limitations": res.limitations})
@@ -500,6 +500,7 @@ class BrowserLoop:
         last_fp = ""
         denied: set[str] = set()
         revealed = False
+        seen_cred: set[tuple] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
         run.phase = "browser"
@@ -571,14 +572,18 @@ class BrowserLoop:
                 if await self._handoff(run, "DO", g.kind, g.reason, g.evidence, obs) is None:
                     return LoopResult("handoff_pending", g.reason, n_obs, n_act)
                 continue
-            if any(g.kind == "credential_shown" for g in gates):
+            cred_key = (obs.url, tuple(sorted(obs.secret_xpaths)))
+            if any(g.kind == "credential_shown" for g in gates) and cred_key not in seen_cred:
                 self._cp(run, "credential_page_reached", {})
                 if self.secret_store is None:
                     self._step(run, "credential page reached (no secret store: nothing captured)", "system", "done",
                                [g.evidence[0] for g in gates if g.kind == "credential_shown"])
                     return LoopResult("credential_page", "credential page reached", n_obs, n_act)
+                seen_cred.add(cred_key)  # look at each credential-like page state once, never re-capture it
                 res = await self._capture(run, page, obs)
-                if not res.has_secret and not revealed:
+                if res.has_secret:
+                    return LoopResult("credential_page", "credential captured", n_obs, n_act)
+                if not revealed:
                     ctl = reveal_control(obs)
                     if ctl is not None and await self._reveal(run, page, obs, gates, ctl):
                         revealed = True
@@ -593,7 +598,9 @@ class BrowserLoop:
                     ) is None:
                         return LoopResult("handoff_pending", "secret hidden", n_obs, n_act)
                     continue
-                return LoopResult("credential_page", "credential page reached", n_obs, n_act)
+                # No secret yet (e.g. an unlabelled ID on a list page, or a client ID whose secret needs another
+                # step such as "Reset Secret"): keep following the plan. Seeing a credential-like value is not
+                # the same as having the credential (D-061).
 
             fp = obs.fingerprint()
             no_progress = no_progress + 1 if fp == last_fp else 0
@@ -672,7 +679,15 @@ class BrowserLoop:
                 why = "Jev/LLM judged that a person needs to act on this page" + (
                     f" ({log.llm_reason[:120]})" if log.llm_reason else ""
                 )
-                if await self._handoff(run, "DO", "unexpected", why, [f"title: {obs.title}"], obs) is None:
+                step = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+                instruction = (
+                    f"The agent's current step is: “{step.description[:220]}” It looks like this needs you. Do "
+                    "the part only a person may do (e.g. sign in, a code, a CAPTCHA) in the browser window. If it "
+                    "is already done, just press Enter."
+                    if step else None
+                )
+                if await self._handoff(run, "DO", "unexpected", why, [f"title: {obs.title}"], obs,
+                                       instruction=instruction) is None:
                     return LoopResult("handoff_pending", why, n_obs, n_act)
                 continue
             if act == "step_complete":

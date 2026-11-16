@@ -116,6 +116,12 @@
       "config": {"require_signin": false, "terms": "none", "numeric_client_id": true},
       "jev": "live_or_stub", "fastrouter": "up",
       "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
+    },
+    "decoy_token": {
+      "description": "Before any app exists, the console shows an unlabelled token-like value (as Discord's app list did). It is not the credential: the agent must keep going, not stop.",
+      "config": {"require_signin": false, "terms": "none", "decoy_token": true},
+      "jev": "live_or_stub", "fastrouter": "up",
+      "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
     }
   }
 }
