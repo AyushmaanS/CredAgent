@@ -133,7 +133,7 @@ def new_run(fp, name):
                plan=fake_provider_plan(fp.base_url))
 
 
-@pytest.mark.parametrize("name", ["success", "shown_once_secret", "terms_checkbox", "secret_behind_reveal"])
+@pytest.mark.parametrize("name", ["success", "shown_once_secret", "terms_checkbox", "secret_behind_reveal", "numeric_client_id"])
 def test_capture_and_live_test_succeed_without_leaks(tmp_path, name):
     with FakeProvider(scenario(name)) as fp:
         io = LateIO()

@@ -54,6 +54,10 @@ OBSERVE_JS = r"""
     if (el.children.length) continue;               // leaf elements only
     const t = clean(el.innerText);
     if (t.length >= 20 && TOKEN.test(t) && mixed(t)) secretEls.push(el);
+    // A numeric client/application ID (e.g. a Discord snowflake) is not secret, but it is part of the
+    // credential being created: report it the same way so plain code can capture it next to its label.
+    else if (/^\d{15,22}$/.test(t) && /(client|application|app)[\s_-]*id/i.test(ctx(el) + ' ' + (el.previousElementSibling ? el.previousElementSibling.innerText : '')))
+      secretEls.push(el);
   }
   let text = document.body ? document.body.innerText : '';
   for (const el of secretEls) { const t = clean(el.innerText); if (t) text = text.split(t).join('[SECRET-ELEMENT]'); }

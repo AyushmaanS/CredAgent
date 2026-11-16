@@ -396,6 +396,14 @@ def resume(run_id: str, headless: bool) -> None:
                    f"{m.mask_text(str(doubt.get('target') or ''))[:80]}) has no recorded result. The agent "
                    "re-checks the page and asks before repeating it.")
     if run.provider != FAKE_PROVIDER_NAME:
+        if run.phase == "research" and run.plan.steps and run.pending_handoff is not None:
+            # Research finished; only the credential-type question was left unanswered. Ask it again.
+            if run.status != "running":
+                run.transition("running", "resumed", resume=True)
+            run = Orchestrator(store, m, None, TerminalIO()).resume_choice(run)  # type: ignore[arg-type]
+            if run.phase == "planned":
+                _real_browser(s, m, store, run, resume=False)
+            return
         if run.phase in ("created", "research"):
             from credagent.reasoning.fastrouter import FastRouterClient
             from credagent.research.agent import ResearchAgent

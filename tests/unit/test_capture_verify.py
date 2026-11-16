@@ -210,3 +210,30 @@ def test_researched_token_endpoint_used_when_no_metadata(tmp_path):
     # an inferred endpoint is never used
     run.plan = run.plan.model_copy(update={"verification_procedure": run.plan.verification_procedure + " [inferred]"})
     assert verify_run(run, st, Masker(), client(200, {})).label == "untested"
+
+
+def test_scope_from_sourced_procedure_is_sent(tmp_path):
+    from credagent.verification.verify import researched_scope
+
+    run, st = run_with(tmp_path)
+    run.plan = run.plan.model_copy(update={"verification_procedure":
+                                           "POST a client_credentials grant (scope 'identify') to the token endpoint"})
+    assert researched_scope(run) == "identify"
+    seen = {}
+
+    def handler(request):
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"access_token": "tok_" + "Q1" * 20})
+    assert verify_run(run, st, Masker(), httpx.Client(transport=httpx.MockTransport(handler))).label == "verified"
+    assert "scope=identify" in seen["body"] and SEC not in seen["body"]  # secret goes in the Basic header only
+    run.plan = run.plan.model_copy(update={"verification_procedure": "scope 'admin' [inferred]"})
+    assert researched_scope(run) is None
+
+
+def test_numeric_client_id_is_captured_by_label(tmp_path):
+    its = [{"value": "1234567890123456789", "own": "", "label": "", "prev": "Client ID", "around": "Client ID"},
+           {"value": "aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW", "own": "", "label": "", "prev": "Client Secret",
+            "around": "Client Secret Reset Secret"}]
+    res = store_capture(its, obs(), store=SecretFileStore(tmp_path / "s"), masker=Masker(), run_id="r1",
+                        plan_kind="oauth_client")
+    assert res.captured == ["client_id", "client_secret"]

@@ -63,6 +63,7 @@ class Scenario:
     injection: bool = False
     dcr: bool = False
     secret_reveal_button: bool = False  # secret shown only after clicking "View client secret" (e.g. Spotify)
+    numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Scenario:
@@ -102,7 +103,9 @@ class State:
 
     def _new_app(self, name: str, redirect_uri: str, record: bool = True, **kw: Any) -> App:
         app = App(
-            id=secrets.token_hex(4), name=name, client_id="fpcid_" + secrets.token_hex(8),
+            id=secrets.token_hex(4), name=name,
+            client_id=(str(10**17 + secrets.randbelow(9 * 10**17)) if self.scenario.numeric_client_id
+                       else "fpcid_" + secrets.token_hex(8)),
             client_secret="fpcs_" + secrets.token_urlsafe(30), redirect_uri=redirect_uri,
             status="testing" if self.scenario.testing_mode else "active", **kw,
         )

@@ -411,6 +411,24 @@ Owner: *"by default if it's unclear; the console should be automated."* ATTEMPT-
 - **not prohibited**: automated.
 A provider whose terms were never checked is still never automated. Findings live in code (`src/credagent/consent/terms.py`, one entry per provider with date and source URLs), so the CLI refuses unchecked or prohibited providers. Per-provider consent (§2.2) is still asked for in the terminal at the start of every session.
 
+## D-060 Discord terms check (ATTEMPT-PROTOCOL §2.3) — Unclear, with a higher account risk; automated only with the owner's informed consent
+The owner switched the Sprint 6 sample provider from Spotify to Discord (2026-11-16). Read 2026-11-16:
+- [Terms of Service](https://discord.com/terms), effective 2025-09-29;
+- [Developer Terms](https://support-dev.discord.com/hc/en-us/articles/8562894815383-Discord-Developer-Terms-of-Service), effective 2024-07-08, read in the owner's Chrome because the automated fetch got HTTP 403;
+- [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy), effective 2024-07-08, also read in Chrome;
+- [Community Guidelines](https://discord.com/guidelines), effective 2025-09-29;
+- [Platform Manipulation Policy Explainer](https://discord.com/safety/platform-manipulation-policy-explainer), 2024-03-15.
+No support article on self-bots was found or read.
+
+**No clause addresses automating the Developer Portal.** Relevant clauses (paraphrased):
+- **Community Guideline 14:** no self-bots or user-bots; each account must be associated with a human. The explainer describes self-bots as user accounts modified to perform automated actions, and says not to modify the client, *including by automating account actions*. CredAgent does not modify the Discord client, and a human is present and signs in. But "automating account actions" is broad, and an external tool driving a signed-in web session could be read as exactly that.
+- **ToS §9:** no scraping by any robot, crawler or other automatic process without written consent. **Developer Policy 20:** no mining or scraping data. CredAgent reads only the credential it just created.
+- **Developer Terms 2(d):** keep keys, tokens and secrets confidential, used only with your own application. Keep them encrypted in files *accessible by third parties*. CredAgent's file is owner-only and unencrypted (D-053), and not accessible to third parties.
+- **Developer Policy 4:** apps may not obtain users' login credentials. CredAgent never touches passwords; the person signs in.
+- **Developer Terms §9 / ToS §10:** Discord may suspend or terminate the user account or the developer credentials, with or without notice.
+
+**Assessment: unclear**, so it is automated by default under protocol v2 (D-059). But it carries **a higher risk than Spotify**: Discord explicitly polices automated user accounts, and the penalty falls on the Discord account used. The consent screen says so. Recommendation to the owner: use a dedicated test Discord account.
+
 ---
 
 ## Discrepancies between documents

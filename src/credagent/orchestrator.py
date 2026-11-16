@@ -93,9 +93,21 @@ class Orchestrator:
         if result.plan.alternatives:
             if not self._choose_credential_type(run):
                 return run
-        run.app_name = result.plan.identification.canonical_name
-        run.provider = result.plan.identification.provider
-        run.predicted_outcome = result.plan.predicted_outcome
+        return self._finalize_plan(run)
+
+    def resume_choice(self, run: Run) -> Run:
+        """Resume a run saved with the credential-type question unanswered: ask again (no new research)."""
+        h = run.pending_handoff
+        if h is not None:
+            run.resolve_handoff(h.id, cancelled=True)
+        if not self._choose_credential_type(run):
+            return run
+        return self._finalize_plan(run)
+
+    def _finalize_plan(self, run: Run) -> Run:
+        run.app_name = run.plan.identification.canonical_name
+        run.provider = run.plan.identification.provider
+        run.predicted_outcome = run.plan.predicted_outcome
         run.phase = "planned"
         run.status_reason = BROWSER_PENDING
         run.add_step(

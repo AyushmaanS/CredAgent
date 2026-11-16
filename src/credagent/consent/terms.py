@@ -43,6 +43,24 @@ TERMS_CHECKS: dict[str, TermsCheck] = {
                 "holder is responsible for all activity on the account (VI.1.4).",
         record="docs/DECISIONS.md D-058",
     ),
+    "discord": TermsCheck(
+        provider="Discord",
+        finding="unclear",
+        checked_on="2026-11-16",
+        sources=[
+            "https://discord.com/terms",
+            "https://support-dev.discord.com/hc/en-us/articles/8562894815383-Discord-Developer-Terms-of-Service",
+            "https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy",
+            "https://discord.com/guidelines",
+            "https://discord.com/safety/platform-manipulation-policy-explainer",
+        ],
+        summary="No clause addresses the Developer Portal. HIGHER RISK than usual: the Community Guidelines ban "
+                "self-bots/user-bots (each account must be associated with a human), and Discord's platform-"
+                "manipulation explainer says not to modify the client, including by automating account actions. "
+                "The penalty can be suspension of the Discord account used. A dedicated test account is strongly "
+                "advised.",
+        record="docs/DECISIONS.md D-060",
+    ),
 }
 
 

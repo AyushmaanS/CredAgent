@@ -18,6 +18,7 @@ Anything else is `untested` with the reason (e.g. API keys, or the authorization
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -52,6 +53,18 @@ def researched_token_endpoint(run: Run) -> str | None:
         return None
     ep = vp.split("— endpoint ", 1)[1].split()[0].rstrip(".,;)")
     return ep if ep.startswith("https://") and "token" in ep.lower() else None
+
+
+_SCOPE_RE = re.compile(r"\bscope[s]?\s*[(:]?\s*['\"`]([A-Za-z0-9_.:\- ]{1,80})['\"`]", re.I)
+
+
+def researched_scope(run: Run) -> str | None:
+    """A least-privilege scope the sourced verification procedure names (e.g. Discord needs scope 'identify')."""
+    vp = run.plan.verification_procedure
+    if "[inferred]" in vp:
+        return None
+    m = _SCOPE_RE.search(vp)
+    return m.group(1).strip() if m else None
 
 
 def verify_run(run: Run, store: SecretFileStore, masker: Masker, http: httpx.Client) -> VerificationResult:
@@ -95,6 +108,9 @@ def verify_run(run: Run, store: SecretFileStore, masker: Masker, http: httpx.Cli
     masker.register(sec, label="client_secret")
     methods = meta.get("token_endpoint_auth_methods_supported") or ["client_secret_basic"]
     data = {"grant_type": "client_credentials"}
+    scope = researched_scope(run)
+    if scope:
+        data["scope"] = scope
     kw: dict[str, Any] = {"timeout": 20}
     if "client_secret_basic" in methods:
         kw["auth"] = (cid, sec)

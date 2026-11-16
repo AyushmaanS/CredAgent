@@ -110,6 +110,12 @@
       "config": {"require_signin": false, "terms": "none", "secret_shown_once": false, "secret_reveal_button": true},
       "jev": "live_or_stub", "fastrouter": "up",
       "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
+    },
+    "numeric_client_id": {
+      "description": "The client ID is an all-digit number (as on Discord). Plain code must still capture it next to its label.",
+      "config": {"require_signin": false, "terms": "none", "numeric_client_id": true},
+      "jev": "live_or_stub", "fastrouter": "up",
+      "expect": {"outcome": "succeeded", "verification": "verified", "handoffs": []}
     }
   }
 }

@@ -33,6 +33,7 @@ Sprint 2 live research through Tavily + FastRouter. Not demo runs; listed for co
 | 2026-11-15 | GitHub | 20261115-154201-github-9fc0 | planned | limits 8 searches / 6 pages (D-040); first synthesis answer invalid, retried once |
 | 2026-11-15 | GitHub | 20261115-154416-github-9a98 | planned | limits 8/6, no retry; sample in docs/samples/plan-github.md |
 | 2026-11-16 | Spotify | 20261116-153856-spotify-058d | planned | Sprint 6 candidate; predicted partial (Development Mode limits); Premium required per sourced docs; 8 sourced facts |
+| 2026-11-16 | Discord | 20261116-164345-discord-11f0 | planned (credential-type question pending) | Sprint 6 sample provider; predicted succeeded; 3 credential types found; 8 sourced facts |
 
 No credential was obtained or tested in any of these runs.
 
@@ -41,6 +42,7 @@ No credential was obtained or tested in any of these runs.
 | Date | Provider | Documents read | Finding | Decision |
 |------|----------|----------------|---------|----------|
 | 2026-11-16 | Spotify | [Developer Terms](https://developer.spotify.com/terms) (v10, eff. 2025-05-15), [Developer Policy](https://developer.spotify.com/policy) (eff. 2025-05-15), [Terms of Use](https://www.spotify.com/us/legal/end-user-agreement/) (updated 2026-09-04), Platform Rules | **Unclear.** No clause addresses automating the Developer Dashboard. The nearest (Dev Terms IV.2.4.1) bars robots/tools that retrieve, duplicate or index Service content. See D-058. | **Automated** (protocol v2: unclear → automate by default; owner decision 2026-11-16, D-059) |
+| 2026-11-16 | Discord | [Terms](https://discord.com/terms) (eff. 2025-09-29), [Developer Terms](https://support-dev.discord.com/hc/en-us/articles/8562894815383-Discord-Developer-Terms-of-Service) and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy) (eff. 2024-07-08), [Community Guidelines](https://discord.com/guidelines), [Platform Manipulation explainer](https://discord.com/safety/platform-manipulation-policy-explainer) | **Unclear, higher account risk.** No Developer Portal clause; self-bot rule and "automating account actions" wording could apply. See D-060. | Automated only with the owner's informed consent (protocol v2) |
 
 ## Untested
 
