@@ -8,11 +8,11 @@ A credential counts as working only if its live test passed (`verified`).
 
 ## Real-provider runs
 
-_None yet._ No real provider has been contacted. Real runs need the owner's
-explicit consent for each provider and an approved `docs/ATTEMPT-PROTOCOL.md`.
+Real runs need the owner's explicit consent for each provider (`docs/ATTEMPT-PROTOCOL.md` v2).
 
 | # | Date | App | Access path | Predicted | Actual outcome | Verification | Human steps | Notes |
 |---|------|-----|-------------|-----------|----------------|--------------|-------------|-------|
+| 1 | 2026-11-16 | Spotify | browser (Developer Dashboard) | partial | **stopped by the owner** at the first handoff (switched to Discord) | untested | consent given in the terminal | Run 20261116-153856-spotify-058d. The browser opened on the dashboard and the agent paused ("a person needs to act") before any action. Nothing was created at Spotify; no credential. Cleanup: none at Spotify; close the CredAgent Chrome window. |
 
 ## Research-only runs (no browser, no provider account)
 
