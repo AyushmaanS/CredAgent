@@ -482,7 +482,7 @@ Fixes:
 - **Its own app is marked:** a clickable candidate whose text contains this run's app name is described to Jev as "(the app this run created)".
 - **"Stuck" cards quote the current plan step** and ask the person to do it, as the "person needed" card already does (D-061).
 
-The owner finished the run by hand from the app page (OAuth2 → Add Redirect → Save → Reset Secret). The agent then re-checks the page, captures by plain code and runs the live test.
+For this run, the owner was asked to do the remaining console steps by hand from the app page (OAuth2 → Add Redirect → Save → Reset Secret) and then press Enter. The agent then re-checks the page, captures by plain code and runs the live test. The outcome is recorded in RESULTS.md.
 
 ---
 
