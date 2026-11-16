@@ -339,6 +339,48 @@ Tested: real Chrome, offline. `jev_failure` reaches the credential page; on ever
 - CAPTCHA page with "no blocker" → DO; solved by the person only.
 Each run reached the credential page only when the real credential page appeared. No forbidden audit event occurred.
 
+## D-053 Redirect URI and secret store — Decided (owner, 2026-11-16)
+- **Redirect URI (Q3):** the owner chose to keep `http://127.0.0.1:8976/callback` "for now" (`CREDAGENT_REDIRECT_URI` can override it). It is a loopback address, so nothing outside this machine can receive an authorization code sent to it. If a later integration needs its own callback (e.g. Composio's), that is a new owner decision.
+- **Secret store (Q4):** the owner chose **a file with owner-only permissions**: `~/.credagent/secrets/<run-id>/<name>.secret`, with directories at 0700 and files at 0600, written atomically and created at 0600. The store refuses to read a file whose permissions have widened or whose owner is someone else, and refuses a location inside the repository. The file is **not encrypted**: anyone who can read files as this macOS user, and any backup of the home folder, can read it. *Time Machine currently includes `~/.credagent`* (D-015). CredAgent does not change backup settings itself; to exclude the folder, the owner can run `tmutil addexclusion ~/.credagent`. The OS keychain was not chosen; if wanted later, it would replace this one storage module.
+
+## D-054 Credential capture: plain code reads only flagged elements, classifies by label, never guesses — Decided
+- **Read:** on a credential page (code gate `credential_shown`), `secrets/capture.py` reads by plain JavaScript only the elements the observer had already flagged by XPath. Neither Stagehand nor any model is involved, and Stagehand is never used for candidates on credential pages (D-044).
+- **Classify:** each value is named from its own attributes (id / aria-label / name), then its `<label>`, the text just before it, then the surrounding text: client secret, client ID, signing secret, API key, token.
+  - **A value with no recognisable label is not stored** and only counted. A name seen twice with different values is ambiguous and also not stored. The agent never guesses which value is which.
+- **Store:** every value is registered with the Masker *first*, then written to the owner-only store, then dropped. Run state gets references plus masked displays (`fpcs… (45 chars)`), and the step record says which parts were captured.
+- **Shown-once:** capture happens on the first view, on the page as it is, with no reload and no navigation. Tested: a second view of the fake app page shows the secret hidden, and the captured value is the one the site issued.
+- **Already hidden** (e.g. someone viewed it earlier): this becomes a DO handoff, `secret_hidden`. Regenerating invalidates the old secret, so that is the person's decision; the agent never clicks "Regenerate". After the person regenerates, the agent captures the new value. If they decline, the credential is reported as not captured.
+- **Nothing capturable:** if the page has credential-like values but none is labelled, the run is `blocked`, and the person is told to copy the credential themselves.
+- **Production limitations observed** on the credential page (e.g. "testing mode", "only test users", "submit for review") are kept, without secrets, and make a verified credential `partial`.
+- The masked display gained a space (`fpcs… (45 chars)`). Without it, the leak masker read `client_secret: fpcs…(45` as a labelled secret and garbled the report line.
+
+## D-055 Live verification: generic OAuth client-credentials test; everything else `untested` with the reason — Decided
+- **The built-in test is an RFC 6749 §4.4 client-credentials token request.** It is sent to the token endpoint seen in the provider's own public OAuth metadata, only if that endpoint is on the allowed domains and uses HTTPS (or loopback). An issued access token proves the ID+secret pair is live; that is more than reading the client ID, as spec §6.10 requires. The token is registered with the Masker and dropped, never stored.
+- **Label mapping:**
+  - 200 + token → `verified`;
+  - 401 / `invalid_client` → `invalid`;
+  - `unauthorized_client` → `client_recognized` (authenticated, but no token);
+  - other 4xx and 5xx → `inconclusive`;
+  - unreachable → `untested` (no result, so never "invalid").
+- **`untested`, with the reason, when no safe built-in test exists:** a public client (no secret), metadata that does not list client-credentials, no metadata, an endpoint off the allowed domains (the secret is not sent), or an API key / token. Provider-specific tests (an API key's "who am I" call; the authorization-code flow a person approves, using the D-053 callback) arrive with the real providers in Sprint 6. They need per-provider facts and consent.
+- **Only `verified` with no limitations → `succeeded`** (model invariant plus `decide_outcome`). The DCR shortcut is now live-tested too, so a DCR run can be `succeeded`.
+- **`credagent verify <run-id>`** re-runs the test from the stored credential, records it, and updates the outcome where the state machine allows. New transitions: `succeeded → partial|failed` and `partial → failed`, only through re-verification. For fake runs it restarts the fake site from its saved state for the test. Exit code: 0 = verified, 3 = anything else.
+
+## D-056 Resume: re-check, never assume; never repeat an unconfirmed click; fake site keeps its state — Decided
+- **`credagent resume <run-id>`:**
+  - loads the run and teaches the Masker this run's stored secrets again;
+  - reattaches to the same Chrome if it is still running (real-provider handoffs keep it open); otherwise relaunches it with the run's persistent profile and reopens the last observed page (only if its stored URL is intact and allowed; otherwise the console URL).
+- **A pending handoff is not assumed done.** It is closed as "re-checked on resume", and the loop observes the page again. If the blocker is still there, a fresh card appears. If the person already did it while CredAgent was not running, the agent simply continues. Tested both ways: (a) the browser closed, relaunched, sign-in asked again, then finished; (b) Chrome kept open, the person signed in while CredAgent was not running, resume reattached to the same Chrome process and asked nothing.
+- **In-doubt actions** (an `action_started` with no `action_finished`): if the loop is about to repeat that same click, it asks first (DECIDE). Doing it again could, for example, create a second app. "No" ends the run `blocked`. Tested both answers: exactly one app, or none.
+- **Research-phase runs** (e.g. `failed: service unavailable` during research) resume by re-running research. Real-provider *browser* runs are not resumable yet, because none exist before Sprint 6.
+- **The fake provider persists its state.** Its apps, sessions, tokens and audit go to `~/.credagent/fakeprov/<run-id>/state.json` (0600). The file holds the fake site's own fake credentials, like a provider's database. `resume` restarts the site on the same port with that state, and a paused fake run keeps its browser profile (removed when the run ends). This makes Flow D demonstrable with the fake site from a new terminal. Tested through the CLI (two processes) and online: a run paused at a DECIDE was resumed from a new process, the DECIDE was asked again and answered, and the run `succeeded` with one app and no leak.
+- *Found while testing:* a Sprint 0 test clicked the cookie banner once, and that click sometimes had no effect in headless Chrome (banner still shown, no cookie). The agent's loop is not affected, because it re-observes and clicks again. The test now retries the same way.
+
+## D-057 `credagent secret`: masked by default, reveal only on purpose — Decided (please review at the checkpoint)
+- **Default:** for each stored part, the masked display, the file path (with `~`) and a live permission check (`owner-only`, or `NOT SAFE: …` if the file or folders were widened). Plus: "not encrypted", and the Time Machine status (`tmutil isexcluded`). CredAgent never changes backup settings.
+- **`--reveal <name>`** works only in an interactive terminal (never to a pipe or script), and only after the person types the name to confirm. It then **copies the value to the clipboard** (`pbcopy`), so it does not land in terminal scrollback. The message warns that clipboard managers may keep a history. `--print` shows it in the terminal instead, with a scrollback warning.
+- I (the coding agent) never run `--reveal`. The tests use fake values in temporary folders.
+
 ---
 
 ## Discrepancies between documents
@@ -354,13 +396,13 @@ Each run reached the credential page only when the real credential page appeared
 - A7. Jev's behaviour on synthetic page summaries carries over to real pages built from Stagehand observations. → calibrate on the fake provider (Sprint 4).
 - ~~A4. Stagehand's local mode sends nothing off-machine except our model callback.~~ Verified (D-014).
 - ~~A5. A user-supplied `user_data_dir` keeps cookies/localStorage across restarts.~~ **False** with Stagehand's own launch/close; true with CredAgent-owned Chrome (D-012).
-- A6. Chrome's graceful quit flushes the profile even after a long session with sign-ins (verified only for a cookie and localStorage set seconds before quitting). → re-check during the Sprint 5 resume tests.
+- ~~A6. Chrome's graceful quit flushes the profile even after a long session with sign-ins.~~ Partly verified in Sprint 5: in the online resumed run, the cookie-consent choice made before Chrome closed was still there after the relaunch, and the fake site recorded no second choice (D-056). Sign-in persistence across a restart is covered by the Sprint 0 test (D-012). A long signed-in session on a real provider is still unverified (Sprint 6).
 
 ## Open questions (PRD §15 / spec §10)
 - ~~Q1. Jev model ID, format, latency.~~ Resolved: D-009, D-010, D-016 (version cannot be pinned; logged per call).
 - ~~Q2. Stagehand persistent profile and hiding page content from its model.~~ Resolved: D-012, D-013.
-- Q3. Default redirect URI: local placeholder vs. the integration's real callback (e.g. Composio's). **Open: owner decision, needed before Sprint 5** (OAuth live tests need it, D-037). Provisional default `http://127.0.0.1:8976/callback` (D-042).
-- Q4. Secret store: owner-only file (default, implemented) vs. OS keychain. **Open: evaluate in Sprint 5.** Input: Time Machine currently backs up `~/.credagent` (D-015).
+- ~~Q3. Default redirect URI.~~ **Decided by the owner (2026-11-16): keep `http://127.0.0.1:8976/callback` for now** (D-053).
+- ~~Q4. Secret store.~~ **Decided by the owner (2026-11-16): a file with owner-only permissions** (D-053).
 - Q5. Demo app list and each provider's automation terms. **Open: Sprint 6.**
 - ~~Spec open decision 5 (run-state format and location).~~ Resolved: D-024.
 - Q6 (research part resolved: D-029). Budgets: research/search count, page observations, actions, per-call timeouts, retries, total run time, max plan steps. **Open: set in Sprints 2–4.** Current client defaults: LLM timeout 60 s, Jev 20 s, Tavily 30 s.

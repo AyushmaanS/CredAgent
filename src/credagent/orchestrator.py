@@ -238,7 +238,6 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
     from credagent.browser.session import open_session
     from credagent.metadata.dcr import register
     from credagent.metadata.discovery import discover
-    from credagent.state.models import decide_outcome
 
     # 1. Public metadata / DCR shortcut (observed, recorded either way)
     origin = "/".join(start_url.split("/")[:3])
@@ -278,14 +277,7 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
             )
             if out.ok and out.credential:
                 run.credential = out.credential
-                run.untested = ["Live credential test (Sprint 5)"]
-                outcome, reason = decide_outcome(credential_captured=True, verification=None)
-                return o._finish(
-                    run,
-                    outcome,
-                    reason + " — obtained by dynamic registration; live test arrives in Sprint 5",
-                    resumable=True,
-                )
+                return verify_and_finish(o, run, deps, http, how="obtained by dynamic registration (no browser)")
         elif meta.dcr_eligible:
             o.io.say(
                 "Dynamic registration looks available, but creating a client at a real provider needs "
@@ -304,8 +296,8 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
         FieldValues.default(deps.redirect_uri),
         reasoner=deps.reasoner,
         llm_model=deps.llm_model,
+        secret_store=deps.secret_store,
     )
-    keep_open = False
     try:
         seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(start_url)})
         await session.page.goto(start_url)
@@ -313,23 +305,38 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
         result = await loop.run(run, session.page, session.stagehand, session.browser.context)
     except KeyboardInterrupt:
         result = None
-    run.untested = ["Credential capture (Sprint 5)", "Live credential test (Sprint 5)"]
+    return await _after_loop(o, run, deps, session, result)
+
+
+async def _after_loop(o: Orchestrator, run: Run, deps: BrowserDeps, session: object, result: object) -> Run:
+    """Map a browser-loop result to the run's outcome; close or keep the browser. Shared by get and resume."""
+    import httpx
+
+    keep_open = False
     if result is None or result.status == "handoff_pending":
         # Real providers: keep the window open so the person can finish and resume later.
         # Fake provider: its server stops with this process, so an open window would show a dead site.
         keep_open = not deps.ephemeral_profile
-        run.status_reason = ("Paused at a handoff; the browser window stays open. Resume arrives in Sprint 5."
-                             if keep_open else
-                             "Paused at a handoff with no answer. The fake provider stops with this process, so "
-                             "the browser was closed.")
+        run.status_reason = (f"Paused at a handoff; the browser window stays open. Continue with: "
+                             f"credagent resume {run.id}" if keep_open else
+                             f"Paused at a handoff. The browser was closed; the fake site's state is saved. "
+                             f"Continue with: credagent resume {run.id}")
         o._cp(run, "paused", {})
         o._report(run)
     elif result.status == "credential_page":
-        run.status_reason = (
-            "Credential page reached. Capture and the live test arrive in Sprint 5, so nothing was captured."
-        )
-        o._cp(run, "paused", {"reason": "credential page"})
-        o._report(run)
+        if run.credential is None:
+            run.add_blocker(Blocker(
+                kind="other",
+                description="The credential page was reached, but no value could be captured safely "
+                            "(no recognisable label next to it).",
+                who_must_act="person",
+                next_steps=["Copy the credential from the provider's console into your own secret manager; "
+                            "CredAgent did not capture it and never guesses which value is which."],
+            ))
+            o._finish(run, "blocked", run.blockers[-1].description, resumable=False)
+        else:
+            with httpx.Client() as http:
+                verify_and_finish(o, run, deps, http, how="captured from the console by plain browser code")
     elif result.status == "blocked":
         o._finish(run, "blocked", result.reason, resumable=True)
     else:
@@ -339,10 +346,12 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
     else:
         ended = await session.close()
         o._cp(run, "browser_closed", {"how": ended})
-        if deps.ephemeral_profile:
+        if deps.ephemeral_profile and run.status != "running":
             import shutil
 
-            shutil.rmtree(deps.profile_dir, ignore_errors=True)  # fake-provider runs: nothing worth keeping
+            # Fake-provider runs: nothing worth keeping once the run has ended. A paused run keeps its
+            # profile so `credagent resume` can continue with the same cookies.
+            shutil.rmtree(deps.profile_dir, ignore_errors=True)
     return run
 
 
@@ -354,3 +363,72 @@ def fake_provider_plan(base_url: str) -> object:
 
     raw = (Path(__file__).resolve().parents[2] / "fake_provider" / "fixtures" / "plan.json").read_text()
     return Plan.model_validate(_json.loads(raw.replace("{base}", base_url))["plan"])
+
+
+def verify_and_finish(o: Orchestrator, run: Run, deps: BrowserDeps, http: object, *, how: str) -> Run:
+    """Live test (code only) → outcome. Only `verified` can make the run `succeeded` (PRD §10)."""
+    from credagent.state.models import decide_outcome
+    from credagent.verification.verify import verify_run
+
+    run.phase = "verifying"
+    seq = o.store.begin_action(run, "verify_credential", {})
+    v = verify_run(run, deps.secret_store, o.masker, http)  # type: ignore[arg-type]
+    o.store.end_action(run, seq, "done", {"label": v.label})
+    run.verification = v
+    run.untested = [] if v.label != "untested" else [f"Live credential test: {v.observed_result}"]
+    run.add_step(StepRecord(action=f"live test: {v.test_description}"[:200], actor="agent",
+                            outcome="done" if v.label == "verified" else "failed",
+                            evidence=[Evidence(kind="observed", text=o.masker.mask_text(v.observed_result)[:300])]))
+    o._cp(run, "verified", {"label": v.label, "limitations": v.production_limitations})
+    outcome, reason = decide_outcome(credential_captured=True, verification=v)
+    run.phase = "done"
+    return o._finish(run, outcome, f"{reason} — {how}", resumable=outcome != "succeeded")
+
+
+FAKE_PROVIDER_NAME = "Fakeprov (local)"
+
+
+def safe_resume_url(run: Run) -> str | None:
+    """Where to reopen the browser: the last observed page if its stored (masked) URL is intact and on the
+    allowed domains, otherwise the plan's console URL. Never a URL whose parts were masked."""
+    from credagent.policy.hard_checks import host_allowed
+
+    last = run.browser.last_url if run.browser else None
+    if last and "[" not in last and host_allowed(last, run.plan.allowed_domains):
+        return last
+    return run.plan.console_url or None
+
+
+async def resume_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, io: object,
+                               in_doubt: dict | None) -> Run:
+    """Continue a paused run (spec §6.8): restore the profile, reopen the page, re-check before acting.
+
+    A pending handoff is not assumed done: it is closed as "re-checked on resume" and the loop observes the
+    page again, so the same blocker produces a fresh card if it is still there and nothing is repeated."""
+    from credagent.browser.candidates import FieldValues
+    from credagent.browser.loop import BrowserLoop
+    from credagent.browser.session import open_session
+
+    h = run.pending_handoff
+    if h is not None:
+        run.resolve_handoff(h.id, cancelled=True)
+        run.add_step(StepRecord(action=f"resumed: re-checking the page instead of assuming “{h.blocker_kind}” "
+                                "was done", actor="system", outcome="done"))
+    session = await open_session(deps.profile_dir, headless=deps.headless, model_callback=deps.model_callback,
+                                 existing=run.browser)
+    reattached = bool(run.browser and session.chrome.pid == run.browser.chrome_pid)
+    run.browser = session.record()
+    o._cp(run, "browser_opened", {"profile": str(deps.profile_dir), "reattached": reattached})
+    url = safe_resume_url(run)
+    if url and not reattached:
+        seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(url)})
+        await session.page.goto(url)
+        o.store.end_action(run, seq, "done")
+    loop = BrowserLoop(o.store, o.masker, io, deps.jev, FieldValues.default(deps.redirect_uri),
+                       reasoner=deps.reasoner, llm_model=deps.llm_model, secret_store=deps.secret_store,
+                       in_doubt=in_doubt if in_doubt and in_doubt.get("action") == "click" else None)
+    try:
+        result = await loop.run(run, session.page, session.stagehand, session.browser.context)
+    except KeyboardInterrupt:
+        result = None
+    return await _after_loop(o, run, deps, session, result)

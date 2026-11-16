@@ -25,9 +25,8 @@ Scenario: `terms_checkbox` · try it: `.venv/bin/credagent get Fakeprov --fake-p
                    window.
   4. Then I will:  Re-check the page (the agent never repeats your action),
                    then continue.
-  5. To resume:    Press Enter here when you are done. If you close this
-                   terminal, the run is saved as t-terms_checkbox (the
-                   resume command arrives in Sprint 5).
+  5. To resume:    Press Enter here when you are done. If you closed this
+                   terminal, run: credagent resume t-terms_checkbox
   6. Do not:       Do not close the CredAgent browser window while this
                    handoff is open.
                    Do not paste any secret or code shown on screen into chat
@@ -59,9 +58,8 @@ Scenario: `terms_implied` · try it: `.venv/bin/credagent get Fakeprov --fake-pr
                    window.
   4. Then I will:  Re-check the page (the agent never repeats your action),
                    then continue.
-  5. To resume:    Press Enter here when you are done. If you close this
-                   terminal, the run is saved as t-terms_implied (the resume
-                   command arrives in Sprint 5).
+  5. To resume:    Press Enter here when you are done. If you closed this
+                   terminal, run: credagent resume t-terms_implied
   6. Do not:       Do not close the CredAgent browser window while this
                    handoff is open.
                    Do not paste any secret or code shown on screen into chat
@@ -88,9 +86,8 @@ Scenario: `signin_resume` · try it: `.venv/bin/credagent get Fakeprov --fake-pr
                    window. Complete any code or 2FA prompt. Where: the
                    CredAgent Chrome window.
   4. Then I will:  Re-check the page, then continue the plan.
-  5. To resume:    Press Enter here when you are done. If you close this
-                   terminal, the run is saved as t-signin_resume (the resume
-                   command arrives in Sprint 5).
+  5. To resume:    Press Enter here when you are done. If you closed this
+                   terminal, run: credagent resume t-signin_resume
   6. Do not:       Do not close the CredAgent browser window while this
                    handoff is open.
                    Do not paste any secret or code shown on screen into chat
@@ -111,14 +108,13 @@ Scenario: `captcha` · try it: `.venv/bin/credagent get Fakeprov --fake-provider
                    complete it.
      Evidence:     [observed] …l here is fake. Fakeprov Developer Hub
                    Console Docs Sign in Verify you are human Security check:
-                   confirm you are not a robot. H A R B O R…
+                   confirm you are not a robot. C O P P E R…
                    (http://127.0.0.1:PORT/captcha?next=/console)
   3. What to do:   Complete the human check (CAPTCHA) in the browser window.
                    Where: the CredAgent Chrome window.
   4. Then I will:  Re-check the page, then continue the plan.
-  5. To resume:    Press Enter here when you are done. If you close this
-                   terminal, the run is saved as t-captcha (the resume
-                   command arrives in Sprint 5).
+  5. To resume:    Press Enter here when you are done. If you closed this
+                   terminal, run: credagent resume t-captcha
   6. Do not:       Do not close the CredAgent browser window while this
                    handoff is open.
                    Do not paste any secret or code shown on screen into chat
@@ -141,9 +137,8 @@ Scenario: `cookie_accept_only` · try it: `.venv/bin/credagent get Fakeprov --fa
   3. What to do:   Choose your cookie preference in the banner. Where: the
                    CredAgent Chrome window.
   4. Then I will:  Re-check the page, then continue the plan.
-  5. To resume:    Press Enter here when you are done. If you close this
-                   terminal, the run is saved as t-cookie_accept_only (the
-                   resume command arrives in Sprint 5).
+  5. To resume:    Press Enter here when you are done. If you closed this
+                   terminal, run: credagent resume t-cookie_accept_only
   6. Do not:       Do not close the CredAgent browser window while this
                    handoff is open.
                    Do not paste any secret or code shown on screen into chat
@@ -169,9 +164,8 @@ Scenario: `decide_app_type_and_scopes` · try it: `.venv/bin/credagent get Fakep
      Option 2:     Single-page or mobile app (public: no client secret)
      Option 3:     Stop here
   4. Then I will:  Select your choice and continue.
-  5. To resume:    Type the option number here. If you close this terminal,
-                   the run is saved as t-decide_app_type_and_scopes (the
-                   resume command arrives in Sprint 5).
+  5. To resume:    Type the option number here. If you closed this terminal,
+                   run: credagent resume t-decide_app_type_and_scopes
   6. Do not:       Do not change anything in the browser while answering.
 ==============================================================================
 ```
@@ -194,9 +188,8 @@ Scenario: `jev_failure` · try it: `.venv/bin/credagent get Fakeprov --fake-prov
      Option 1:     Yes, do it
      Option 2:     No, stop here
   4. Then I will:  Do it (if yes) and continue.
-  5. To resume:    Type the option number here. If you close this terminal,
-                   the run is saved as t-jev_failure (the resume command
-                   arrives in Sprint 5).
+  5. To resume:    Type the option number here. If you closed this terminal,
+                   run: credagent resume t-jev_failure
   6. Do not:       Do not change anything in the browser while answering.
 ==============================================================================
 ```

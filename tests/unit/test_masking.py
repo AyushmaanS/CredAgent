@@ -45,7 +45,10 @@ def test_short_secret_refused():
 
 
 def test_masked_display_reveals_little():
-    assert masked_display("short-secret") == "•••(12 chars)"
+    assert masked_display("short-secret") == "••• (12 chars)"
+    m = Masker()
+    # the display survives the leak masker when shown next to its name (e.g. in reports)
+    assert m.mask_text("client_secret " + masked_display("fpcs_" + "Ab1" * 14)).endswith("(47 chars)")
     long = "abcd" + "x" * 30
     assert masked_display(long).startswith("abcd…")
     assert "x" * 5 not in masked_display(long)

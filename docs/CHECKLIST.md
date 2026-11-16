@@ -120,7 +120,21 @@ Most of the Sprint 4 machinery was built in Sprint 3 so the loop could run; this
 - [x] S4.14 👤 Checkpoint: owner reviewed the sample DO and DECIDE cards on 2026-11-16 ("cards look good"); pushed at the owner's request
 
 ## Sprint 5 — Resume, secret handling, verification
-- [ ] Per sprint plan
+Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback` for now; secrets in an owner-only file (D-053).
+- [x] S5.1 Record Q3/Q4 decisions (D-053)
+- [x] S5.2 Credential capture by plain browser code: read only the elements the observer flagged, classify by their labels (client ID / secret / API key / token), store at once, register with the masker; nothing to models, logs or terminal
+- [x] S5.3 Shown-once secrets: capture on first view without reloading; if the secret is already hidden, a DO handoff (the person decides to regenerate) and the credential is reported as not captured
+- [x] S5.4 Observed production limitations on the credential page (testing mode, sandbox, review needed) feed the result (→ partial)
+- [x] S5.5 Live verification: OAuth client-credentials token request against the token endpoint from observed metadata; all five labels mapped; the token issued is masked and discarded; no verifier → `untested` with the reason
+- [x] S5.6 Orchestrator: credential page → capture → verify → outcome (only `verified` → succeeded) → report; DCR path verified too
+- [x] S5.7 `credagent verify <run-id>`: re-run the live test from the stored credential without showing it
+- [x] S5.8 `credagent secret <run-id>`: masked by default (parts, store paths, permission check); reveal only on purpose (`--reveal NAME`, interactive confirmation, copy to clipboard by default, `--print` to show)
+- [x] S5.9 Fake provider keeps its state across processes (owner-only state file, same port) so a fake run can be resumed from a new terminal; paused fake runs keep their profile
+- [x] S5.10 `credagent resume <run-id>`: reload state and stored secrets into the masker, reattach or relaunch Chrome with the profile, reopen the last safe page, re-check the pending handoff before anything else, never repeat an in-doubt click without asking, continue
+- [x] S5.11 Tests: resume after terminal close (Chrome kept open) and after browser close (relaunch with profile); shown-once; hidden secret; verification labels; outcome mapping
+- [x] S5.12 Secret-leak tests: after full runs, no captured secret or issued token appears in run.json, events.jsonl, reports or terminal output
+- [x] S5.13 Lint, tests (default + real Chrome), secret scan, docs (DECISIONS, README, RESULTS), commit
+- [ ] S5.14 👤 **Waiting:** checkpoint: owner approves the secret-storage behaviour and sees a safe verification report; remind owner to push
 
 ## Sprint 6 — Real-provider runs and demo coverage
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)

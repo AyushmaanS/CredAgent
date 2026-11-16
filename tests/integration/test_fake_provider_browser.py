@@ -83,8 +83,16 @@ async def scenario_flow(tmp_path):
             results["redirected_to_login"] = "/login" in await page.url()
 
             # Agent: choose the limited cookie option with a plain click.
-            await page.locator("xpath=//div[@id='cookie-banner']//button[@value='reject']").click()
-            await page.wait_for_timeout(300)
+            # A single click right after load occasionally has no effect in headless Chrome (observed in Sprint 5:
+            # banner still shown, no cookie). The agent's loop re-observes and clicks again; do the same here.
+            for _ in range(3):
+                await page.locator("xpath=//div[@id='cookie-banner']//button[@value='reject']").click()
+                for _ in range(10):
+                    if fp.audit("cookie_choice"):
+                        break
+                    await page.wait_for_timeout(100)
+                if fp.audit("cookie_choice"):
+                    break
             results["cookie_choice"] = [a["choice"] for a in fp.audit("cookie_choice")]
 
             # Person: sign in (DO handoff in the real flow).

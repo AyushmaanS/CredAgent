@@ -162,5 +162,5 @@ def masked_display(value: str) -> str:
     """Safe display: length and a 4-char prefix only for values long enough that the
     prefix is not a meaningful fraction of the secret."""
     if len(value) >= 24:
-        return f"{value[:4]}…({len(value)} chars)"
-    return f"•••({len(value)} chars)"
+        return f"{value[:4]}… ({len(value)} chars)"
+    return f"••• ({len(value)} chars)"

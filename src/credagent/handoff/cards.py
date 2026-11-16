@@ -13,7 +13,7 @@ from credagent.secrets.masking import Masker
 from credagent.state.models import Handoff, Run
 
 WIDTH = 78
-RESUME_AVAILABLE = False  # flips to True when `credagent resume` lands (Sprint 5)
+RESUME_AVAILABLE = True  # `credagent resume` exists since Sprint 5
 DEFAULT_DONT = {
     "DO": ["Do not close the CredAgent browser window while this handoff is open.",
            "Do not paste any secret or code shown on screen into chat or the terminal."],

@@ -515,7 +515,9 @@ def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
                            secret_store=SecretFileStore(tmp_path / "secrets"), profile_dir=tmp_path / "p",
                            redirect_uri="http://127.0.0.1:8976/callback", headless=True, allow_dcr=True)
         run = asyncio.run(execute_browser_phase(o, run, deps, fp.base_url + "/", io))
-    assert run.status == "partial" and "untested" in run.status_reason and "dynamic registration" in run.status_reason
+    # Sprint 5: the registered client is live-tested (client-credentials token request) → succeeded.
+    assert run.status == "succeeded" and "dynamic registration" in run.status_reason, run.status_reason
+    assert run.verification.label == "verified" and "access token" in run.verification.observed_result
     assert run.browser is None and not (tmp_path / "p").exists()  # no browser was opened
     assert set(run.credential.parts) >= {"client_id", "client_secret"}
     secret = SecretFileStore(tmp_path / "secrets").get(run.credential.parts["client_secret"].store_ref)

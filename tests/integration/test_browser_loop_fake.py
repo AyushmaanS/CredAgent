@@ -197,7 +197,7 @@ def test_cli_fake_provider_offline_end_to_end(tmp_path):
 
     r = CliRunner().invoke(cli, ["get", "Fakeprov", "--fake-provider", "success", "--offline", "--headless"])
     assert r.exit_code == 0, r.output
-    assert "Credential page reached" in r.output
+    assert "succeeded" in r.output and "Live test: verified" in r.output  # Sprint 5: captured + live-tested
     home = tmp_path / "credagent-home"
     assert not list((home / "profiles" / "fakeprov").glob("*"))  # ephemeral profile removed
 

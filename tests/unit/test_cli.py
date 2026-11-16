@@ -1,7 +1,7 @@
 import pytest
 from click.testing import CliRunner
 
-from credagent.cli.main import NOT_IMPLEMENTED_EXIT, cli
+from credagent.cli.main import cli
 
 COMMANDS = ["get", "resume", "status", "runs", "report", "verify", "secret"]
 
@@ -14,10 +14,9 @@ def test_help_lists_all_prd_commands():
 
 
 @pytest.mark.parametrize("args", [["resume", "x"], ["verify", "x"], ["secret", "x"]])
-def test_unimplemented_commands_never_claim_success(args):
+def test_run_commands_on_unknown_run_fail_plainly(args):
     r = CliRunner().invoke(cli, args)
-    assert r.exit_code == NOT_IMPLEMENTED_EXIT
-    assert "not implemented" in r.output
+    assert r.exit_code == 1 and "No run with id x" in r.output
 
 
 def test_get_validates_app_name():

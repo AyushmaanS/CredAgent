@@ -6,7 +6,7 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> **Work in progress — Sprint 4 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
+> **Work in progress — Sprint 5 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
 > Every decision and assumption: `docs/DECISIONS.md`. Every live run, including failures: `RESULTS.md`.
 
 Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,
@@ -19,7 +19,10 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 | `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan, then pauses | Browser runs against **real** providers (need per-provider consent, Sprint 6) |
 | Browser loop on the fake provider: Stagehand + Jev's five decisions + code policy, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) | |
 | Jev failure fallbacks and "service unavailable" proved on the fake provider (`--fake-provider jev_failure` / `service_unavailable`) | |
-| OAuth metadata check + dynamic client registration shortcut (fake provider) | `resume`, credential capture, `verify`, `secret` (Sprint 5) — these commands exit with code 2 and say so |
+| OAuth metadata check + dynamic client registration shortcut (fake provider) | Provider-specific live tests (API keys, authorization-code flow) arrive with the real providers (Sprint 6) |
+| Credential capture by plain browser code (shown-once secrets too), stored in owner-only files outside the repo | |
+| Live test (OAuth client-credentials token request); only `verified` → `succeeded` ([sample report](docs/samples/secret-and-report.md)) | |
+| `credagent resume` (re-checks the page, never repeats an unconfirmed click), `verify`, `secret` (masked; reveal on purpose) | |
 | `credagent status`, `runs`, `report`; crash-safe state; secrets masked before any model call | |
 
 No credential has been obtained or live-tested against a real provider yet.
@@ -45,6 +48,10 @@ git config core.hooksPath .githooks    # pre-commit secret scan + lint (for cont
 .venv/bin/python -m pytest                                    # full test suite, no network
 .venv/bin/python -m fake_provider.app --scenario terms_checkbox   # fake console at http://127.0.0.1:8765
 .venv/bin/credagent get Fakeprov --fake-provider success --offline  # watch the agent drive the fake console
+.venv/bin/credagent get Fakeprov --fake-provider signin_resume --offline  # press Ctrl+C at the card, then:
+.venv/bin/credagent resume <run-id>                             # continues where it stopped
+.venv/bin/credagent secret <run-id>                             # where the credential is stored (masked)
+.venv/bin/credagent verify <run-id>                             # re-run the live test
 .venv/bin/credagent get Fakeprov --fake-provider jev_failure --offline  # Jev fails on purpose; fallbacks take over
 .venv/bin/python scripts/sample_cards.py                       # regenerate docs/samples/handoff-cards.md
 ```
@@ -84,6 +91,19 @@ secret scan blocks it from commits, and no CredAgent command prints its values.
 
 Runtime data (run state, browser profiles, secret store) lives in
 `~/.credagent/` (owner-only permissions), outside the repo.
+
+**Where credentials go:** each captured value is a separate file,
+`~/.credagent/secrets/<run-id>/<name>.secret` (folders 0700, files 0600). The files are
+**not encrypted**: anyone who can read files as your macOS user can read them, and so can
+backups of your home folder. Time Machine includes `~/.credagent` unless you exclude it
+yourself (`tmutil addexclusion ~/.credagent`). Run state, logs and reports hold only
+references and masked forms such as `fpcs… (45 chars)`. `credagent secret <run-id>` shows
+where each value is and whether its permissions are still owner-only. To use a value,
+`credagent secret <run-id> --reveal <name>` (you type the name to confirm) copies it to the
+clipboard; add `--print` to show it in the terminal instead.
+
+Fake-provider runs also save the fake site's own state (`~/.credagent/fakeprov/<run-id>/`,
+owner-only) so `resume` and `verify` work from a new terminal.
 
 ## Development
 

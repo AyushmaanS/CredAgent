@@ -1,7 +1,8 @@
 """`credagent` command-line entry point.
 
-Every PRD command exists. Commands not yet implemented say so plainly and exit
-with code 2 — they never imply success. Output never includes secrets.
+Every PRD command exists. Anything not available yet says so plainly and exits
+with code 2 — it never implies success. Output never includes secrets, except
+`credagent secret --reveal`, which the owner confirms by typing the value's name.
 """
 
 from __future__ import annotations
@@ -81,15 +82,6 @@ def _load(store: RunStore, run_id: str | None):
         sys.exit(1)
 
 
-def _not_yet(command: str, sprint: int) -> None:
-    click.echo(
-        f"`credagent {command}` is not implemented yet (planned for Sprint {sprint}). "
-        "Nothing was run.",
-        err=True,
-    )
-    sys.exit(NOT_IMPLEMENTED_EXIT)
-
-
 def _validate_app(_ctx: click.Context, _param: click.Parameter, value: str) -> str:
     name = value.strip()
     if not name:
@@ -155,16 +147,57 @@ def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
         sys.exit(0 if run.status in ("succeeded", "partial") else 3)
 
 
+def _fake_dir(s: Settings, run_id: str):
+    return s.home / "fakeprov" / run_id
+
+
+def _fake_deps(s: Settings, m: Masker, run_id: str, scenario_name: str, offline: bool, headless: bool):
+    from fake_provider.app import load_scenarios
+    from fake_provider.faults import FaultyFastRouter, faults_for
+
+    from credagent.decisions.client import JevClient, RuleJev, RuleLLM
+    from credagent.orchestrator import BrowserDeps
+    from credagent.secrets.store import SecretFileStore
+
+    faults = faults_for(load_scenarios()[scenario_name])
+    if faults.any:
+        click.echo("Simulated fault for this scenario: "
+                   + ("Jev and the LLM are unreachable." if faults.llm_down else "every Jev call fails."))
+    if offline:
+        jev, reasoner, cb = RuleJev(), None, None
+        if faults.any:  # the offline LLM stand-in answers the fallbacks, as the real LLM would
+            llm = FaultyFastRouter(RuleLLM(), faults)
+            jev, reasoner = JevClient(llm), llm
+    else:
+        from credagent.browser.stagehand_llm import make_generate
+        from credagent.reasoning.fastrouter import FastRouterClient
+        fr = FastRouterClient(s, m)
+        if faults.any:
+            fr = FaultyFastRouter(fr, faults)  # type: ignore[assignment]
+        jev, reasoner, cb = JevClient(fr), fr, make_generate(fr, s.stagehand_model)
+    return BrowserDeps(jev=jev, reasoner=reasoner, llm_model=s.llm_model, model_callback=cb,
+                       secret_store=SecretFileStore(s.secrets_dir),
+                       profile_dir=s.profiles_dir / "fakeprov" / run_id, redirect_uri=s.redirect_uri,
+                       headless=headless, allow_dcr=True, ephemeral_profile=True)
+
+
+def _end_message(run) -> None:
+    click.echo(f"\nRun {run.id}: {run.status} — {run.status_reason}")
+    if run.verification:
+        click.echo(f"Live test: {run.verification.label} — {run.verification.observed_result}")
+    if run.credential:
+        click.echo(f"Credential (masked): credagent secret {run.id}")
+    click.echo(f"Report: credagent report {run.id}")
+
+
 def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> None:
     import asyncio
 
-    from fake_provider.app import FakeProvider, load_scenarios, scenario
-    from fake_provider.faults import FaultyFastRouter, faults_for
+    from fake_provider.app import FakeProvider, scenario
 
     from credagent.browser.chrome import ChromeError
-    from credagent.decisions.client import JevClient, RuleJev, RuleLLM
-    from credagent.orchestrator import BrowserDeps, Orchestrator, execute_browser_phase, fake_provider_plan
-    from credagent.secrets.store import SecretFileStore
+    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, execute_browser_phase, fake_provider_plan
+    from credagent.state.atomic import atomic_write_json
     from credagent.state.models import Run, new_run_id
 
     names = _fake_provider_names()
@@ -178,48 +211,112 @@ def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> No
         sys.exit(CONFIG_EXIT)
     store = _store(s, m)
     io = TerminalIO()
-    with FakeProvider(scenario(scenario_name)) as fp:
+    run_id = new_run_id(f"fakeprov-{scenario_name}")
+    fdir = _fake_dir(s, run_id)
+    # The fake site's state is saved (owner-only) so `credagent resume` / `verify` work from a new terminal.
+    with FakeProvider(scenario(scenario_name), state_file=fdir / "state.json") as fp:
+        atomic_write_json(fdir / "launch.json", {"scenario": scenario_name, "offline": offline, "headless": headless})
         click.echo(f"Fakeprov ({scenario_name}) at {fp.base_url} (test sign-in: fake_provider/app/server.py)")
-        run = Run(id=new_run_id(f"fakeprov-{scenario_name}"), app_input=app, app_name="Fakeprov",
-                  provider="Fakeprov (local)", plan=fake_provider_plan(fp.base_url))
+        run = Run(id=run_id, app_input=app, app_name="Fakeprov", provider=FAKE_PROVIDER_NAME,
+                  plan=fake_provider_plan(fp.base_url))
         run.predicted_outcome = run.plan.predicted_outcome
         run.phase = "planned"
         store.create(run)
-        faults = faults_for(load_scenarios()[scenario_name])
-        if faults.any:
-            click.echo("Simulated fault for this scenario: "
-                       + ("Jev and the LLM are unreachable." if faults.llm_down else "every Jev call fails."))
-        if offline:
-            jev, reasoner, cb = RuleJev(), None, None
-            if faults.any:  # the offline LLM stand-in answers the fallbacks, as the real LLM would
-                llm = FaultyFastRouter(RuleLLM(), faults)
-                jev, reasoner = JevClient(llm), llm
-        else:
-            from credagent.browser.stagehand_llm import make_generate
-            from credagent.reasoning.fastrouter import FastRouterClient
-            fr = FastRouterClient(s, m)
-            if faults.any:
-                fr = FaultyFastRouter(fr, faults)  # type: ignore[assignment]
-            jev, reasoner, cb = JevClient(fr), fr, make_generate(fr, s.stagehand_model)
-        deps = BrowserDeps(jev=jev, reasoner=reasoner, llm_model=s.llm_model, model_callback=cb,
-                           secret_store=SecretFileStore(s.secrets_dir),
-                           profile_dir=s.profiles_dir / "fakeprov" / run.id, redirect_uri=s.redirect_uri,
-                           headless=headless, allow_dcr=True, ephemeral_profile=True)
+        deps = _fake_deps(s, m, run.id, scenario_name, offline, headless)
         orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (no research for Fakeprov)
         try:
             run = asyncio.run(execute_browser_phase(orch, run, deps, fp.base_url + "/", io))
         except ChromeError as exc:
             click.echo(f"Browser problem: {exc}", err=True)
             sys.exit(1)
-    click.echo(f"\nRun {run.id}: {run.status} — {run.status_reason}")
-    click.echo(f"Report: credagent report {run.id}")
+    _end_message(run)
+
+
+def _start_saved_fake(s: Settings, run):
+    """Restart the fake site for RUN on its original port with its saved state."""
+    from urllib.parse import urlparse
+
+    from fake_provider.app import FakeProvider
+    from fake_provider.app.server import saved_scenario
+
+    sf = _fake_dir(s, run.id) / "state.json"
+    if not sf.exists():
+        click.echo("The fake site's saved state for this run is missing, so it cannot be restarted.", err=True)
+        sys.exit(1)
+    port = urlparse(run.plan.console_url or "").port or 0
+    try:
+        return FakeProvider(saved_scenario(sf), port=port, state_file=sf)
+    except OSError:
+        click.echo(f"Port {port} is in use, so the fake site for this run cannot be restarted. Close whatever "
+                   "is using it and try again.", err=True)
+        sys.exit(1)
 
 
 @cli.command()
 @click.argument("run_id")
-def resume(run_id: str) -> None:
+@click.option("--headless", is_flag=True, help="Fake-provider runs: hide the browser window.")
+def resume(run_id: str, headless: bool) -> None:
     """Resume RUN_ID from its last checkpoint (re-checks the page before acting)."""
-    _not_yet("resume", 5)
+    import asyncio
+
+    from credagent.browser.chrome import ChromeError
+    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, resume_browser_phase
+    from credagent.secrets.capture import load_into_masker
+    from credagent.secrets.store import SecretFileStore
+
+    s = _settings()
+    m = _masker(s)
+    store = _store(s, m)
+    try:
+        loaded = store.load(run_id)
+    except RunNotFound:
+        click.echo(f"No run with id {run_id}. List runs with: credagent runs", err=True)
+        sys.exit(1)
+    run = loaded.run
+    if run.status == "succeeded":
+        click.echo(f"Run {run.id} already succeeded. To re-run the live test: credagent verify {run.id}")
+        return
+    if run.status != "running" and (not run.resumable or run.status == "cancelled"):
+        click.echo(f"Run {run.id} ended as {run.status} and cannot be resumed: {run.status_reason}", err=True)
+        sys.exit(1)
+    load_into_masker(run.credential, SecretFileStore(s.secrets_dir), m)
+    doubt = loaded.in_doubt_action
+    if doubt:
+        click.echo(f"Note: the last action before the interruption ({doubt.get('action')}: "
+                   f"{m.mask_text(str(doubt.get('target') or ''))[:80]}) has no recorded result. The agent "
+                   "re-checks the page and asks before repeating it.")
+    if run.provider != FAKE_PROVIDER_NAME:
+        if run.phase in ("created", "research"):
+            from credagent.reasoning.fastrouter import FastRouterClient
+            from credagent.research.agent import ResearchAgent
+            from credagent.research.tavily import TavilyClient
+
+            if run.status != "running":
+                run.transition("running", "resumed", resume=True)
+            agent = ResearchAgent(TavilyClient(s, m), FastRouterClient(s, m), model=s.llm_model)
+            run = Orchestrator(store, m, agent, TerminalIO())._research_and_plan(run, None)
+            _end_message(run)
+            return
+        click.echo("Browser runs on real providers arrive in Sprint 6 (they need your per-provider consent). "
+                   "This run has nothing to resume yet.", err=True)
+        sys.exit(NOT_IMPLEMENTED_EXIT)
+    import json as _json
+
+    launch = _json.loads((_fake_dir(s, run.id) / "launch.json").read_text(encoding="utf-8"))
+    if run.status != "running":
+        run.transition("running", "resumed", resume=True)
+    store.checkpoint(run, "resumed", {"in_doubt": bool(doubt), "pending_handoff": bool(run.pending_handoff)})
+    io = TerminalIO()
+    with _start_saved_fake(s, run) as fp:
+        click.echo(f"Fakeprov restarted at {fp.base_url} with this run's saved state.")
+        deps = _fake_deps(s, m, run.id, launch["scenario"], launch["offline"], headless or launch["headless"])
+        orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]
+        try:
+            run = asyncio.run(resume_browser_phase(orch, run, deps, io, doubt))
+        except ChromeError as exc:
+            click.echo(f"Browser problem: {exc}", err=True)
+            sys.exit(1)
+    _end_message(run)
 
 
 @cli.command()
@@ -285,16 +382,144 @@ def report(run_id: str, fmt: str) -> None:
 @click.argument("run_id")
 def verify(run_id: str) -> None:
     """Run (or re-run) the live credential test for RUN_ID without showing the secret."""
-    _not_yet("verify", 5)
+    import httpx
+
+    from credagent.orchestrator import FAKE_PROVIDER_NAME
+    from credagent.secrets.capture import load_into_masker
+    from credagent.secrets.store import SecretFileStore
+    from credagent.state.models import Evidence, InvariantError, StepRecord, decide_outcome
+    from credagent.verification.verify import verify_run
+
+    s = _settings()
+    m = _masker(s)
+    store = _store(s, m)
+    run = _load(store, run_id)
+    if run.credential is None:
+        click.echo(f"Run {run.id} has no captured credential, so there is nothing to test.", err=True)
+        sys.exit(1)
+    sstore = SecretFileStore(s.secrets_dir)
+    load_into_masker(run.credential, sstore, m)
+    fake = _start_saved_fake(s, run).start() if run.provider == FAKE_PROVIDER_NAME else None
+    try:
+        with httpx.Client() as http:
+            seq = store.begin_action(run, "verify_credential", {"via": "credagent verify"})
+            v = verify_run(run, sstore, m, http)
+            store.end_action(run, seq, "done", {"label": v.label})
+    finally:
+        if fake is not None:
+            fake.stop()
+    run.verification = v
+    run.untested = [] if v.label != "untested" else [f"Live credential test: {v.observed_result}"]
+    outcome, reason = decide_outcome(credential_captured=True, verification=v)
+    note = ""
+    if run.status == "running":
+        run.add_step(StepRecord(action=f"live test (credagent verify): {v.test_description}"[:200], actor="agent",
+                                outcome="done" if v.label == "verified" else "failed",
+                                evidence=[Evidence(kind="observed", text=m.mask_text(v.observed_result)[:300])]))
+    if outcome != run.status:
+        try:
+            run.transition(outcome, f"{reason} — re-tested with credagent verify", resumable=outcome != "succeeded")
+        except InvariantError:
+            note = f" (the run stays {run.status}: {run.status} cannot change to {outcome})"
+    store.checkpoint(run, "verified", {"label": v.label, "via": "credagent verify"})
+    write_reports(run, store.runs_dir / run.id, m, store.events(run.id))
+    click.echo(m.mask_text(f"Live test: {v.label} — {v.observed_result}"))
+    click.echo(m.mask_text(f"Test: {v.test_description}"))
+    for lim in v.production_limitations:
+        click.echo(m.mask_text(f"Limitation: {lim}"))
+    click.echo(f"Run {run.id}: {run.status}{note}")
+    sys.exit(0 if v.label == "verified" else 3)
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _tilde(path) -> str:
+    from pathlib import Path
+
+    home = str(Path.home())
+    p = str(path)
+    return "~" + p[len(home):] if p.startswith(home) else p
+
+
+def _backup_note(path) -> str:
+    import subprocess
+
+    try:
+        out = subprocess.run(["/usr/bin/tmutil", "isexcluded", str(path)], capture_output=True, text=True,  # noqa: S603
+                             timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return "Backup status unknown (tmutil not available)."
+    if "[Excluded]" in out.stdout:
+        return "Time Machine: excluded from backups."
+    if "[Included]" in out.stdout:
+        return (f"Time Machine: INCLUDED in backups. To exclude it yourself: tmutil addexclusion {_tilde(path)}")
+    return "Backup status unknown."
 
 
 @cli.command()
 @click.argument("run_id")
-@click.option("--reveal", is_flag=True,
-              help="Intentionally reveal the stored secret (asks for confirmation).")
-def secret(run_id: str, reveal: bool) -> None:
+@click.option("--reveal", "reveal_name", metavar="NAME", default=None,
+              help="Intentionally reveal one stored value (e.g. client_secret). Asks you to confirm.")
+@click.option("--print", "print_it", is_flag=True,
+              help="With --reveal: print the value in the terminal instead of copying it to the clipboard.")
+def secret(run_id: str, reveal_name: str | None, print_it: bool) -> None:
     """Show where RUN_ID's credential is stored (masked by default)."""
-    _not_yet("secret", 5)
+    from credagent.secrets.store import SecretFileStore, SecretStoreError
+
+    s = _settings()
+    m = _masker(s)
+    run = _load(_store(s, m), run_id)
+    cred = run.credential
+    if cred is None:
+        click.echo(f"Run {run.id} has no stored credential.")
+        sys.exit(1)
+    sstore = SecretFileStore(s.secrets_dir)
+    label = run.verification.label if run.verification else "untested"
+    click.echo(f"Run {run.id} — {cred.kind.replace('_', ' ')}, captured {cred.captured_at}, live test: {label}")
+    for name, part in cred.parts.items():
+        rid, pname = part.store_ref[len("file:"):].split("/")
+        try:
+            sstore.check(rid, pname)
+            perm = "owner-only (file 0600, folders 0700)"
+        except (SecretStoreError, OSError) as exc:
+            perm = f"NOT SAFE: {exc}"
+        click.echo(f"  {name:<15} {part.masked_display:<22} {_tilde(sstore.root / rid / (pname + '.secret'))}  "
+                   f"[{perm}]")
+    click.echo("Stored as plain files readable only by your macOS user; not encrypted (D-053).")
+    click.echo(_backup_note(s.home))
+    if reveal_name is None:
+        click.echo(f"To reveal one value on purpose: credagent secret {run.id} --reveal <name>")
+        return
+    part = cred.parts.get(reveal_name)
+    if part is None:
+        click.echo(f"No stored value named {reveal_name!r}. Names: {', '.join(cred.parts)}", err=True)
+        sys.exit(1)
+    if not _interactive():
+        click.echo("Revealing a secret needs an interactive terminal (it is never revealed to a pipe or a script).",
+                   err=True)
+        sys.exit(1)
+    typed = click.prompt(f"Type {reveal_name} to reveal it", default="", show_default=False)
+    if typed.strip() != reveal_name:
+        click.echo("Not confirmed; nothing revealed.")
+        sys.exit(1)
+    value = sstore.get(part.store_ref)
+    if print_it:
+        click.echo(value)
+        click.echo("(It is now in this terminal's scrollback. Clear it when you are done.)", err=True)
+        return
+    import subprocess
+
+    try:
+        subprocess.run(["/usr/bin/pbcopy"], input=value.encode("utf-8"), check=True, timeout=5)  # noqa: S603
+    except (OSError, subprocess.SubprocessError):
+        click.echo("Could not copy to the clipboard. Use --print to show it in the terminal instead.", err=True)
+        sys.exit(1)
+    finally:
+        value = ""
+    click.echo(f"Copied {reveal_name} to the clipboard. Paste it where you need it, then copy something else "
+               "to replace it (clipboard managers may keep a history).")
 
 
 if __name__ == "__main__":

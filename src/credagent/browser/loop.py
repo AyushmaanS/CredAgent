@@ -34,6 +34,7 @@ from credagent.policy.engine import HUMAN_ONLY_FIELDS, ProposedAction, Verdict, 
 from credagent.policy.hard_checks import blocking, check, host_allowed
 from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
 from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
+from credagent.secrets.capture import CaptureResult, capture
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Handoff, Run, StepRecord
 from credagent.state.store import RunStore
@@ -55,6 +56,12 @@ DO_INSTRUCTIONS = {
 
 
 MAX_HANDOFF_TRIES = 3
+HIDDEN_VALUE_INSTRUCTION = (
+    "The secret is no longer shown (providers show it only once). To get a working one, click “Regenerate "
+    "secret” in the browser yourself: the old secret stops working, so this is your decision. The agent then "
+    "captures the new one by plain code without showing it. If you do not want to regenerate, press Ctrl+C: the "
+    "run is saved and the credential is reported as not captured."
+)
 
 
 def terms_instruction(obs: Observation, gates: list) -> tuple[str, str]:
@@ -145,6 +152,8 @@ class BrowserLoop:
     values: FieldValues
     reasoner: Any | None = None  # LLM for fallbacks + re-planning (None = offline)
     llm_model: str | None = None
+    secret_store: Any | None = None  # SecretFileStore: capture on the credential page (None = do not capture)
+    in_doubt: dict | None = None  # resume: last action started before the interruption with no recorded end
     budget: LoopBudget = field(default_factory=LoopBudget)
     context: Any | None = None  # browser context for the domain guard (set by run())
 
@@ -350,6 +359,29 @@ class BrowserLoop:
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
 
+    async def _capture(self, run: Run, page: Any, obs: Observation) -> CaptureResult:
+        """Plain-code capture of the credential on this page (spec §6.9). Values go straight to the
+        owner-only store; run state gets references and masked displays only."""
+        seq = self.store.begin_action(run, "capture_credential", {"elements": len(obs.secret_xpaths)})
+        res = await capture(page, obs, store=self.secret_store, masker=self.masker, run_id=run.id,
+                            plan_kind=run.plan.credential_kind)
+        self.store.end_action(run, seq, "done", {"observed": res.observed()})
+        if res.credential is not None:
+            if run.credential is not None and not res.has_secret:
+                res.credential.parts = {**run.credential.parts, **res.credential.parts}
+            run.credential = res.credential
+            run.observed_limitations = res.limitations
+            shown = ", ".join(f"{k} {p.masked_display}" for k, p in res.credential.parts.items())
+            self._step(run, f"captured the credential by plain browser code ({', '.join(res.captured)}); "
+                       "stored outside the repo", "agent", "done", [res.observed(), shown] + res.limitations[:2])
+        else:
+            self._step(run, "credential page reached, but nothing could be captured safely", "system", "failed",
+                       [res.observed()])
+        self._cp(run, "credential_captured" if res.credential else "credential_not_captured",
+                 {"parts": res.captured, "unlabelled": res.unlabelled, "ambiguous": res.ambiguous,
+                  "secret_hidden": res.secret_hidden, "limitations": res.limitations})
+        return res
+
     async def _still_needed(self, page: Any | None, before: Observation, blocker_kind: str) -> str | None:
         """Re-check the page after the person pressed Enter. None = the handoff's condition is resolved."""
         if page is None:
@@ -358,6 +390,10 @@ class BrowserLoop:
             now = await observe_page(page, self.masker)
         except Exception:  # noqa: BLE001 - if the page cannot be read, let the main loop re-observe
             return None
+        if blocker_kind == "secret_hidden":
+            if len(now.secret_xpaths) > len(before.secret_xpaths) or now.url != before.url:
+                return None
+            return "the secret is still hidden (click “Regenerate secret” in the browser if you want a new one)"
         allowed = self._allowed
         gates_now = check(now, allowed)
         if blocker_kind == "terms":
@@ -500,14 +536,21 @@ class BrowserLoop:
                     return LoopResult("handoff_pending", g.reason, n_obs, n_act)
                 continue
             if any(g.kind == "credential_shown" for g in gates):
-                self._step(
-                    run,
-                    "credential page reached (capture is implemented in Sprint 5)",
-                    "system",
-                    "done",
-                    [g.evidence[0] for g in gates if g.kind == "credential_shown"],
-                )
                 self._cp(run, "credential_page_reached", {})
+                if self.secret_store is None:
+                    self._step(run, "credential page reached (no secret store: nothing captured)", "system", "done",
+                               [g.evidence[0] for g in gates if g.kind == "credential_shown"])
+                    return LoopResult("credential_page", "credential page reached", n_obs, n_act)
+                res = await self._capture(run, page, obs)
+                if res.secret_hidden:
+                    if await self._handoff(
+                        run, "DO", "secret_hidden",
+                        "The secret is no longer shown on this page (providers show it only once).",
+                        [res.observed()], obs, instruction=HIDDEN_VALUE_INSTRUCTION,
+                        after="Re-check the page and capture the new secret by plain code, without showing it.",
+                    ) is None:
+                        return LoopResult("handoff_pending", "secret hidden", n_obs, n_act)
+                    continue
                 return LoopResult("credential_page", "credential page reached", n_obs, n_act)
 
             fp = obs.fingerprint()
@@ -691,6 +734,28 @@ class BrowserLoop:
                     )
                     return LoopResult("blocked", f"person declined: {cand.description}", n_obs, n_act)
 
+            # Resume (spec §6.8): an action that was started before an interruption but never confirmed is
+            # never repeated without asking. Clicking it again could, e.g., create a second app.
+            doubt = self.in_doubt
+            if doubt and cand.method == "click" and doubt.get("action") == "click" \
+                    and doubt.get("target") == cand.description:
+                self.in_doubt = None
+                answer = await self._handoff(
+                    run, "DECIDE", "unexpected",
+                    "Before the interruption the agent started this click, and CredAgent cannot tell whether it "
+                    f"happened: {cand.description}. Doing it again could repeat it (e.g. create a second app).",
+                    [cand.description], obs,
+                    instruction="Look at the browser window. If the action already happened, stop here and check "
+                    "the console yourself. Otherwise let the agent do it once.",
+                    options=["Yes, do it (it did not happen)", "No, stop here"],
+                    after="Do it once (if yes) and continue.",
+                )
+                if answer is None:
+                    return LoopResult("handoff_pending", "in-doubt action waiting for you", n_obs, n_act)
+                if answer.startswith("No"):
+                    self._stop = f"person chose not to repeat an in-doubt action: {cand.description}"
+                    return LoopResult("blocked", self._stop, n_obs, n_act)
+
             # Before the agent itself submits a form, complete everything it may fill (D-050).
             form_of_btn = next(
                 (
@@ -809,5 +874,6 @@ _BLOCKER_KINDS = {
     "budget_exhausted",
     "replan_limit",
     "app_not_identified",
+    "secret_hidden",
     "other",
 }

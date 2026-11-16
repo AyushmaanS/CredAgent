@@ -36,7 +36,7 @@ BlockerKind = Literal[
     "identity_verification", "business_verification", "payment", "terms", "cookie_consent",
     "provider_review", "paid_plan", "partner_approval", "policy_denied", "off_allow_list",
     "unexpected", "service_unavailable", "budget_exhausted", "replan_limit", "app_not_identified",
-    "other",
+    "secret_hidden", "other",
 ]
 RunPhase = Literal["created", "research", "planned", "browser", "verifying", "done"]
 
@@ -46,8 +46,8 @@ TRANSITIONS: dict[str, set[str]] = {
     "blocked": {"running", "cancelled"},
     "waiting_on_provider": {"running", "cancelled"},
     "failed": {"running", "cancelled"},       # only when Run.resumable is True
-    "partial": {"running", "succeeded"},      # e.g. re-verify after provider review
-    "succeeded": set(),
+    "partial": {"running", "succeeded", "failed"},  # e.g. re-verify after provider review
+    "succeeded": {"partial", "failed"},     # only via `credagent verify` re-running the live test
     "cancelled": set(),
 }
 
@@ -257,6 +257,7 @@ class Run(Strict):
     replans_used: int = Field(default=0, ge=0, le=MAX_REPLANS)
     plan_cursor: int = 0  # index of the current plan step during browser execution
     metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
+    observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     checkpoint_seq: int = 0
 
     @model_validator(mode="after")

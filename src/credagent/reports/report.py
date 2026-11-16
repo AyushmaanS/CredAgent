@@ -28,8 +28,8 @@ def next_steps(run: Run) -> list[str]:
         steps.append("[owner] Review the plan above. Browser runs against real providers need your "
                      "per-provider consent (Sprint 6); the run is saved and can be resumed then: "
                      f"credagent resume {run.id}")
-    if run.status == "running" and run.phase == "browser" and not h:
-        steps.append("[owner] Credential capture and the live test arrive in Sprint 5.")
+    if run.status == "running" and run.phase in ("browser", "verifying") and not h:
+        steps.append(f"[owner] The run was interrupted. Continue it with: credagent resume {run.id}")
     if run.status == "failed" and run.resumable:
         steps.append(f"[owner] When the failing service is reachable again, run: credagent resume {run.id}")
     if run.status == "partial" and run.verification:
@@ -102,7 +102,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         f"- **Status:** {o['status']} (phase: {o['phase']}){' — ' + o['reason'] if o['reason'] else ''}",
         f"- **Predicted:** {r['predicted_outcome']} · **Actual:** {r['actual_outcome'] or 'not finished'}",
         f"- **Credential:** {r['credential']['kind'] if r['credential'] else 'not captured'}"
-        + (" · " + ", ".join(f"{k}: {d}" for k, d in r["credential"]["parts"].items())
+        + (" · " + ", ".join(f"{k} {d}" for k, d in r["credential"]["parts"].items())
            if r["credential"] else ""),
         f"- **Verification:** `{v['label']}`"
         + (" — only `verified` counts as working" if v["label"] != "verified" else ""),

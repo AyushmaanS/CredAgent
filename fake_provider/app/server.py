@@ -22,12 +22,14 @@ from __future__ import annotations
 import base64
 import html
 import json
+import os
 import secrets
 import threading
 import time
 from dataclasses import asdict, dataclass, field
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -110,6 +112,35 @@ class State:
 
     def log(self, event: str, actor: str, **details: Any) -> None:
         self.audit.append({"at": time.time(), "event": event, "actor": actor, **details})
+
+    # Persistence (optional): lets `credagent resume` restart the fake site with the same apps, sessions
+    # and audit log after the CredAgent process exited. The file holds the fake site's own (fake)
+    # credentials, like a provider's database, so it is written owner-only (0600) outside the repo.
+    state_file: Path | None = None
+
+    def snapshot(self) -> dict[str, Any]:
+        return {"scenario": asdict(self.scenario), "sessions": self.sessions,
+                "apps": {k: asdict(v) for k, v in self.apps.items()}, "tokens": self.tokens,
+                "audit": self.audit, "captcha_words": self.captcha_words}
+
+    def restore(self, data: dict[str, Any]) -> None:
+        self.sessions = data.get("sessions", {})
+        self.apps = {k: App(**v) for k, v in data.get("apps", {}).items()}
+        self.tokens = data.get("tokens", {})
+        self.audit = data.get("audit", [])
+        self.captcha_words = data.get("captcha_words", {})
+
+    def save(self) -> None:
+        if self.state_file is None:
+            return
+        self.state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp = self.state_file.with_name(f".{self.state_file.name}.{os.getpid()}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, json.dumps(self.snapshot()).encode("utf-8"))
+        finally:
+            os.close(fd)
+        os.replace(tmp, self.state_file)
 
 
 # ------------------------------------------------------------------- HTML
@@ -231,10 +262,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         with self.state.lock:
             self._get()
+            self.state.save()
 
     def do_POST(self) -> None:  # noqa: N802
         with self.state.lock:
             self._post()
+            self.state.save()
 
     def _get(self) -> None:
         u = urlparse(self.path)
@@ -625,8 +658,15 @@ class Handler(BaseHTTPRequestHandler):
 class FakeProvider:
     """Run Fakeprov in a background thread: `with FakeProvider(scenario) as fp: fp.base_url`."""
 
-    def __init__(self, scenario: Scenario | None = None, port: int = 0, host: str = "127.0.0.1") -> None:
+    def __init__(self, scenario: Scenario | None = None, port: int = 0, host: str = "127.0.0.1",
+                 state_file: Path | None = None) -> None:
         self.state = State(scenario or Scenario())
+        if state_file is not None:
+            self.state.state_file = state_file
+            if state_file.exists():
+                self.state.restore(json.loads(state_file.read_text(encoding="utf-8")))
+            else:
+                self.state.save()
         handler = type("BoundHandler", (Handler,), {"state": self.state})
         self.httpd = ThreadingHTTPServer((host, port), handler)
         self.httpd.daemon_threads = True
@@ -664,4 +704,9 @@ def metadata_url(base_url: str) -> str:
     return base_url + "/.well-known/oauth-authorization-server"
 
 
-__all__ = ["FakeProvider", "Scenario", "TEST_EMAIL", "TEST_PASSWORD", "metadata_url"]
+def saved_scenario(state_file: Path) -> Scenario:
+    """The scenario a persisted fake site was started with."""
+    return Scenario(**json.loads(state_file.read_text(encoding="utf-8"))["scenario"])
+
+
+__all__ = ["FakeProvider", "saved_scenario", "Scenario", "TEST_EMAIL", "TEST_PASSWORD", "metadata_url"]
