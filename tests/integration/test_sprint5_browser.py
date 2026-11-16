@@ -394,3 +394,54 @@ def test_eager_decider_cannot_create_a_second_app(tmp_path):
     assert len(created) == 1, f"{len(created)} apps created"
     assert any("would create another app" in json.dumps(e["data"]) for e in store.events(run.id) if e["type"] == "policy")
     # (Where the replay then wanders is the replay's doing; what matters is that no second app was created.)
+
+
+def test_navigator_opens_the_app_from_the_list_when_the_step_target_is_elsewhere(tmp_path):
+    """Discord run 20261116-171020 (D-068): on the app list, the step "open the OAuth2 page" had no matching
+    element; Jev said stuck. The navigator is asked once for the click that leads there (open the app)."""
+    from credagent.browser.candidates import FieldValues
+    from credagent.decisions.client import RuleLLM
+
+    class Navigator(RuleLLM):
+        def __init__(self):
+            self.asked = 0
+
+        def chat(self, messages, *, json_schema=None, schema_name="result", **kw):
+            if schema_name != "toward_goal":
+                return super().chat(messages, json_schema=json_schema, schema_name=schema_name, **kw)
+            self.asked += 1
+            info = json.loads(messages[-1]["content"].split("\n<<<PAGE>>>")[0])
+            mine = [c["id"] for c in info["candidates"] if "(the app this run created)" in c["description"]]
+            return {"parsed": {"element": mine[0] if mine else "none", "reason": "open the app first"}}
+
+    class StuckOffList(RuleJev):
+        def decide(self, state, log):
+            d = super().decide(state, log)
+            if state.url.endswith("/console"):
+                from credagent.decisions.jev import Decision
+                d.decisions["action_selection"] = Decision("action_selection", "stuck", 0.99, False, {})
+            return d
+
+    with FakeProvider(scenario("discord_like")) as fp:
+        name = FieldValues.default(CB).app_name
+        fp.state._new_app(name, CB)
+        run = new_run(fp, "nav", oauth_step=True)
+        run.plan = run.plan.model_copy(update={"console_url": fp.base_url + "/console"})
+        run.created = ["an app (created earlier)"]
+        from credagent.metadata.discovery import discover
+
+        with httpx.Client() as http:  # as recorded by the first session of a real run
+            run.metadata_check = discover(run.plan, http, base_urls=[fp.base_url]).summary()
+        run.plan_cursor = [i for i, st in enumerate(run.plan.steps) if st.id == "p5b"][0]
+        m = Masker()
+        RunStore(tmp_path / "runs", m).create(run)
+        nav = Navigator()
+        deps = deps_for(tmp_path)
+        deps.jev, deps.reasoner = StuckOffList(), nav
+        io = LateIO()
+        run, store = asyncio.run(_phase(tmp_path, fp, run, deps, io, resume=True, masker=m))
+        created = [a for a in fp.audit() if a["event"] == "app_created"]
+    assert nav.asked >= 1
+    assert any(e["type"] == "toward_goal" and e["data"]["element"] for e in store.events(run.id))
+    assert run.status == "succeeded", (run.status, run.status_reason)
+    assert created == []  # the existing app was used; nothing new was created

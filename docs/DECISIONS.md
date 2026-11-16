@@ -516,6 +516,15 @@ Fixes:
 - **`_mark_created` moves the cursor only if the step the run is on is itself a create step.** Recording an app on resume or at capture never moves the plan.
 - On this run's saved plan, only step 1 ("Click 'New Application'…") now counts as a create step. On restart the agent continues from "open the OAuth2 page".
 
+## D-068 One navigator question before "stuck"; resume restarts after the end of the creation phase — Decided (found in the sixth resume of the Discord run)
+*Found in real run `20261116-171020-discord-1588`:* the browser was on the app list, and the step was "In the left sidebar of the application, open the OAuth2 page." Jev answered "stuck". The LLM even said the OAuth2 link "only appears inside" an app, but did not pick the app. Both re-plans had been used long before, so the agent handed a trivial click to the owner. **The owner abandoned the run** and is deleting all `credagent-demo` apps to start Discord from scratch.
+
+Fixes:
+- **Navigator:** when Jev finds no element for the step, the LLM is asked once per page state, with a closed answer set (a candidate id or none), for the click that *leads toward* the step. Examples: opening the right item in a list, or a tab that contains it. It prefers the candidate marked "(the app this run created)" (D-064) and never picks anything that creates, deletes, submits or pays. Policy still decides on the pick, and the pick is logged (`toward_goal`). Only if nothing is picked does the run hand off as stuck.
+- **The resume correction (D-064/D-065) goes to the step after the *last* create action:** creation can span several steps (open form, fill, submit). It ignores conditional steps such as "If no app exists yet, click 'New Application'".
+
+Tested: a real-Chrome case starts on the app list with Jev forced to "stuck". The navigator opens the run's existing app, the run reaches OAuth2, and it captures and live-tests with no new app created. 74 of 74 real-Chrome tests pass.
+
 ---
 
 ## Discrepancies between documents

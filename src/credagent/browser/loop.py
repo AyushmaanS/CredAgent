@@ -28,7 +28,7 @@ from credagent.browser.candidates import (
     use_stagehand,
 )
 from credagent.browser.observe import Observation, observe_page
-from credagent.decisions.client import DecisionLog, ServiceDown, apply_fallbacks
+from credagent.decisions.client import DecisionLog, ServiceDown, apply_fallbacks, toward_goal
 from credagent.decisions.jev import NONE_OPTION, PageState
 from credagent.handoff.cards import render_card
 from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, Verdict, evaluate
@@ -583,6 +583,7 @@ class BrowserLoop:
         denied: set[str] = set()
         revealed = False
         seen_cred: set[tuple] = set()
+        toward_tried: set[str] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
         run.phase = "browser"
@@ -607,9 +608,11 @@ class BrowserLoop:
             # Starting (or resuming) with an app that exists but no secret captured: continue from the first step
             # after the create step. Steps that are already done are marked complete quickly; a second app can
             # never be created (D-063). This repairs a saved cursor that skipped console steps (D-064/D-065).
-            first = next((i for i, st in enumerate(run.plan.steps)
-                          if st.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(st.description)),
-                         None)
+            # The end of the creation phase: the last create action before the code-owned steps, ignoring
+            # conditional steps such as "If no app exists yet, click 'New Application'" (D-064, D-068).
+            first = max((i for i, st in enumerate(run.plan.steps)
+                         if st.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(st.description)
+                         and not st.description.lstrip().lower().startswith("if ")), default=None)
             if first is not None and first + 1 < run.plan_cursor:
                 self._cp(run, "plan_cursor_corrected", {"from": run.plan_cursor, "to": first + 1})
                 self._step(run, f"plan position corrected: back to step {first + 2} (the console steps after "
@@ -816,9 +819,18 @@ class BrowserLoop:
                 n_act += 1
                 continue
             if act == "stuck" or el in (None, NONE_OPTION) or el not in mapping:
-                if await self._stuck(run, obs, "Jev found no suitable element for the current step") is None:
-                    return LoopResult("stuck", "no suitable element", n_obs, n_act)
-                continue
+                pick = None
+                if self.reasoner is not None and fp not in toward_tried:
+                    # D-068: the step's own element is not here (e.g. "open OAuth2" on the app list). Ask once per
+                    # page state for the click that leads toward it before giving up.
+                    toward_tried.add(fp)
+                    pick, why_nav = toward_goal(state, self.reasoner, self.llm_model)
+                    self._cp(run, "toward_goal", {"element": pick, "reason": why_nav[:200]})
+                if pick is None:
+                    if await self._stuck(run, obs, "Jev found no suitable element for the current step") is None:
+                        return LoopResult("stuck", "no suitable element", n_obs, n_act)
+                    continue
+                el, act = pick, "proceed"
 
             # 5. policy (code) — the model's choice is an input, never a permission
             cand = mapping[el]
