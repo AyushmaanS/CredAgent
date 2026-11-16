@@ -100,7 +100,7 @@ until the Sprint 6 per-provider consent flow (protocol §2).
 - [x] S3.15 Loop budgets (observations, actions, no-progress, time) → checkpoint + honest stop
 - [x] S3.16 Fake-provider runs in real Chrome: success path to credential page; terms (checkbox + implied), sign-in, CAPTCHA, blocked, injection — gates handed off, forbidden actions never taken
 - [x] S3.17 Tests (unit + integration + opt-in browser) and secret scan
-- [ ] S3.18 👤 **Waiting:** checkpoint: owner watches a fake-provider run and confirms the browser is visible and understandable; remind owner to push
+- [x] S3.18 👤 Checkpoint: owner watched the `terms_checkbox` fake-provider run after the D-048–D-050 fixes and confirmed it on 2026-11-16 ("works"); pushed to GitHub at the owner's request
 
 ## Sprint 4 — Jev decisions, policy, handoffs
 - [ ] Per sprint plan
