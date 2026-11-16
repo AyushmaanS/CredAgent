@@ -134,7 +134,7 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S5.11 Tests: resume after terminal close (Chrome kept open) and after browser close (relaunch with profile); shown-once; hidden secret; verification labels; outcome mapping
 - [x] S5.12 Secret-leak tests: after full runs, no captured secret or issued token appears in run.json, events.jsonl, reports or terminal output
 - [x] S5.13 Lint, tests (default + real Chrome), secret scan, docs (DECISIONS, README, RESULTS), commit
-- [ ] S5.14 👤 **Waiting:** checkpoint: owner approves the secret-storage behaviour and sees a safe verification report; remind owner to push
+- [x] S5.14 👤 Checkpoint: owner approved the secret-storage behaviour and the sample verification report on 2026-11-16 ("Approve and push"); pushed at the owner's request
 
 ## Sprint 6 — Real-provider runs and demo coverage
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
