@@ -117,7 +117,7 @@ Most of the Sprint 4 machinery was built in Sprint 3 so the loop could run; this
 - [x] S4.11 Terms checkbox and implied-agreement detection tests (unit + real Chrome)
 - [x] S4.12 Sample DO and DECIDE cards generated from real offline fake-provider runs → `docs/samples/handoff-cards.md` (`scripts/sample_cards.py`); fixed "n of m" progress (D-052)
 - [x] S4.13 Lint, tests (default + real Chrome), secret scan, docs (DECISIONS, README), commit
-- [ ] S4.14 👤 **Waiting:** checkpoint: owner reviews sample DO and DECIDE cards; remind owner to push
+- [x] S4.14 👤 Checkpoint: owner reviewed the sample DO and DECIDE cards on 2026-11-16 ("cards look good"); pushed at the owner's request
 
 ## Sprint 5 — Resume, secret handling, verification
 - [ ] Per sprint plan
