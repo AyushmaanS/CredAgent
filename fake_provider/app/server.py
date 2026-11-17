@@ -66,6 +66,8 @@ class Scenario:
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
     crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
+    signin_host: str = ""  # sign-in lives on another host (e.g. "localhost"): the console redirects there, and a
+    #                        one-time ticket carries the session back (as accounts.google.com does for Google)
     input_credentials: bool = False  # OAuth2 page as the real Discord one (probe of run #7): the ID and the secret are in
     #                                  disabled text fields; their <label> is in a neighbouring div, not linked to
     #                                  them; "Reset Secret" stays after a reset
@@ -103,6 +105,7 @@ class State:
         self.lock = threading.RLock()
         self.scenario = scenario
         self.sessions: dict[str, dict[str, Any]] = {}
+        self.tickets: dict[str, str] = {}  # one-time sign-in tickets (signin_host scenarios)
         self.apps: dict[str, App] = {}
         self.tokens: dict[str, str] = {}
         self.audit: list[dict[str, Any]] = []
@@ -252,6 +255,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def need_signin(self) -> bool:
         if self.sc.require_signin and not (self.session() or {}).get("user"):
+            if self.sc.signin_host:
+                port = self.server.server_address[1]
+                target = f"http://127.0.0.1:{port}{self.path}"
+                self.redirect(f"http://{self.sc.signin_host}:{port}/login?next=" + quote(target, safe=""))
+                return True
             self.redirect("/login?next=" + quote(self.path))
             return True
         return False
@@ -292,6 +300,13 @@ class Handler(BaseHTTPRequestHandler):
                              "<p>This page is on a different domain from the console.</p>")
         if p.startswith("/__test__/"):
             return self.test_hook_get(p)
+        if p == "/__ticket":  # the session handed over by a sign-in on another host
+            sid = self.state.tickets.pop(q.get("t", [""])[0], None)
+            nxt = q.get("next", ["/console"])[0]
+            if sid is None:
+                return self.page("Sign in", "<h1>That sign-in link was already used.</h1>", 401)
+            return self.redirect(nxt if nxt.startswith("/") else "/console", {
+                "Set-Cookie": f"fp_session={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"})
         routes = {
             "/": self.get_home, "/login": self.get_login, "/signup": self.get_signup,
             "/logout": self.get_logout, "/captcha": self.get_captcha, "/console": self.get_console,
@@ -625,6 +640,14 @@ class Handler(BaseHTTPRequestHandler):
                 sess["user"] = TEST_EMAIL
                 self.state.log("signed_in", self.actor())
                 nxt = one("next") or "/console"
+                if self.sc.signin_host and nxt.startswith("http://"):  # carry the session back to the console's host
+                    ticket = secrets.token_urlsafe(12)
+                    self.state.tickets[ticket] = sid
+                    origin = "/".join(nxt.split("/")[:3])
+                    path = "/" + "/".join(nxt.split("/")[3:])
+                    return self.redirect(f"{origin}/__ticket?t={ticket}&next=" + quote(path, safe=""),
+                                         {"Set-Cookie": hdr.get("Set-Cookie") or (
+                                             f"fp_session={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")})
                 cookie = hdr.get("Set-Cookie") or (
                     f"fp_session={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")
                 return self.redirect(nxt if nxt.startswith("/") else "/console", {"Set-Cookie": cookie})

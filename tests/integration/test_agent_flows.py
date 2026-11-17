@@ -240,3 +240,22 @@ def test_cli_get_then_resume_from_a_new_process(tmp_path):
     assert all(a["event"] != "app_created" for a in state["audit"])
     mode = oct((home / "fakeprov" / run_dir.name / "state.json").stat().st_mode & 0o777)
     assert mode == "0o600"
+
+
+# ------------------------------------------------------------------ Google Cloud run (D-093)
+
+def test_an_off_site_sign_in_redirect_goes_to_the_person_and_does_not_bounce_off_a_blank_page(tmp_path):
+    """Google run 20261117-145242: the console redirected to accounts.google.com, outside the allowed sites. The agent
+    went back (to about:blank), navigated again, was redirected again, and the person never reached the sign-in page.
+    Now an off-site sign-in page is the person's: no back, no loop, and the run continues at the console afterwards."""
+    with FakeProvider(scenario("signin_offsite")) as fp:
+        o = asyncio.run(run_phase(tmp_path, fp, new_run(fp, "offsite"), llm=ScriptedLLM()))
+        audit = fp.audit()
+    assert o.run.status == "succeeded", (o.run.status, o.run.status_reason)
+    assert o.io.handoffs == [("DO", "sign_in")], o.io.handoffs
+    assert not any("going back" in s.action for s in o.run.steps), [s.action for s in o.run.steps]
+    assert any("asking the person" in s.action and "localhost" in s.action for s in o.run.steps)
+    assert [a["actor"] for a in audit if a["event"] == "signed_in"] == ["person"]
+    assert len([a for a in audit if a["event"] == "app_created"]) == 1
+    card = " ".join(" ".join(o.io.out).split())
+    assert "sign-in page (localhost)" in card and "outside the allowed sites" in card

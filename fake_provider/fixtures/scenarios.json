@@ -95,6 +95,26 @@
       },
       "llm": "live_or_stub"
     },
+    "signin_offsite": {
+      "description": "The console redirects to a sign-in page on another host (localhost, outside the allowed 127.0.0.1), as Google redirects to accounts.google.com (D-093). Going back would only leave a blank page; the agent must hand the sign-in to the person and carry on at the console afterwards.",
+      "prd_acceptance": "(D-093)",
+      "config": {
+        "require_signin": true,
+        "terms": "none",
+        "signin_host": "localhost"
+      },
+      "llm": "live_or_stub",
+      "expect": {
+        "outcome": "succeeded",
+        "verification": "verified",
+        "handoffs": [
+          {
+            "kind": "DO",
+            "why": "sign-in on another host"
+          }
+        ]
+      }
+    },
     "shown_once_secret": {
       "description": "Secret is shown only on the first view after creation; a reload hides it. Capture must happen on first view by plain code.",
       "prd_acceptance": "shown-once secret",

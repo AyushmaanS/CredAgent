@@ -42,6 +42,7 @@ from credagent.state.models import Blocker, Evidence, Run, StepRecord
 from credagent.state.store import RunStore
 
 NEW_FORM_PATH = re.compile(r"/(new|create|register|add)(/|$)", re.I)
+SIGNIN_HINT = re.compile(r"(sign-?in|log-?in|/auth/|^accounts\.)", re.I)  # an address that is a sign-in page
 HIDDEN_VALUE_INSTRUCTION = (  # the person's part when the secret can no longer be shown (D-054)
     "The secret is no longer shown, and the agent could not get one itself. Make it visible in the browser window: "
     "click “Reset Secret” or “Regenerate secret” yourself (the old secret stops working, so this is your decision), "
@@ -114,6 +115,8 @@ class AgentLoop:
             snap = await take_snapshot(self.ex.page, self.masker, self._not_secret())
         path = urlparse(snap.url).path
         snap.refused = {x for (u, x) in self._refused if u == path}
+        if host_allowed(snap.url, self.allowed) and snap.url.startswith("http"):
+            self._last_good = snap.url
         return snap
 
     def _hist(self, action: str, target: str, reason: str, effect: str, outcome: str = "ok") -> HistoryEntry:
@@ -145,6 +148,7 @@ class AgentLoop:
         self.handoffs = Handoffs(self.store, self.masker, self.io, self.allowed, self._observe, self._guard)
         self.history: list[HistoryEntry] = []
         self._refused: set[tuple[str, str]] = set()
+        self._last_good: str | None = None  # the last allowed, non-blank page seen: somewhere safe to go back to
         self._rotations = 0  # secrets reset in this run: a second reset invalidates the first (D-086)
         self._typed: set[tuple[str, str]] = set()  # fields the agent filled, so a handoff card can say so
         self._clicks: dict[tuple[str, str], int] = {}
@@ -294,10 +298,33 @@ class AgentLoop:
         self._step(run, f"recorded: this run created {what[:160]}; it will not create another", "system", "done")
         self._cp(run, "resource_created", {"what": what[:200]})
 
+    @staticmethod
+    def _looks_like_signin(snap: Snapshot) -> bool:
+        """An off-site page that is a sign-in page: its address says so, or it asks for an email or password."""
+        u = urlparse(snap.url)
+        return bool(SIGNIN_HINT.search(f"{u.hostname or ''}{u.path}")
+                    or any(i.get("type") in ("password", "email") for i in snap.obs.inputs))
+
     async def _hard_checks(self, run: Run, snap: Snapshot, gates: list, docs_back: int) -> LoopResult | str | None:
         """Code decides these before any model is asked. Returns a result to stop with, "again" / "docs" to look
         again after something was done, or None to go on."""
         if any(g.kind == "off_allow_list" for g in gates):
+            g = next(g for g in gates if g.kind == "off_allow_list")
+            signin = self._looks_like_signin(snap)
+            if signin or not self._last_good:
+                # The provider sent the browser to its own sign-in page (a redirect, so there is nothing to go back
+                # to: going back only leaves a blank page and the next navigation is redirected again, D-093), or
+                # the first page redirected away. The agent never acts there: the person does.
+                host = urlparse(snap.url).hostname or "another site"
+                reason = (f"The provider sent the browser to its sign-in page ({host}), which is outside the allowed "
+                          "sites. The agent does not act there; you sign in, then you are sent back to the console."
+                          if signin else g.reason)
+                self._step(run, f"stopped at a page outside the allowed domains ({host}); asking the person",
+                           "system", "handed_off", [snap.url_masked])
+                if await self.handoffs.do(run, "sign_in" if signin else "off_allow_list", reason, g.evidence, snap,
+                                          gates) is None:
+                    return LoopResult("handoff_pending", reason)
+                return "again"
             self._step(run, "left the allowed domains; going back", "system", "denied", [snap.url_masked])
             await self.ex.back()
             now = await self._observe()

@@ -1014,6 +1014,17 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-093 Google Cloud run: an off-site sign-in redirect is the person's, not a bounce back to a blank page — Decided (fix after reading the run's log)
+**What happened (run 20261117-145242-google-cloud-4910).** The D-092 research fixes worked: research found the console URL and the official domains on its first attempt (no retry needed) and the go-ahead screen showed "Not checked" for the terms. The browser then opened the console URL and Google redirected it to `accounts.google.com`, which was **not** on the allowed domains (the model's official domains were `cloud.google.com`, `developers.google.com` and so on, not `google.com`, so the sign-in domain it also named was left out, as designed: "navigating there will be handed to the person"). The loop's off-site rule was to go back; going back from a redirect lands on `about:blank`, which counts as allowed, so no handoff happened. The model navigated to the console again, was redirected again, three times, then asked the person to sign in on a blank page. The person never reached Google's sign-in page.
+
+**Fix (`agent/loop.py`).** On an off-site page that **looks like a sign-in page** (its address says sign-in, login, /auth/ or starts with `accounts.`, or it has an email or password field), or when there is **no earlier allowed page** to go back to, the agent no longer goes back: it hands the page to the person as a `sign_in` DO ("The provider sent the browser to its sign-in page (accounts.google.com), which is outside the allowed sites. The agent does not act there; you sign in, then you are sent back to the console"). The domain guard is lifted for the person as for any DO, and the agent re-checks the page afterwards. Any other off-site page keeps the old behaviour (go back, then the person if that fails).
+
+**Test.** New fake scenario `signin_offsite`: the console redirects to a sign-in page on another host (`localhost`, outside the allowed `127.0.0.1`) and a one-time ticket carries the session back, as Google does. Without the fix the run reproduces the Google symptom (paused at a handoff after bouncing); with it the run hands the sign-in to the person once, makes no "going back" step, signs in, creates exactly one app and verifies.
+
+**Not done / still unknown.** Whether Google lets the person sign in inside the agent's Chrome at all: Google often refuses sign-in in an automated browser ("This browser or app may not be secure"). That is a provider limit and is not something this fix can change; the next real attempt will show.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
