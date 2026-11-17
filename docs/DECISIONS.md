@@ -851,6 +851,42 @@ Plus unit tests for the risk table and the ported handoff helpers.
 
 ---
 
+## D-084 D-078 phase 6 done: the real LLM on the fake provider, measured — Decided (measurement record; model unchanged)
+**What was run.** `scripts/measure_agent.py`: the full orchestrator phase (metadata check, agent loop, capture, live test, outcome) in headless Chrome against Fakeprov, a harness playing the person, **13 scenarios × 2 repeats × 2 models = 52 real runs**. Models: `anthropic/claude-sonnet-5.5` (the default) and `anthropic/claude-haiku-5.5`. Only metrics are stored (`docs/samples/agent-measurement-sonnet.{md,json}`, `…-haiku.{md,json}`); the safety checks ran on every run: no forbidden audit event, at most one app, terms/sign-in/CAPTCHA only by the person, a secret reset only once and only after the person said yes, and no secret in any run file.
+
+**Results (per run, means).**
+
+| | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|
+| Succeeded | 26 of 26 | 26 of 26 |
+| Safety problems | 0 | 0 |
+| LLM calls per run | 8.4 (median 8, max 13) | 8.7 (median 8, max 14) |
+| Tokens per call | 2,676 in + 146 out | 2,686 in + 223 out |
+| Tokens per run | about 23,800 | about 25,200 |
+| Latency per call | median 2.2 s, p90 2.9 s, max 4.8 s | median 2.1 s, p90 2.7 s, max 8.3 s |
+| LLM time per run | 19.5 s | 18.6 s |
+| Wall time per run | 26 s | 25 s |
+| Unusable answers | 1 (retried, then fine) | 1 (retried, then fine) |
+
+The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_like` (12–14 calls, 36–45k tokens: create, redirect, reset with confirmation) and `decide_app_type_and_scopes` (10–13 calls). The largest single prompt was 3.5k tokens. Both unusable answers came on the dropdown scenario, and the loop recorded them and asked again.
+
+**Cost.** I have **not** converted tokens to dollars: I do not have FastRouter's prices, and assuming them would be a guess. Give me the per-million-token prices and the script prints the cost per run (`--price-in/--price-out`). Orders of magnitude: about 24k tokens per easy run.
+
+**Limits of this measurement (stated plainly).**
+- The fake site is small. Its pages are about 2.7k tokens; **a real console page will be bigger**. The prompt is capped at about 9–10k tokens per call by design, so a real run of 30 steps could use up to about 300k tokens, and the 60-step ceiling about 600k. The Discord run (phase 7) is the real measurement; this one only shows the loop works and what the floor is.
+- Two runs per scenario per model is a small sample. Equal success (52 of 52) says the loop and the safeguards work with both models here; it does not rank the models.
+
+**Model decision: unchanged, `anthropic/claude-sonnet-5.5` stays the default.** On this sample Haiku was no faster (2.1 s against 2.2 s per call), used about 6% more tokens, and had a slower worst call (8.3 s) and the longest runs (14 calls on `discord_like`). If Haiku's price per token is clearly lower it may still be cheaper per run; with prices I can say. The model is one setting (`CREDAGENT_LLM_MODEL`), so switching later is not a code change. Re-decide after the real Discord run.
+
+**Observations.**
+- The model is mostly consistent but not deterministic: the same scenario ranged 6 to 8 calls on Sonnet. In the 6-call runs it skipped optional fields (description, homepage) that it filled in the other runs. The code does not insist (only a terms handoff completes the form), which matches D-078 (guidance, not a script); the owner may want optional fields filled always, and that would be a small rule.
+- Per-call latency (about 2 s) is the main cost of a run: 19 of 26 seconds. A real run with sign-in and the person's own time will be dominated by the person.
+- Every guard held with a real model: one app, the terms only by the person, the reset asked first, no secret in any file, no forbidden event, 52 of 52.
+
+**Not done:** the Discord run on the real provider (phase 7) and any price conversion.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

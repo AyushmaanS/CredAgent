@@ -1,6 +1,6 @@
 # Scoping: LLM agent loop over Playwright, run by the orchestrator (D-078)
 
-Status: **approved** (2026-11-17). Phases 1–5 done (D-079 to D-083). Decision: `docs/DECISIONS.md` D-078.
+Status: **approved** (2026-11-17). Phases 1–6 done (D-079 to D-084). Decision: `docs/DECISIONS.md` D-078.
 
 ## 1. Target architecture (owner)
 
@@ -141,7 +141,7 @@ Line counts are as of 2026-11-17.
 | 3 | ✅ Agent loop with policy, hard checks, handoffs and budgets | Fake scenarios with the scripted LLM: success, terms, sign-in, CAPTCHA, blocked, cookie (D-081) |
 | 4 | ✅ Capture, reset/reveal DECIDEs, verification, resume and reattach | Shown-once, hidden secret, reset with confirmation, resume, in-doubt click (D-082) |
 | 5 | ✅ Remove Jev, Stagehand, steps and re-plan; prune state; update CLI | All suites green; no import of the removed modules (D-083) |
-| 6 | Online fake runs with the real LLM; measure cost and latency | Recorded in DECISIONS |
+| 6 | ✅ Online fake runs with the real LLM; measure cost and latency | Recorded in DECISIONS (D-084) |
 | 7 | Update PRD, spec, sprint plan and README; then the real Discord run | Owner review; RESULTS #6 |
 
 Rough effort: phases 1–5 about 1.5–2 working days; phase 6 half a day; phase 7 depends on Discord.

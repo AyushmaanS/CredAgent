@@ -146,7 +146,8 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.s Phase 3 (D-081): agent loop with policy, hard checks, handoffs and budgets; risk assigned by code; 19 real-Chrome loop tests
 - [x] S6.r Phase 4 (D-082): capture, reset/reveal DECIDEs, live test, resume and reattach, in-doubt click; 16 real-Chrome tests
 - [x] S6.q Phase 5 (D-083): Jev, Stagehand, steps, re-plan and the legacy loop removed; CLI runs the agent loop; 305 tests pass
-- [ ] S6.p Phase 6: online fake-provider runs with the real LLM; measure cost and latency (`docs/design/llm-browser-agent.md` §6)
+- [x] S6.p Phase 6 (D-084): 52 real-LLM runs on the fake provider (Sonnet 5.5 and Haiku 5.5), all succeeded, no safety problems; tokens and latency recorded; model unchanged
+- [ ] S6.o Phase 7: update PRD, spec, sprint plan and README; then the real Discord run (RESULTS #6) after the owner deletes the demo apps
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 
