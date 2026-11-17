@@ -187,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if action == "consent":
             svc.give_consent(run_id, body.get("account"), body.get("confirm"))
+        elif action == "console":
+            svc.give_console(run_id, body.get("url"))
         elif action == "answer":
             svc.answer(run_id, body.get("handoff_id"), body.get("option"))
         elif action == "continue":

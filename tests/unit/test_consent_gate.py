@@ -67,3 +67,48 @@ def test_no_consent_no_browser(cli, answers):
     assert r.exit_code == 0, r.output
     assert "Will create:" in r.output and "Terms check:    unclear" in r.output
     assert "No consent given" in r.output
+
+
+def test_accept_console_url_takes_only_a_plain_https_address_and_allows_its_host():
+    from credagent.research.console import accept_console_url
+
+    plan = Plan(allowed_domains=["acme.example"], console_url=None)
+    ok, why = accept_console_url(plan, " https://console.acme.example/apps?x=1 ")
+    assert why == "" and ok.console_url == "https://console.acme.example/apps?x=1" and ok.allowed_domains == ["acme.example"]
+    other, _ = accept_console_url(plan, "https://console.other.example/start")
+    assert other.allowed_domains == ["acme.example", "console.other.example"]
+    assert any("given by the owner" in n for n in other.validation_notes) and plan.console_url is None  # not mutated
+    for bad in ("", "ftp://x.example/", "https://", "https://1.2.3.4/", "https://a b.example", "http://x.example/",
+                "https://u:p@x.example/", "https://localhost/", "x" * 400):
+        assert accept_console_url(plan, bad)[0] is None, bad
+
+
+def test_a_plan_without_a_console_address_asks_for_it_in_the_cli_before_consent(cli):
+    from credagent.config.settings import load_settings
+    from credagent.secrets.masking import Masker
+    from credagent.state.store import RunStore
+
+    run = planned_run("Acme API", "Acme Inc.")
+    run.plan = run.plan.model_copy(update={"console_url": None, "domains_inferred": ["example.com"]})
+    s = load_settings()
+    RunStore(s.runs_dir, Masker()).checkpoint(run, "plan_edited")
+    r = CliRunner().invoke(cli, ["resume", "r-acme"], input="not an address\nhttps://console.acme.example/apps\n\n")
+    assert r.exit_code == 0, r.output
+    assert "could not find this provider's developer console" in r.output and "does not look like a single web address" in r.output
+    assert "inferred from the app name" in r.output  # the consent screen marks inferred domains
+    assert "No consent given" in r.output  # and the browser still waits for consent
+    saved = RunStore(s.runs_dir, Masker()).load("r-acme").run
+    assert saved.plan.console_url == "https://console.acme.example/apps"
+    assert "console.acme.example" in saved.plan.allowed_domains
+
+
+def test_no_console_address_given_means_no_browser(cli):
+    run = planned_run("Acme API", "Acme Inc.")
+    run.plan = run.plan.model_copy(update={"console_url": None})
+    from credagent.config.settings import load_settings
+    from credagent.secrets.masking import Masker
+    from credagent.state.store import RunStore
+
+    RunStore(load_settings().runs_dir, Masker()).checkpoint(run, "plan_edited")
+    r = CliRunner().invoke(cli, ["resume", "r-acme"], input="\n")
+    assert r.exit_code == 0 and "No address given, so the browser was not started" in r.output

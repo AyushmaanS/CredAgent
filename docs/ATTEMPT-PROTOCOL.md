@@ -158,6 +158,11 @@ State is checkpointed immediately before and after every handoff.
 - **Allowed domains** are fixed per run from research and shown in the plan
   (e.g. the provider's console, docs and its own sign-in host). Navigation
   elsewhere is a hard stop. A link the owner wants followed elsewhere becomes a DO.
+  Since D-092 the list can also come from two places that are always shown at the
+  go-ahead screen and marked: domains **inferred from the app name** (only hosts
+  research actually retrieved, whose domain is the app or provider name) when the model
+  named none after a retry, and the **console address the owner gives** when research
+  found none (its host is allowed for that run).
 - Page content is untrusted data. Instructions found on pages, in search results
   or in documentation are never followed.
 

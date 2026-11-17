@@ -3,6 +3,7 @@ import { h, clear } from "./dom.js";
 import { renderHeader } from "./components/header.js";
 import { renderLanding } from "./components/landing.js";
 import { renderConsent } from "./components/consent.js";
+import { renderConsolePrompt } from "./components/console.js";
 import { renderAttention } from "./components/attention.js";
 import { renderProgressCard, renderRunHead, renderSteps } from "./components/progress.js";
 import { renderResult } from "./components/result.js";
@@ -15,7 +16,7 @@ renderHeader(document.getElementById("header"));
 const S = {
   config: null, runId: null, view: null, error: null, notice: null, busy: false, unauthorized: false,
   choice: null, focusKey: null, lastKey: "",
-  draft: { app: "", account: "" },
+  draft: { app: "", account: "", consoleUrl: "" },
   logState: { open: false, lines: [], after: 0 },
 };
 let pollTimer = null;
@@ -117,7 +118,11 @@ function build() {
   switch (v.state) {
     case "attention": {
       const a = v.attention;
-      blocks.push(a.type === "consent"
+      blocks.push(a.type === "console"
+        ? renderConsolePrompt(a, { draft: S.draft, busy: S.busy, notice: S.notice,
+          onSubmit: () => act(async () => { await api.console(id, S.draft.consoleUrl); S.draft.consoleUrl = ""; }),
+          onStop: () => act(() => api.stop(id)) })
+        : a.type === "consent"
         ? renderConsent(a, { draft: S.draft, busy: S.busy, onConsent: () => act(async () => { await api.consent(id, S.draft.account); S.draft.account = ""; }), onStop: () => act(() => api.stop(id)) })
         : renderAttention(a, { busy: S.busy, choice: S.choice, canFocus: S.config && S.config.can_focus_browser, notice: S.notice,
           onFocusBrowser: () => act(async () => { const r = await api.focusBrowser(id); if (!r.ok) S.notice = "Couldn't raise the window from here. Switch to the Chrome window opened by CredAgent."; }),

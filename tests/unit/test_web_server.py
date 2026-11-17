@@ -100,3 +100,61 @@ def test_questions_that_are_not_open_are_refused(ui):
                           ("answer", {"handoff_id": "h-1", "option": 0}), ("stop", {})):
         status, body, _ = call(ui, "POST", f"/api/runs/r1/{path}", body=payload)
         assert status in (404, 409), (path, status, body)  # nothing is running, so nothing can be answered
+
+
+# ------------------------------------------------- the console address, when research found none (D-092)
+
+def _run_waiting_for_the_console(ui, run_id="r-console"):
+    import time
+
+    from credagent.state.models import Identification, Plan, Run
+    from credagent.state.store import RunStore
+    from credagent.web.controller import RunController
+
+    run = Run(id=run_id, app_input="Acme", app_name="Acme", provider="Acme Inc.", phase="planned",
+              plan=Plan(identification=Identification(canonical_name="Acme", provider="Acme Inc.", confidence="high"),
+                        credential_kind="oauth_client", console_url=None, allowed_domains=["acme.example"]))
+    RunStore(ui.service.settings.runs_dir, ui.service.new_masker()).create(run)
+    ctl = RunController(ui.service, run_id)
+    ctl.thread = threading.Thread(target=lambda: time.sleep(5), daemon=True)
+    ctl.thread.start()
+    ui.service.controllers[run_id] = ctl
+    got = []
+    threading.Thread(target=lambda: got.append(ctl.io.wait_console()), daemon=True).start()
+    for _ in range(100):
+        if ctl.io.snapshot():
+            break
+        time.sleep(0.02)
+    return ctl, got
+
+
+def test_a_plan_without_a_console_address_asks_for_one_instead_of_dead_ending(ui):
+    _run_waiting_for_the_console(ui)
+    status, view, _ = call(ui, "GET", "/api/runs/r-console")
+    a = view["attention"]
+    assert status == 200 and view["state"] == "attention" and a["type"] == "console"
+    assert a["headline"] == "Where is the developer console?" and a["allowed"] == ["acme.example"]
+    assert next(m for m in view["milestones"] if m["id"] == "portal")["status"] == "blocked"
+
+
+def test_the_console_address_is_validated_before_it_is_accepted(ui):
+    ctl, got = _run_waiting_for_the_console(ui)
+    for bad in ("", "console.acme.example", "http://console.acme.example/", "https://user:pw@console.acme.example/",
+                "https://10.0.0.1/apps", "https://two words.example/", "https://localhost/x"):
+        status, body, _ = call(ui, "POST", "/api/runs/r-console/console", body={"url": bad})
+        assert status == 400 and body["error"]["code"] == "bad_console_url" and body["error"]["message"], bad
+    assert not got  # nothing was delivered to the waiting run
+    status, _body, _ = call(ui, "POST", "/api/runs/r-console/console", body={"url": "https://console.acme.example/apps"})
+    assert status == 200
+    ctl.thread.join(0) if False else None
+    import time
+    for _ in range(100):
+        if got:
+            break
+        time.sleep(0.02)
+    assert got == ["https://console.acme.example/apps"]
+    assert call(ui, "POST", "/api/runs/r-console/console", body={"url": "https://console.acme.example/x"})[0] == 409
+
+
+def test_a_console_address_for_a_run_that_is_not_active_is_refused(ui):
+    assert call(ui, "POST", "/api/runs/none/console", body={"url": "https://console.acme.example/"})[0] in (404, 409)

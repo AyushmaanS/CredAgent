@@ -997,6 +997,23 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-092 Weak research no longer leaves a plan that cannot start — Decided (owner: "make these fixes then")
+**Why.** A Google Cloud run through the page ended with no official domains, no console URL and no pages read, yet the plan was "ready" and predicted "succeeded". The model's first call (the triage) had returned an empty answer; nothing downstream could recover, and the browser would have had no start page. A fresh research run found everything (domains, console URL), so the failure was a weak model answer, not Google. The raw answer was not logged.
+
+**1. Retry once.** If research ends with no allowed domains or no console URL, it runs once more, telling the model what the first attempt lacked ("name the official domains and choose the pages to read" / "look for the exact console URL"). The better result wins (a tie goes to the retry). A retry that fails, runs out of budget or is no better never replaces the first result and never fails the run. Cost: a second research pass, about $0.15–0.20, only when needed.
+
+**2. Name-based domain fallback.** If the retry still names no official domain, the allowed domains are inferred from the **retrieved hosts only**: the registrable domain of a host whose name is one of the words of the app or provider name (`docs.cloud.google.com` → `google.com` for "Google Cloud" / "Google"). Generic words (cloud, api, docs, console …) never count, third-party and look-alike hosts never match, and nothing is invented. The result is marked: `Plan.domains_inferred`, a plan note, and a line on the go-ahead screen and in the CLI ("inferred from the app name, not named by research: …, check that they are right"). The allowed domains are a safety boundary, so ATTEMPT-PROTOCOL §9 now says where they can come from.
+
+**3. No dead-end plan.** If there is still no console URL, the run does not stop and does not pretend: the CLI prompts for it and the page shows "Where is the developer console?" with a field. The address is accepted only if it is a plain `https://` address with a domain name (no IP number, no user name or password, no spaces, at most 300 characters); its host is added to the allowed domains for that run and recorded in the plan notes and the run log (`console_url_given`). Pressing Enter / "Not now" stops with the run saved. This comes before the go-ahead, so nothing happens at the provider until the owner consents.
+
+**4. Logging.** The run log now records what the model returned, no content: `triage_result` (official domains as the model gave them, which were kept, which were inferred, the pages it asked to read and how many were read), `synthesis_result` (console URL and its source, sign-in domains, credential kind), `plan_result` (the final console URL and allowed domains) and `research_retry` (why, and what was still missing), each with its attempt number. The next failure explains itself.
+
+**Tests.** Research: a weak first answer is retried once and the better result wins; no retry when the first attempt is complete; still weak after the retry infers marked domains and never a third party; a failed retry keeps the first result; the facts are logged (and reach the run log); inference is conservative (generic words, look-alikes, two-part suffixes). Console address: validation rules, the CLI prompt (invalid, then valid, then consent still required; no address means no browser), the API (a plan without a console shows the prompt, refuses bad addresses, delivers a good one to the waiting run) and the page itself. One existing test that hit a hostile console URL now expects the retry. All suites pass.
+
+**Not done.** A live research run after the change (the probe before it cost about $0.20 and used the old code); the model may still return weak answers, the point is that the system now recovers. The inference matches only the app or provider name, so a provider whose own domain does not contain its name (a product hosted under a parent brand) still needs the console address from the owner.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

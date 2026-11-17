@@ -37,6 +37,7 @@ export const api = {
   startRun: (payload) => request("POST", "/api/runs", payload),
   getRun: (id) => request("GET", run(id)),
   events: (id, after) => request("GET", `${run(id)}/events?after=${after}`),
+  console: (id, url) => request("POST", `${run(id)}/console`, { url }),
   consent: (id, account) => request("POST", `${run(id)}/consent`, { account, confirm: true }),
   answer: (id, handoffId, option) => request("POST", `${run(id)}/answer`, { handoff_id: handoffId, option }),
   done: (id, handoffId) => request("POST", `${run(id)}/continue`, { handoff_id: handoffId }),

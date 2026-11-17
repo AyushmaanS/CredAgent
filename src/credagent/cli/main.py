@@ -159,7 +159,9 @@ def _intended_actions(s: Settings, run, check) -> str:
         "",
         f"Before the browser opens (ATTEMPT-PROTOCOL §2), this is what will happen at {run.provider or run.app_name}:",
         f"  Credential:     {p.credential_kind.replace('_', ' ')}",
-        f"  Console:        {p.console_url}   (allowed domains: {', '.join(p.allowed_domains)})",
+        f"  Console:        {p.console_url}   (allowed domains: {', '.join(p.allowed_domains)}"
+        + (f"; inferred from the app name, not named by research: {', '.join(p.domains_inferred)}"
+           if p.domains_inferred else "") + ")",
         f"  Will create:    one app named {v.app_name!r}, description {v.description!r}",
         f"  Callback URL:   {v.redirect_uri}" if p.needs_redirect_uri != "no" else "  Callback URL:   not needed",
         "  Permissions:    none requested when creating the app; any permission or app-type choice is asked here",
@@ -196,6 +198,32 @@ def _ask_consent(s: Settings, run, check) -> str | None:
     except (click.Abort, EOFError):
         return None
     return account.strip()[:120] if yes.strip().lower() == "yes" else None
+
+
+def _ask_console_url(store: RunStore, run) -> bool:
+    """Research found no console address: the browser would have nowhere to start. Ask for it (D-092)."""
+    from urllib.parse import urlparse
+
+    from credagent.research.console import accept_console_url
+
+    click.echo("\nResearch could not find this provider's developer console address, so the browser has nowhere to "
+               "start. Paste it (the page where apps or credentials are created); its host will be allowed for "
+               "this run.")
+    while True:
+        try:
+            raw = click.prompt("Console address (https://…), or press Enter to stop", default="", show_default=False)
+        except (click.Abort, EOFError):
+            raw = ""
+        if not raw.strip():
+            click.echo(f"No address given, so the browser was not started. The run is saved: credagent resume {run.id}")
+            return False
+        plan, why = accept_console_url(run.plan, raw)
+        if plan is None:
+            click.echo(why)
+            continue
+        run.plan = plan
+        store.checkpoint(run, "console_url_given", {"host": urlparse(plan.console_url).hostname})
+        return True
 
 
 def _real_deps(s: Settings, m: Masker, run):
@@ -235,6 +263,8 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     if not s.fastrouter_api_key:
         click.echo("FASTROUTER_API_KEY is missing; the browser agent needs the LLM.", err=True)
         sys.exit(CONFIG_EXIT)
+    if not run.plan.console_url and not _ask_console_url(store, run):
+        return
     account = _ask_consent(s, run, check)
     if account is None:
         click.echo(f"\nNo consent given, so the browser was not started. The run is saved: credagent resume {run.id}")

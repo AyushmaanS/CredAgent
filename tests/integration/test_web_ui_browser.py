@@ -191,3 +191,27 @@ def test_without_the_launch_link_the_page_explains_how_to_sign_in(ui):
             finally:
                 await browser.close()
     asyncio.run(go())
+
+
+def test_a_missing_console_address_is_asked_for_in_the_page(ui):
+    from tests.web_harness import run_waiting_for_the_console
+
+    _ctl, got = run_waiting_for_the_console(ui)
+
+    async def go():
+        async with async_playwright() as p:
+            browser, page, _logs, _urls = await open_page(p, ui)
+            try:
+                await page.evaluate("location.hash = '#/run/r-console'")
+                await expect(page.get_by_role("heading", name="Where is the developer console?")).to_be_visible(timeout=15_000)
+                await expect(page.get_by_text("Research could not find the address")).to_be_visible()
+                await expect(page.get_by_role("button", name="Continue")).to_be_disabled()
+                await page.get_by_label("Developer console address").fill("console.acme.example")
+                await page.get_by_role("button", name="Continue").click()
+                await expect(page.get_by_text("Use the full address")).to_be_visible()  # refused, with the reason
+                await page.get_by_label("Developer console address").fill("https://console.acme.example/apps")
+                await page.get_by_role("button", name="Continue").click()
+            finally:
+                await browser.close()
+    asyncio.run(go())
+    assert got == ["https://console.acme.example/apps"]

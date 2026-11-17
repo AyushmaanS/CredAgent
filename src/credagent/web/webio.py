@@ -47,6 +47,10 @@ class WebIO:
     def wait_enter(self, prompt: str) -> Any:
         return self._deliver(self._open("enter"), False)
 
+    def wait_console(self) -> str | None:
+        """Blocks until the person gives the developer console address (or declines). Returns the address."""
+        return self._block(self._open("console"), None)
+
     def wait_consent(self) -> str | None:
         """Blocks the worker thread until the person gives (or withholds) consent. Returns the account text."""
         return self._block(self._open("consent"), None)

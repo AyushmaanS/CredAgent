@@ -163,6 +163,54 @@ def _sources_block(results: list[dict[str, Any]], pages: list[dict[str, Any]]) -
     return "\n\n".join(parts)
 
 
+# ------------------------------------------------- weak results (D-092)
+
+_TWO_PART_SUFFIXES = {"co.uk", "org.uk", "com.au", "co.jp", "co.in", "com.br", "co.nz", "com.cn", "co.kr", "com.sg"}
+_GENERIC_TOKENS = {"cloud", "api", "apis", "app", "apps", "dev", "developer", "developers", "docs", "web", "console",
+                   "platform", "service", "services", "studio", "the", "inc", "llc", "corp", "ltd", "company"}
+
+
+def registrable_domain(host: str) -> str:
+    """The domain a person would register (example.com, example.co.uk). A small rule, not the public-suffix list."""
+    labels = host.lower().removeprefix("www.").split(".")
+    if len(labels) >= 3 and ".".join(labels[-2:]) in _TWO_PART_SUFFIXES:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def infer_official_domains(hosts: list[str | None], names: list[str | None]) -> list[str]:
+    """Fallback when the model named no official domain: the registrable domains of retrieved hosts whose name is one
+    of the words of the app or provider name (docs.cloud.google.com → google.com for "Google Cloud" / "Google").
+    Generic words (cloud, api, docs …) never count, and nothing is invented: only hosts that were retrieved."""
+    words: set[str] = set()
+    joined: set[str] = set()
+    for n in names:
+        parts = re.findall(r"[a-z0-9]+", (n or "").lower())
+        words |= {w for w in parts if len(w) >= 3 and w not in _GENERIC_TOKENS}
+        if parts:
+            joined.add("".join(parts))
+    out: list[str] = []
+    for h in hosts:
+        if not h or "." not in h:
+            continue
+        reg = registrable_domain(h)
+        if reg.split(".")[0] in (words | joined) and reg not in out:
+            out.append(reg)
+    return out[:4]
+
+
+def _gaps(result: ResearchResult) -> list[str]:
+    """What a plan still lacks to be startable: the model's weak answers show up here."""
+    if result.status != "planned" or result.plan is None:
+        return []
+    gaps = []
+    if not result.plan.allowed_domains:
+        gaps.append("official domains")
+    if not result.plan.console_url:
+        gaps.append("console URL")
+    return gaps
+
+
 # -------------------------------------------------------------------- agent
 
 class ResearchAgent:
@@ -284,7 +332,32 @@ class ResearchAgent:
 
     # ---------------------------------------------------------- main
     def research(self, app: str, chosen: Candidate | None = None) -> ResearchResult:
+        """Research once; if the plan has no official domains or no console URL, research once more, telling the
+        model what the first attempt lacked and allowing the name-based domain fallback (D-092). A retry that fails
+        or is no better never replaces the first result and never fails the run."""
+        first = self._research(app, chosen, attempt=1)
+        gaps = _gaps(first)
+        if not gaps:
+            return first
+        prior = list(self.actions)
+        try:
+            second = self._research(app, chosen, attempt=2, hint=gaps)
+        except ResearchError as exc:
+            self.actions = [*prior, {"action": "research_retry", "because": gaps, "error": str(exc)[:200]}]
+            first.actions = self.actions
+            return first
+        after = _gaps(second)
+        best = second if second.status == "planned" and len(after) <= len(gaps) else first
+        self.actions = [*prior, {"action": "research_retry", "because": gaps, "gaps_after": after}, *self.actions]
+        best.actions = self.actions
+        return best
+
+    def _research(self, app: str, chosen: Candidate | None, *, attempt: int, hint: list[str] | None = None
+                  ) -> ResearchResult:
         self._start()
+        retry_note = (f"\n\nNOTE: a first attempt ended without: {', '.join(hint)}. Name the provider's official "
+                      "domains (bare hostnames) and choose the pages to read in full, so the plan can start."
+                      if hint else "")
         subject = f"{chosen.name} ({chosen.provider})" if chosen else app
         results: dict[str, dict[str, Any]] = {}
         errors: list[str] = []
@@ -309,7 +382,7 @@ class ResearchAgent:
                 f"up to {self.budget.max_extracts}) should "
                 "be read in full to learn how to obtain credentials (urls_to_read, official docs "
                 f"first)? Up to {self.budget.max_follow_ups} follow_up_queries, only for credential setup details "
-                "the results above do not cover.\n\n"
+                "the results above do not cover." + retry_note + "\n\n"
                 + _sources_block(ranked, []))},
         ], max_tokens=1500)
 
@@ -326,6 +399,11 @@ class ResearchAgent:
 
         retrieved_hosts = [host_of(r["url"]) for r in results.values()]
         official = [d for d in triage.official_domains if any(on_domain(h, [d]) for h in retrieved_hosts)]
+        inferred: list[str] = []
+        if not official and attempt > 1:  # the model named none, twice: fall back to the names (marked as inferred)
+            inferred = infer_official_domains(retrieved_hosts, [app, triage.canonical_name, triage.provider,
+                                                                chosen.name if chosen else None])
+            official = list(inferred)
         read: list[str] = []
         for u in triage.urls_to_read:
             k = norm_url(u)
@@ -338,6 +416,10 @@ class ResearchAgent:
                 read.append(r["url"])
         terms = tuple(t for t in {app, triage.canonical_name or "", triage.provider or ""} if len(t) > 2)
         pages = self._extract(read, terms)
+        self.actions.append({"action": "triage_result", "attempt": attempt,
+                             "official_domains_raw": triage.official_domains,
+                             "official_kept": [d for d in official if d not in inferred], "inferred": inferred,
+                             "urls_to_read": triage.urls_to_read[:8], "pages_read": len(pages)})
 
         ranked = sorted(results.values(), key=lambda r: -r["score"])
         findings: Findings = self._llm("synthesis", FINDINGS_SCHEMA, Findings, [
@@ -351,7 +433,9 @@ class ResearchAgent:
                 "third-party OAuth apps, else an API key/token; sandbox/test keys where the provider has "
                 "test mode).\n"
                 "- console_url: the exact page where that credential is created, only if a source shows it; "
-                "console_url_source: the source url.\n"
+                "console_url_source: the source url." + (" A first attempt found none: look for the exact "
+                                                        "page URL in the sources." if hint and "console URL" in hint
+                                                        else "") + "\n"
                 "- setup_steps: what a person does in the console, in order, each with the source url it "
                 "comes from (null if inferred). Include sign-in and accepting terms as kind 'handoff'. "
                 "Steps are guidance for a browser agent that reads the live page, so name controls the way the "
@@ -373,13 +457,20 @@ class ResearchAgent:
                 + _sources_block(ranked, pages))},
         ], max_tokens=8000)
 
+        self.actions.append({"action": "synthesis_result", "attempt": attempt, "console_url": findings.console_url,
+                             "console_url_source": findings.console_url_source,
+                             "sign_in_domains": findings.sign_in_domains[:6],
+                             "credential_kind": findings.chosen_credential_kind})
         sources = self._sources(results, pages)
         seen: dict[str, list[str]] = {}
         for r in results.values():
             seen.setdefault(norm_url(r["url"]) or "", []).append(r["title"] + "\n" + r["seen"])
         for pg in pages:
             seen.setdefault(norm_url(pg["url"]) or "", []).append(pg["seen"])
-        plan = build_plan(findings, triage, official, sources, self.budget.max_plan_steps, seen=seen)
+        plan = build_plan(findings, triage, official, sources, self.budget.max_plan_steps, seen=seen,
+                          inferred_domains=inferred)
+        self.actions.append({"action": "plan_result", "attempt": attempt, "console_url": plan.console_url,
+                             "allowed_domains": plan.allowed_domains, "inferred": plan.domains_inferred})
         return ResearchResult("planned", plan, triage, [], sources, self.actions)
 
     @staticmethod
@@ -428,7 +519,8 @@ def quote_ok(quote: str | None, url: str | None, seen: dict[str, list[str]] | No
 
 
 def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[Source],
-               max_steps: int = 15, *, seen: dict[str, list[str]] | None = None) -> Plan:
+               max_steps: int = 15, *, seen: dict[str, list[str]] | None = None,
+               inferred_domains: list[str] | None = None) -> Plan:
     """Turn model findings into a Plan, correcting anything the sources don't support.
 
     `seen` maps normalised URL -> the exact text(s) the model was shown for it. When given, every
@@ -436,6 +528,9 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
     retrieved = {norm_url(s.url) for s in sources}
     notes: list[str] = []
     quote_fail = 0
+    if inferred_domains:
+        notes.append(f"The model named no official domain; {inferred_domains} were inferred from retrieved hosts whose "
+                     "domain matches the app or provider name. They are shown at the go-ahead screen.")
     dropped = [d for d in triage.official_domains if d not in official]
     if dropped:
         notes.append(f"Dropped official domain(s) {dropped}: no retrieved source is on them.")
@@ -583,5 +678,5 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         scopes=[s.name for s in f.scopes_or_permissions][:20], dynamic_registration=dcr,
         metadata_url=meta_url if meta_url and on_domain(host_of(meta_url), allowed) else None,
         token_endpoint=token_ep,
-        validation_notes=notes,
+        validation_notes=notes, domains_inferred=list(inferred_domains or []),
     )

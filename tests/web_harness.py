@@ -87,3 +87,26 @@ class Ui:
     def close(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+def run_waiting_for_the_console(ui, run_id="r-console"):
+    """A saved run whose plan has no console address, with a live controller waiting for it (as after a weak research)."""
+    from credagent.state.models import Identification, Plan, Run
+    from credagent.state.store import RunStore
+    from credagent.web.controller import RunController
+
+    run = Run(id=run_id, app_input="Acme", app_name="Acme", provider="Acme Inc.", phase="planned",
+              plan=Plan(identification=Identification(canonical_name="Acme", provider="Acme Inc.", confidence="high"),
+                        credential_kind="oauth_client", console_url=None, allowed_domains=["acme.example"]))
+    RunStore(ui.service.settings.runs_dir, ui.service.new_masker()).create(run)
+    ctl = RunController(ui.service, run_id)
+    ctl.thread = threading.Thread(target=lambda: time.sleep(30), daemon=True)
+    ctl.thread.start()
+    ui.service.controllers[run_id] = ctl
+    got = []
+    threading.Thread(target=lambda: got.append(ctl.io.wait_console()), daemon=True).start()
+    for _ in range(100):
+        if ctl.io.snapshot():
+            break
+        time.sleep(0.02)
+    return ctl, got

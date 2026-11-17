@@ -145,6 +145,17 @@ class RunController:
             self.error = {"kind": "config",
                           "message": "FASTROUTER_API_KEY is missing; the browser agent needs the LLM."}
             return
+        if not run.plan.console_url:  # research found none: ask for it instead of a plan that cannot start (D-092)
+            from credagent.research.console import accept_console_url
+
+            self.stage = "awaiting_console"
+            given = self.io.wait_console()
+            plan, _why = accept_console_url(run.plan, given) if given else (None, "")
+            if plan is None:
+                self.stage = "stopped"
+                return
+            run.plan = plan
+            self.store.checkpoint(run, "console_url_given", {"host": plan.console_url.split("/")[2], "via": "web"})
         self.consent_info = self.svc.consent_summary(run, check)
         self.stage = "awaiting_consent"
         account = self.io.wait_consent()
@@ -367,7 +378,7 @@ class Service:
         return {
             "provider": check.provider, "app": run.app_name or run.app_input,
             "credential": p.credential_kind.replace("_", " "), "console": p.console_url,
-            "domains": list(p.allowed_domains),
+            "domains": list(p.allowed_domains), "domains_inferred": list(p.domains_inferred),
             "will_create": f"One app named “{v.app_name}”, description “{v.description}”",
             "callback": v.redirect_uri if p.needs_redirect_uri != "no" else None,
             "permissions": "None requested when creating the app; any permission or app-type choice is asked here.",
@@ -386,6 +397,16 @@ class Service:
                           "unchecked": "Unchecked providers are automated too (your decision, D-091). You remain "
                                        "responsible for activity on your account."}.get(check.finding)},
         }
+
+    def give_console(self, run_id: str, url: object) -> None:
+        from credagent.research.console import accept_console_url
+
+        ctl = self._ctl(run_id)
+        plan, why = accept_console_url(self._load(run_id).run.plan, url)
+        if plan is None:
+            raise ApiError(400, why, "bad_console_url")
+        if not ctl.io.answer("console", str(url).strip()):
+            raise ApiError(409, "Nothing is waiting for a console address.", "no_console_pending")
 
     def give_consent(self, run_id: str, account: object, confirm: object) -> None:
         ctl = self._ctl(run_id)

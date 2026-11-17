@@ -156,6 +156,11 @@ def _done_counts(run: Run) -> str:
 
 def _attention(run: Run, live: dict, state_hint: str) -> dict | None:
     pending = live.get("pending")
+    if pending == "console":
+        return {"type": "console", "title": "Your input is needed", "headline": "Where is the developer console?",
+                "why": "Research could not find the address of this provider's developer console, so the browser "
+                       "has nowhere to start. Paste the page where apps or credentials are created.",
+                "allowed": list(run.plan.allowed_domains), "inferred": list(run.plan.domains_inferred)}
     if pending == "consent" and live.get("consent"):
         return {"type": "consent", "title": "Your go-ahead is needed", **live["consent"]}
     h: Handoff | None = run.pending_handoff
@@ -239,7 +244,7 @@ def build_view(run: Run, events: list[dict], live: dict | None) -> dict[str, Any
         state = "failed"
     elif alive:
         pending = live.get("pending") if live else None
-        waiting = pending == "consent" or (run.pending_handoff and pending in ("enter", "choose"))
+        waiting = pending in ("consent", "console") or (run.pending_handoff and pending in ("enter", "choose"))
         state = "attention" if waiting else "running"
     else:
         state = "paused"

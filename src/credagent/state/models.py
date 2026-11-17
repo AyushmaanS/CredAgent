@@ -150,6 +150,7 @@ class Plan(Strict):
     metadata_url: str | None = None
     token_endpoint: str | None = None  # from sourced research; used by the live test if no metadata is found
     validation_notes: list[str] = Field(default_factory=list)  # what code corrected in the model's plan
+    domains_inferred: list[str] = Field(default_factory=list)  # allowed domains derived from names (not the model's)
 
 
 class Evidence(Strict):
