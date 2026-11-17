@@ -246,14 +246,13 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }
   .nav-link { padding: 5px 7px; font-size: 13px; }
 }
 
-.doc-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 
-/* printing / saving as PDF: just the page, in colour, without breaking a card across two sheets */
+/* printing (used to make docs/my-approach.pdf): just the page, in colour, without breaking a card across two sheets */
 @page { size: A4; margin: 14mm 13mm; }
 @media print {
   html, body { background: #fff; }
   body { font-size: 11pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .header, .skip, .no-print, .doc-cta { display: none !important; }
+  .header, .skip, .doc-cta { display: none !important; }
   .main { max-width: none; padding: 0; }
   .doc h1 { font-size: 26pt; }
   .doc-section { margin-top: 22pt; break-inside: auto; }

@@ -11,7 +11,7 @@ works**, or an honest report of what blocked it.
 
 The page is the main way to use it: you follow the progress, answer "Your attention is needed" cards with buttons,
 and see the result with the credentials masked. It also has two reading pages, **How it works** and **My approach**
-(which can be exported as a PDF: the page has an "Export as PDF" button, and a copy is in `docs/my-approach.pdf`). The command line (`credagent get`, `resume`, `verify` and so on) does the same
+(an offline PDF copy of "My approach" is in `docs/my-approach.pdf`). The command line (`credagent get`, `resume`, `verify` and so on) does the same
 runs from a terminal and shares the same saved state. See "Web page" below.
 
 > **Work in progress — Sprint 6** (`docs/03-SPRINT-PLAN.md`). The browser layer was rebuilt on 2026-11-17 as an LLM agent loop over Playwright (D-078, below). Progress: `docs/CHECKLIST.md`.

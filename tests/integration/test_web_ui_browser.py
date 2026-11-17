@@ -235,9 +235,8 @@ def test_how_it_works_and_my_approach_are_reached_from_the_header_and_not_the_ho
                     await expect(page.locator(diagram)).to_be_visible()
                 await nav.get_by_role("link", name="My approach").click()
                 await expect(page.get_by_role("heading", name="My approach", level=1)).to_be_visible()
-                await expect(page.get_by_role("button", name="Export as PDF")).to_be_visible()
-                await page.emulate_media(media="print")  # what the saved PDF shows: the page, not the header or buttons
-                await expect(page.get_by_role("button", name="Export as PDF")).to_be_hidden()
+                assert await page.get_by_role("button", name="Export as PDF").count() == 0  # the PDF is offline, not a UI feature
+                await page.emulate_media(media="print")  # what docs/my-approach.pdf shows: the page, not the header
                 await expect(page.get_by_role("navigation", name="Sections")).to_be_hidden()
                 await expect(page.get_by_role("heading", name="My approach", level=1)).to_be_visible()
                 await page.emulate_media(media="screen")
