@@ -137,6 +137,7 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S5.14 👤 Checkpoint: owner approved the secret-storage behaviour and the sample verification report on 2026-11-16 ("Approve and push"); pushed at the owner's request
 
 ## Sprint 6 — Real-provider runs and demo coverage
+- [ ] S6.x 👤 **Waiting:** owner reviews the checkable-steps design (`docs/design/checkable-steps.md`, D-073) before any code change
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 
 ## Sprint 7 — Hardening, README, submission

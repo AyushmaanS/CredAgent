@@ -573,6 +573,14 @@ Values are still never read; only their lengths are compared. Tested: the Discor
 
 **Fix:** `rank_for_goal` scores a name quoted in the step ('…', “…”) as a whole-string match (strong). When the step is about an app, the candidate marked "(the app this run created)" scores high too. A unit test reproduces the list page.
 
+## D-073 Design: checkable steps, with progress proven by code — Proposed (owner review pending)
+After twelve Discord fixes (D-061 to D-072), the owner asked to step back from patching. Design: `docs/design/checkable-steps.md`.
+- **Checkable steps:** every browser step gets `where`, `target` and `done_when`, from a closed vocabulary that plain code evaluates (`at_page`, `element_present` / `element_absent`, `field_holds` as an in-page equality test with approved non-secret values, `app_exists`, `credential_shown`).
+- **Progress from proofs:** a step is done only with proof. The plan position is the first step not proven done, so the cursor corrections go away.
+- **Better Jev requests:** each request carries progress, the failing checks, the target first, the next steps and recent actions.
+
+Jev's five decisions, the policy rules and secret handling are unchanged. Three open questions for the owner are listed in §13 of the design. No code has been changed for it yet.
+
 ---
 
 ## Discrepancies between documents
