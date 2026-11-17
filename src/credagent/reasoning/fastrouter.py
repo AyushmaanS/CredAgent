@@ -107,7 +107,8 @@ class FastRouterClient:
                 if finish in ("length", "max_tokens"):
                     raise OutputTruncated(
                         f"structured output cut off at max_tokens={max_tokens} ({len(content)} chars)") from None
-                raise ModelCallError(f"structured output was not valid JSON (finish_reason={finish})") from None
+                raise ModelCallError(
+                    f"structured output was not valid JSON (finish_reason={finish}, {len(content)} chars)") from None
         return {
             "content": content,
             "parsed": parsed,

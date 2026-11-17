@@ -901,6 +901,24 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-086 Discord run #6: the page scan missed the ID and secret; capture fixed and made diagnosable — Decided (owner: "get this fix in place then")
+**What happened (run 20261117-114142-discord-e141).** The agent created one app (the person accepted the terms), saved the redirect, and clicked Reset Secret after the person said yes. The new secret appeared, but every page scan reported **zero credential-like elements**, so code refused "done" three times without ever trying to read a value, nothing was stored, and the model, which cannot see values, tried `inspect`, the Copy button and then a **second reset**. The person declined it. Outcome: `blocked`; the secret of the first reset exists at Discord and was copied by the owner by hand. RESULTS #6.
+
+**Correction to what I first told the owner.** I suspected a password-type field. The log refutes that: a visible password field always raises the sign-in gate, and the gates were empty on the page that showed the secret. The model also said the Client ID was visible *before* the reset, and that was not flagged either. The best-supported cause is the scan's label rule: a text field was flagged only if it was read-only or its label or its parent's text named a secret, and an all-digit ID in a field was never flagged. Discord's headings sit above the row that holds the value and a Copy button, which that rule cannot see. **This is a diagnosis from the logs and the code, not from the real page's markup**, which I did not inspect (no read-only probe was made on the owner's Discord session).
+
+**Fixes.**
+1. **Scan** (`browser/observe.py`): a token-shaped value (20+ characters of letters and digits, no spaces) in a plain text field is a credential whatever its label; the nearest heading above now counts as label context; an all-digit client or application ID in a field is flagged when its context says ID; more element types are scanned for token-shaped text (list items, labels, links, headings, and so on). **Password-type fields are still skipped unless their label names a credential**, so sign-in passwords are never treated as secrets. Approved values stay exempt (the app name looks like a token): a snapshot without the approved values, as one test made, now flags the app name, so that test passes them as the loop does.
+2. **Capture** (`secrets/capture.py`): the heading above the value is read and used to name the part ("Client Secret" → `client_secret`).
+3. **Diagnosis in the log:** every refused "done" is now an event (`done_rejected`) with what the page held, **structure only, never values**: element kind, input type, read-only, length, whether it was flagged. The next failure explains itself. A model reply that is not valid JSON now logs its length.
+4. **Second reset:** if a secret was already reset in this run, the DECIDE says so ("resetting again invalidates that one; if you copied it, the copy stops working"), and the system prompt says to reset at most once per run and to ask the person instead.
+5. **Model output limit** raised from 700 to 1,200 tokens: one answer was cut off at 700 on the real page (reasoning counts toward it).
+
+**Reproduced first, then fixed.** New fake scenario `discord_inputs`: the OAuth2 page shows the ID and the new secret in plain text fields with the heading above, and keeps Reset Secret. With the old scan the scripted run ended asking the person (the symptom); with the fix it succeeds, stores both parts, live-tests, and leaves no secret in any file. New tests: that run, the second-reset warning (and that the second reset is not performed when declined), and `done_rejected` events. All suites pass.
+
+**Not done / still unknown.** (a) Whether the real page matches the scenario; the next real run will say, through `done_rejected` if it fails again. (b) About 1 in 5 model answers on the real page were not valid JSON (against 1 in 52 on the fake site); each was retried and none broke the run. Cause unknown (`finish_reason=stop`); the logged length may help. (c) The first reset's secret cannot be captured by CredAgent: another reset is needed (run #7).
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

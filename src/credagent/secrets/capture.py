@@ -39,12 +39,21 @@ CAPTURE_JS = r"""
     let lab = '';
     if (el.labels && el.labels.length) lab = Array.from(el.labels).map(l => clean(l.innerText)).join(' ');
     const prev = el.previousElementSibling ? clean(el.previousElementSibling.innerText) : '';
+    // The nearest heading above (e.g. <h3>Client Secret</h3> above a row that holds the value and a Copy button).
+    let section = '';
+    for (let a = el, d = 0; a && !section && d < 8; a = a.parentElement, d++) {
+      for (let s = a.previousElementSibling; s && !section; s = s.previousElementSibling) {
+        const h = /^H[1-6]$/.test(s.tagName) ? s
+          : s.querySelector && s.querySelector('h1,h2,h3,h4,h5,h6,[role=heading]');
+        if (h && clean(h.innerText)) section = clean(h.innerText).slice(0, 80);
+      }
+    }
     // Labels are often a heading one or two levels up (e.g. <h2>Application ID</h2><div><div>123…</div></div>).
     const p1 = el.parentElement, p2 = p1 && p1.parentElement;
     const pprev = p1 && p1.previousElementSibling ? clean(p1.previousElementSibling.innerText) : '';
     const up = p2 ? clean(p2.innerText) : '';
     return { xpath: x, value, own: own.slice(0, 120), label: lab.slice(0, 120), prev: prev.slice(0, 120),
-             around: around.slice(0, 240), pprev: pprev.slice(0, 120), up: up.slice(0, 240) };
+             around: around.slice(0, 240), pprev: pprev.slice(0, 120), up: up.slice(0, 240), section };
   });
 })()
 """
@@ -98,7 +107,7 @@ class CaptureResult:
 def classify(item: dict[str, str]) -> str | None:
     """Name a captured element from its own attributes first, then its label, the text right before it,
     then the surrounding text. None = no recognisable label (never guessed)."""
-    for key in ("own", "label", "prev", "around", "pprev", "up"):
+    for key in ("own", "label", "prev", "around", "pprev", "up", "section"):
         text = item.get(key) or ""
         for name, rx in PART_PATTERNS:
             if rx.search(text):
@@ -140,7 +149,7 @@ def store_capture(
         if not VALUE_OK.match(value):
             continue
         # Labels may contain other values from the same row: remove every captured value first.
-        for k in ("own", "label", "prev", "around", "pprev", "up"):
+        for k in ("own", "label", "prev", "around", "pprev", "up", "section"):
             t = str(item.get(k) or "")
             for v in values:
                 if v:

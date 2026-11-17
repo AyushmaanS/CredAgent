@@ -244,3 +244,54 @@ async def test_agent_run_leaves_no_secret_in_the_events_or_report(tmp_path):
     run_dir = tmp_path / "runs" / o.run.id
     assert (run_dir / "events.jsonl").exists()
     assert_no_leak(tmp_path, o.run.id, secrets_, o.io.out)
+
+
+# ------------------------------------------------------------------ Discord run #6 (D-086)
+
+@sync
+async def test_ids_and_secrets_in_unlabelled_text_fields_are_captured(tmp_path):
+    """Discord run #6: the OAuth2 page showed the ID and the new secret in fields whose heading is above them. The
+    page scan found nothing, so "done" was refused and the secret was lost. Now both are found and stored."""
+    with FakeProvider(scenario("discord_inputs")) as fp:
+        o = await run_phase(tmp_path, fp, new_run(fp, "inputs"), llm=ScriptedLLM())
+        secrets_ = fake_secrets(fp)
+        audit = fp.audit()
+    assert o.run.status == "succeeded" and o.run.verification.label == "verified", (o.run.status, o.run.status_reason)
+    assert set(o.run.credential.parts) == {"client_id", "client_secret"}
+    stored = SecretFileStore(tmp_path / "secrets").get(o.run.credential.parts["client_secret"].store_ref)
+    assert stored in secrets_
+    assert len([a for a in audit if a["event"] == "secret_regenerated"]) == 1
+    assert_safe(audit, allow=("secret_regenerated",))
+    assert_no_leak(tmp_path, o.run.id, secrets_, o.io.out)
+
+
+class ResetTwice(ScriptedLLM):
+    """A model that clicks Reset Secret whenever it can, as run #6's model did after it lost the first secret."""
+
+    def _choose(self, ctx):
+        from credagent.agent.step import AgentStep
+
+        yes = next((e for e in ctx.snapshot.elements if e.in_dialog and e.role == "button"
+                    and e.name.startswith("Yes")), None)
+        if yes is not None:  # the provider's "are you sure" prompt (the person already said yes to the reset)
+            return AgentStep(action="click", ref=yes.ref, reason="confirm the prompt", expected="")
+        btn = next((e for e in ctx.snapshot.elements if e.role == "button" and e.name == "Reset Secret"
+                    and not e.in_dialog and e.xpath not in ctx.snapshot.refused), None)
+        if btn is not None and ctx.created and "/oauth2" in ctx.snapshot.url:
+            return AgentStep(action="click", ref=btn.ref, reason="reset the secret", expected="")
+        return super()._choose(ctx)
+
+
+@sync
+async def test_a_second_secret_reset_is_asked_with_a_warning(tmp_path):
+    answers = iter([0, -1])  # yes to the first reset, no to the second
+
+    with FakeProvider(scenario("discord_inputs")) as fp:
+        o = await run_phase(tmp_path, fp, new_run(fp, "twice"), llm=ResetTwice(),
+                            choose=lambda opts: opts[next(answers)])
+        resets = [a for a in fp.audit() if a["event"] == "secret_regenerated"]
+    reasons = [h.reason for h in o.run.handoffs if h.kind == "DECIDE"]
+    assert len(reasons) == 2 and "already reset" not in reasons[0] and "already reset" in reasons[1], \
+        (reasons, o.run.status, o.run.status_reason, o.io.handoffs)
+    assert len(resets) == 1  # the second one was declined
+    assert o.run.status == "blocked"

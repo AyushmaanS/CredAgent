@@ -43,7 +43,8 @@ existing one.
 Documentation pages are not part of the console steps.
 7. Capturing the credential is done by code, not by you. When the page shows the new credential (for example a client \
 ID and secret), reply done. If the secret is hidden behind a reset, regenerate or view control, click it: CredAgent \
-asks the person first when it must.
+asks the person first when it must. Reset a secret at most once per run: if a reset already happened and capture \
+still fails, use ask_person and say so; never reset again, it destroys the secret the first reset showed.
 8. If an action had "no change", do not repeat it. Try a different element, scroll, go back, or ask_person.
 9. Prefer plain navigation links in the console. Use inspect only to read one element, and scroll when the page is \
 taller than the window.

@@ -66,6 +66,8 @@ class Scenario:
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
     crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
+    input_credentials: bool = False  # OAuth2 page shows the ID and the new secret in plain text fields with no label of
+    #                                  their own (the heading is above them) and keeps "Reset Secret" (Discord run #6)
     secret_after_reset: bool = False  # app page shows only the ID; the secret is on an OAuth2 page behind
     #                                   "Reset Secret" (as on Discord)
 
@@ -476,19 +478,25 @@ class Handler(BaseHTTPRequestHandler):
         app = self.state.apps.get(app_id)
         if not app:
             return self.page("Not found", "<h1>App not found</h1>", 404)
+        # As on Discord: "Reset Secret" opens an "are you sure" dialog; "Yes, do it!" regenerates.
+        reset_btn = ('<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display=\'\'">'
+                    'Reset Secret</button>'
+                    '<div id="reset-dialog" role="dialog" style="display:none"><p>Reset the client secret? Any '
+                    f'old secret stops working.</p><form method="post" action="/apps/{app.id}/regenerate">'
+                    '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display='
+                    '\'none\'">Cancel</button><button type="submit">Yes, do it!</button></form></div>')
+        reset_ui = '<h3>Client Secret</h3>' + reset_btn
         if app.reset_done and app.secret_unviewed:
             app.secret_unviewed = False
-            secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
-                      '<p class="warn">Copy it now; it is shown once.</p>')
+            if self.sc.input_credentials:
+                secret = ('<p>A new token was generated!</p><h3>Client Secret</h3><div>'
+                          f'<input type="text" value="{esc(app.client_secret)}"><button type="button">Copy</button>'
+                          '</div>' + reset_btn)
+            else:
+                secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
+                          '<p class="warn">Copy it now; it is shown once.</p>')
         else:
-            # As on Discord: "Reset Secret" opens an "are you sure" dialog; "Yes, do it!" regenerates.
-            secret = ('<h3>Client Secret</h3>'
-                      '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display=\'\'">'
-                      'Reset Secret</button>'
-                      '<div id="reset-dialog" role="dialog" style="display:none"><p>Reset the client secret? Any '
-                      f'old secret stops working.</p><form method="post" action="/apps/{app.id}/regenerate">'
-                      '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display='
-                      '\'none\'">Cancel</button><button type="submit">Yes, do it!</button></form></div>')
+            secret = reset_ui
         saved = "".join(f'<div><input type="text" name="redirect" aria-label="Select redirect URI" value="{esc(u)}">'
                         "</div>" for u in app.redirects)
         add = ("const d=document.getElementById('redirect-rows');const i=document.createElement('input');"
@@ -513,8 +521,11 @@ class Handler(BaseHTTPRequestHandler):
                   'OAuth2 scope"></label><button type="button">Copy</button>')
         generator = self.portal_chrome(app) + generator
         self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
-                  f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>"
-                  f'{secret}</div>{redirects}{generator}<p><a href="/console">Back to applications</a></p>')
+                  + ((f'<h3>Client ID</h3><div><input type="text" value="{esc(app.client_id)}">'
+                      '<button type=button>Copy</button></div>')
+                     if self.sc.input_credentials else
+                     f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>")
+                  + f'{secret}</div>{redirects}{generator}<p><a href="/console">Back to applications</a></p>')
 
     def portal_chrome(self, app: App) -> str:
         """Discord-like header buttons and app sidebar (only with crowded_oauth2): many links on every app page."""

@@ -148,7 +148,9 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.q Phase 5 (D-083): Jev, Stagehand, steps, re-plan and the legacy loop removed; CLI runs the agent loop; 305 tests pass
 - [x] S6.p Phase 6 (D-084): 52 real-LLM runs on the fake provider (Sonnet 5.5 and Haiku 5.5), all succeeded, no safety problems; tokens and latency recorded; model unchanged
 - [x] S6.o Phase 7a (D-085): PRD, spec, sprint plan, attempt protocol, README and RESULTS updated for D-078
-- [ ] S6.n 👤 Owner deletes the demo apps at Discord (and the old test app), then Discord run #6 on the new loop, owner present (RESULTS #6)
+- [x] S6.n Discord run #6 on the new loop: blocked, capture missed the ID and secret (RESULTS #6, D-086)
+- [x] S6.m Capture fix: scan, heading context, `done_rejected` log, second-reset warning; scenario `discord_inputs` (D-086)
+- [ ] S6.l 👤 Discord run #7 on the fixed loop: owner deletes run #6's demo app first, owner present (RESULTS #7)
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 

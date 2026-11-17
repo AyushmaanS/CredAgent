@@ -145,6 +145,7 @@ class AgentLoop:
         self.handoffs = Handoffs(self.store, self.masker, self.io, self.allowed, self._observe, self._guard)
         self.history: list[HistoryEntry] = []
         self._refused: set[tuple[str, str]] = set()
+        self._rotations = 0  # secrets reset in this run: a second reset invalidates the first (D-086)
         self._typed: set[tuple[str, str]] = set()  # fields the agent filled, so a handoff card can say so
         self._clicks: dict[tuple[str, str], int] = {}
         self._pending: tuple[HistoryEntry, Snapshot] | None = None
@@ -395,6 +396,8 @@ class AgentLoop:
         if not any(g.kind == "credential_shown" for g in gates):
             self._hist("done", "", reason, "not done: no credential is shown on this page", "rejected")
             self._flash.append("Not done: no credential is shown on this page yet. Keep going.")
+            self._cp(run, "done_rejected", {"why": "no credential-like element on the page",
+                                            "secret_elements": len(snap.obs.secret_xpaths), "hints": snap.obs.hints})
             return "invalid"
         if self.secret_store is None:  # nothing to capture with (loop tests without a store)
             self._hist("done", "", reason, "a credential is shown; code takes over")
@@ -420,6 +423,9 @@ class AgentLoop:
                    "labels.")
         self._flash.append(msg)
         self._hist("done", "", reason, "not done: the secret was not captured", "rejected")
+        self._cp(run, "done_rejected", {"why": "credential-like elements found but no secret captured",
+                                        "captured": res.captured, "unlabelled": res.unlabelled,
+                                        "secret_hidden": res.secret_hidden, "hints": snap.obs.hints})
         if self._capture_fails >= 3:
             self._capture_fails = 0
             if await self.handoffs.do(run, "secret_hidden", "CredAgent could not capture the secret by itself.",
@@ -621,7 +627,11 @@ class AgentLoop:
                 self._hist(v.action, v.target(), v.step.reason, "the person chose to leave it unticked", "handed_off")
                 return None
             return await self._execute(run, snap, v)
-        ans = await self.handoffs.decide(run, verdict.category, verdict.reason, [label], snap,
+        why = verdict.reason
+        if verdict.category == "secret_rotation" and self._rotations:
+            why = ("A secret was already reset earlier in this run. Resetting again invalidates that one: if you "
+                   "copied it, the copy stops working. " + why)
+        ans = await self.handoffs.decide(run, verdict.category, why, [label], snap,
                                          ["Yes, do it", "No, stop here"],
                                          instruction=f"Should the agent do this: {label}?",
                                          after="Do it (if yes) and continue.")
@@ -630,6 +640,8 @@ class AgentLoop:
         if ans.startswith("No"):
             self._stop = f"person declined: {label}"
             return LoopResult("blocked", self._stop)
+        if verdict.category == "secret_rotation":
+            self._rotations += 1
         return await self._execute(run, snap, v)
 
     def _refuse_quietly(self, snap: Snapshot, v: Validated) -> None:

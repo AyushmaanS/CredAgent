@@ -204,6 +204,8 @@ def test_done_without_a_credential_on_the_page_is_not_accepted(tmp_path):
     assert o.result.status == "credential_page" and DoneEarly.said == 2
     assert any("Not done: no credential is shown" in n for notes in seen for n in notes)  # the model was told why
     (accepted,) = events(o, "agent_done_accepted")  # exactly one "done" was accepted, and only on the real page
+    rejected = events(o, "done_rejected")  # D-086: every refusal is logged, with the page's structure and no values
+    assert len(rejected) == 2 and all("hints" in r and "secret_elements" in r for r in rejected)
     assert o.run.created and "/apps/" in o.url
     assert_safe(o.audit)
 

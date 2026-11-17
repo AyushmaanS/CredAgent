@@ -34,7 +34,7 @@ class StepResult:
 
 
 class StepLLM:
-    def __init__(self, reasoner: Any, masker: Masker, *, model: str | None = None, max_tokens: int = 700,
+    def __init__(self, reasoner: Any, masker: Masker, *, model: str | None = None, max_tokens: int = 1200,
                  timeout_s: float = 60.0) -> None:
         self.reasoner = reasoner
         self.masker = masker

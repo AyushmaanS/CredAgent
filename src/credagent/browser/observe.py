@@ -20,6 +20,9 @@ OBSERVE_JS = r"""
 (() => {
   const TOKEN = /^[A-Za-z0-9_\-.~+\/=]{20,}$/;
   const SECRET_LABEL = /(client[\s_-]*secret|secret[\s_-]*key|api[\s_-]*key|access[\s_-]*token|private[\s_-]*key|\btoken\b|\bsecret\b|password)/i;
+  // A label that names a credential. "password" alone is not one: that is a sign-in field (D-086).
+  const CRED_LABEL = /(client[\s_-]*secret|secret[\s_-]*key|api[\s_-]*key|access[\s_-]*token|private[\s_-]*key|\btoken\b|\bsecret\b)/i;
+  const ID_LABEL = /(client|application|app)[\s_-]*id/i;
   const mixed = t => /[A-Za-z]/.test(t) && /[0-9]/.test(t);
   // The run's own approved values (e.g. the app name "credagent-demo-20261117") are not secrets (D-076).
   const NOT_SECRET = new Set(__NOT_SECRET__);
@@ -55,13 +58,21 @@ OBSERVE_JS = r"""
 
   // credential-looking elements
   const secretEls = [];
-  for (const el of document.querySelectorAll('code,pre,kbd,samp,span,div,td,p,strong,b,input,textarea')) {
+  for (const el of document.querySelectorAll('code,pre,kbd,samp,span,div,td,p,strong,b,li,label,a,dd,dt,th,em,small,h1,h2,h3,h4,h5,h6,input,textarea')) {
     if (!vis(el)) continue;
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
       const v = (el.value || '').trim();
-      if (el.type === 'password') continue;
-      if (v.length >= 20 && TOKEN.test(v) && mixed(v) && (el.readOnly || SECRET_LABEL.test(labelOf(el) + ' ' + ctx(el))))
+      const lab = labelOf(el) + ' ' + ctx(el) + ' ' + sectionOf(el);   // the heading above counts (D-086)
+      // A password-type field holds a credential only when its label names one ("Client Secret"), never when it is
+      // a plain sign-in "Password" field (D-086: Discord run #6 showed the secret in a field like this).
+      if (el.type === 'password' && !(CRED_LABEL.test(lab) && !/pass(word|code)/i.test(labelOf(el)))) continue;
+      if (v.length >= 20 && TOKEN.test(v) && mixed(v) && !slug(v)
+          && (el.readOnly || SECRET_LABEL.test(lab) || /^(text|search|)$/.test(el.type || '')))
         secretEls.push(el);
+      // A token-shaped value in a plain text field is a credential whatever its label (the label is often a heading
+      // above the field, which `ctx` cannot see).
+      // An all-digit client/application ID shown in a field is part of the credential, like the text case below.
+      else if (/^\d{15,22}$/.test(v) && ID_LABEL.test(lab)) secretEls.push(el);
       continue;
     }
     if (el.children.length) continue;               // leaf elements only
@@ -135,10 +146,30 @@ OBSERVE_JS = r"""
       in_dialog: !!el.closest('[role=dialog],[aria-modal=true]'),
       in_view: (() => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; })(),
     }));
+  // Structure only, never a value: what kind of element holds anything that looks like a credential, so a failed
+  // capture can be diagnosed from the log (D-086).
+  const hints = [];
+  for (const el of document.querySelectorAll('input,textarea,code,pre,span,div,td,p,strong,b,li,label,a,dd,dt,th,em,small,h1,h2,h3,h4,h5,h6')) {
+    if (hints.length >= 10) break;
+    if (!vis(el)) continue;
+    const isIn = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+    if (isIn) {
+      const lab = labelOf(el);
+      const around = lab + ' ' + ctx(el) + ' ' + sectionOf(el);
+      if (!(CRED_LABEL.test(around) || ID_LABEL.test(around))) continue;
+      hints.push({ kind: 'input', tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(),
+                   readonly: !!el.readOnly, len: (el.value || '').length, flagged: secretEls.includes(el), label: lab.slice(0, 60) });
+    } else if (!el.children.length) {
+      const t = clean(el.innerText);
+      if (t.length >= 15 && /^[A-Za-z0-9_\-.~+\/=]+$/.test(t))
+        hints.push({ kind: 'text', tag: el.tagName.toLowerCase(), parent: el.parentElement ? el.parentElement.tagName.toLowerCase() : '',
+                     len: t.length, flagged: secretEls.includes(el), mixed: mixed(t), digits: /^\d+$/.test(t) });
+    }
+  }
   const scroll = { y: Math.round(scrollY), height: Math.round(document.documentElement.scrollHeight),
                    view: Math.round(innerHeight) };
   return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners, headings,
-           elements, scroll,
+           elements, scroll, hints,
            iframes: Array.from(document.querySelectorAll('iframe')).map(f => f.src || '').slice(0, 20),
            secret_xpaths: secretEls.map(xp).slice(0, 50) };
 })()
@@ -160,6 +191,7 @@ class Observation:
     scroll: dict[str, int] = field(default_factory=dict)
     iframes: list[str] = field(default_factory=list)
     secret_xpaths: list[str] = field(default_factory=list)
+    hints: list[dict[str, Any]] = field(default_factory=list)  # structure of credential-like elements, never values
     url_masked: str = ""           # safe for logs/models (query tokens may be credentials)
 
     @property
@@ -186,7 +218,7 @@ def from_raw(raw: dict[str, Any], masker: Masker) -> Observation:
         inputs=m(raw.get("inputs") or []), buttons=m(raw.get("buttons") or []), links=m(raw.get("links") or []),
         forms=m(raw.get("forms") or []), banners=m(raw.get("banners") or []), headings=m(raw.get("headings") or []),
         elements=m(raw.get("elements") or []), scroll=dict(raw.get("scroll") or {}),
-        iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []),
+        iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []), hints=m(raw.get("hints") or [])[:10],
         url_masked=masker.mask_text(str(raw.get("url", ""))),
     )
 

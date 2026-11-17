@@ -94,6 +94,11 @@ def test_domain_guard_blocks_off_domain_navigation_and_lifts(tmp_path):
     run(go())
 
 
+# The run's approved values are passed to every snapshot, as the agent loop does: the app name looks like a token
+# and is exempt from the credential scan only because it is a known value (D-076, D-086).
+NS = list(approved_values(VALUES).values())
+
+
 def test_executor_actions_on_the_create_form(tmp_path):
     async def go():
         with FakeProvider(FORM) as fp:
@@ -102,20 +107,20 @@ def test_executor_actions_on_the_create_form(tmp_path):
             ex = Executor(s.page, m, approved=approved_values(VALUES))
             try:
                 assert (await ex.navigate(fp.base_url + "/apps/new")).ok
-                snap = await take_snapshot(ex.page, m)
+                snap = await take_snapshot(ex.page, m, NS)
                 name_ref = find(snap, "field", "Application name")
 
                 # type: ok, and the value is never echoed back
                 r = await ex.type(snap, name_ref, VALUES.app_name)
                 assert r.ok and VALUES.app_name not in r.summary() and "typed into field" in r.detail
-                after = await take_snapshot(ex.page, m)
+                after = await take_snapshot(ex.page, m, NS)
                 assert "field “Application name” is now filled" in describe_change(snap, after)
 
                 # inspect a field: only whether it holds an approved value (never the value itself)
                 r = await ex.inspect(after, find(after, "field", "Application name"))
                 assert r.ok and "holds the approved value: app_name" in r.text and VALUES.app_name not in r.text
                 await ex.type(after, find(after, "field", "Description"), "something else entirely")
-                again = await take_snapshot(ex.page, m)
+                again = await take_snapshot(ex.page, m, NS)
                 r = await ex.inspect(again, find(again, "field", "Description"))
                 assert "not one of the approved values" in r.text and "something else" not in r.text
                 r = await ex.inspect(again, find(again, "field", "Homepage"))
@@ -131,9 +136,9 @@ def test_executor_actions_on_the_create_form(tmp_path):
 
                 # click a checkbox: the change is described
                 scope = find(again, "checkbox", "read:profile")
-                before = await take_snapshot(ex.page, m)
+                before = await take_snapshot(ex.page, m, NS)
                 assert (await ex.click(before, scope)).ok
-                assert "is now checked" in describe_change(before, await take_snapshot(ex.page, m))
+                assert "is now checked" in describe_change(before, await take_snapshot(ex.page, m, NS))
 
                 # scroll, wait, back
                 assert (await ex.scroll("down")).ok and (await ex.scroll("top")).ok
@@ -144,12 +149,12 @@ def test_executor_actions_on_the_create_form(tmp_path):
                 assert r.ok and r.url.endswith("/apps/new")
 
                 # click the submit button: navigates to the new app's page
-                snap = await take_snapshot(ex.page, m)
+                snap = await take_snapshot(ex.page, m, NS)
                 await ex.type(snap, find(snap, "field", "Authorization callback URL"), VALUES.redirect_uri)
-                snap = await take_snapshot(ex.page, m)
+                snap = await take_snapshot(ex.page, m, NS)
                 r = await ex.click(snap, find(snap, "button", "Create app"))
                 assert r.ok and "/apps/" in r.url
-                assert "navigated to /apps/" in describe_change(snap, await take_snapshot(ex.page, m))
+                assert "navigated to /apps/" in describe_change(snap, await take_snapshot(ex.page, m, NS))
                 assert [a["event"] for a in fp.audit() if a["event"] == "app_created"] == ["app_created"]
             finally:
                 await s.close()
