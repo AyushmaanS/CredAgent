@@ -337,7 +337,7 @@
       "llm": "live_or_stub"
     },
     "discord_inputs": {
-      "description": "As discord_like, but the OAuth2 page shows the Client ID and the new secret in plain text fields with no label of their own (the heading is above them) and keeps 'Reset Secret' after the reset. This is what Discord run #6 appears to have shown (D-086): the page scan must still find both, and a second reset must be warned about.",
+      "description": "As discord_like, but the OAuth2 page has the structure the real Discord page was probed to have (D-087): the Client ID and the Client Secret are in disabled text fields, each row's <label> is in a neighbouring div and not linked to the field, and 'Reset Secret' stays after the reset. The page scan and capture must find, name and store both, and a second reset must be warned about.",
       "config": {
         "require_signin": false,
         "terms": "implied",

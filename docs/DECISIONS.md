@@ -919,6 +919,22 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-087 Discord run #7: label lookup through neighbouring divs, confirmed on the real page — Decided (owner: "yes do it" for the probe, "yes fix it" for the fix)
+**What run #7 showed (run 20261117-122019-discord-eb41).** The D-086 fix got further: after the secret reset the scan flagged one element, capture read it, and stored nothing ("1 unlabelled credential-like value left alone"). The agent then reset nothing more (the new rule held), asked the person, and the owner stopped it.
+
+**Read-only probe of the live page (owner's OK; no clicks, no values printed).** On Discord's OAuth2 page the Client ID and the Client Secret are each a **disabled text field** (`type=text`, 19 digits and 32 token-like characters), with no aria-label, name, id or placeholder. The row's `<label>` ("Client ID" / "Client Secret") is in a *neighbouring div*, not linked to the field and not a heading: it is the previous sibling of the field's grandparent. So the scan's label sources (the field's own label, its parent's text, headings above, siblings, grandparent text) all missed it. That is why the ID was never flagged and the secret, flagged by its shape, had no recognised name. The 20-odd scope-checkbox labels also filled the 10 diagnostic slots, hiding the real elements.
+
+**Fixes.**
+1. **Label lookup** (`browser/observe.py`, `secrets/capture.py`): the nearest short text (60 characters or fewer, not just "Copy") among the earlier siblings of the element and its ancestors, up to six levels. It names a value for capture and counts as label context for the all-digit ID rule.
+2. **Diagnostics:** `hints` now lists flagged elements and fields first, with the label found above each (structure only, never values).
+3. **Capture** tries that label ahead of the broader surrounding text.
+
+**Checked three ways.** (a) The fake scenario `discord_inputs` was rebuilt to the probed structure; with the D-086 code it reproduced run #7's failure (paused at a handoff), with the fix it succeeds. (b) New real-Chrome test of the scan and hints on that page. (c) **A dry run on the real, still-open Discord page** with the new code, printing only part names and lengths and storing nothing: both elements were flagged and named `client_id` (19 digits) and `client_secret` (32 characters). All suites pass (default and real Chrome).
+
+**Not done.** The real capture, the live test and the stored files: that needs `credagent resume` on run #7 with the owner present, using the secret still on the open page (no second reset). Until it succeeds, nothing here is a result.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

@@ -150,7 +150,9 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.o Phase 7a (D-085): PRD, spec, sprint plan, attempt protocol, README and RESULTS updated for D-078
 - [x] S6.n Discord run #6 on the new loop: blocked, capture missed the ID and secret (RESULTS #6, D-086)
 - [x] S6.m Capture fix: scan, heading context, `done_rejected` log, second-reset warning; scenario `discord_inputs` (D-086)
-- [ ] S6.l 👤 Discord run #7 on the fixed loop: owner deletes run #6's demo app first, owner present (RESULTS #7)
+- [x] S6.l Discord run #7 on the D-086 fix: secret found but unnamed (D-087)
+- [x] S6.k Label lookup through neighbouring divs; probe + dry run on the real page (D-087)
+- [ ] S6.j 👤 Resume run #7 (secret still on the open page): capture, live test, outcome, owner present
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 

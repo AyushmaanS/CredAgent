@@ -39,6 +39,15 @@ CAPTURE_JS = r"""
     let lab = '';
     if (el.labels && el.labels.length) lab = Array.from(el.labels).map(l => clean(l.innerText)).join(' ');
     const prev = el.previousElementSibling ? clean(el.previousElementSibling.innerText) : '';
+    // The nearest short text above among the ancestors' earlier siblings: a row's label in a neighbouring div that
+    // is not linked to the field (Discord, D-087).
+    let above = '';
+    for (let a = el, d = 0; a && !above && d < 6; a = a.parentElement, d++) {
+      for (let s = a.previousElementSibling, n = 0; s && !above && n < 3; s = s.previousElementSibling, n++) {
+        const t = clean(s.innerText || '');
+        if (t && t.length <= 60 && !/^(copy|copied)$/i.test(t)) above = t;
+      }
+    }
     // The nearest heading above (e.g. <h3>Client Secret</h3> above a row that holds the value and a Copy button).
     let section = '';
     for (let a = el, d = 0; a && !section && d < 8; a = a.parentElement, d++) {
@@ -53,7 +62,8 @@ CAPTURE_JS = r"""
     const pprev = p1 && p1.previousElementSibling ? clean(p1.previousElementSibling.innerText) : '';
     const up = p2 ? clean(p2.innerText) : '';
     return { xpath: x, value, own: own.slice(0, 120), label: lab.slice(0, 120), prev: prev.slice(0, 120),
-             around: around.slice(0, 240), pprev: pprev.slice(0, 120), up: up.slice(0, 240), section };
+             around: around.slice(0, 240), pprev: pprev.slice(0, 120), up: up.slice(0, 240), section,
+             above: above.slice(0, 80) };
   });
 })()
 """
@@ -107,7 +117,7 @@ class CaptureResult:
 def classify(item: dict[str, str]) -> str | None:
     """Name a captured element from its own attributes first, then its label, the text right before it,
     then the surrounding text. None = no recognisable label (never guessed)."""
-    for key in ("own", "label", "prev", "around", "pprev", "up", "section"):
+    for key in ("own", "label", "prev", "around", "pprev", "above", "section", "up"):
         text = item.get(key) or ""
         for name, rx in PART_PATTERNS:
             if rx.search(text):
@@ -149,7 +159,7 @@ def store_capture(
         if not VALUE_OK.match(value):
             continue
         # Labels may contain other values from the same row: remove every captured value first.
-        for k in ("own", "label", "prev", "around", "pprev", "up", "section"):
+        for k in ("own", "label", "prev", "around", "pprev", "up", "section", "above"):
             t = str(item.get(k) or "")
             for v in values:
                 if v:

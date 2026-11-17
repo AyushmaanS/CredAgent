@@ -66,8 +66,9 @@ class Scenario:
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
     crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
-    input_credentials: bool = False  # OAuth2 page shows the ID and the new secret in plain text fields with no label of
-    #                                  their own (the heading is above them) and keeps "Reset Secret" (Discord run #6)
+    input_credentials: bool = False  # OAuth2 page as the real Discord one (probe of run #7): the ID and the secret are in
+    #                                  disabled text fields; their <label> is in a neighbouring div, not linked to
+    #                                  them; "Reset Secret" stays after a reset
     secret_after_reset: bool = False  # app page shows only the ID; the secret is on an OAuth2 page behind
     #                                   "Reset Secret" (as on Discord)
 
@@ -486,12 +487,15 @@ class Handler(BaseHTTPRequestHandler):
                     '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display='
                     '\'none\'">Cancel</button><button type="submit">Yes, do it!</button></form></div>')
         reset_ui = '<h3>Client Secret</h3>' + reset_btn
+        if self.sc.input_credentials:
+            reset_ui = self.cred_row("Client Secret", '<input type="text" disabled value="••••••••••••••••">'
+                                     '<button type="button" disabled>Copy</button>' + reset_btn)
         if app.reset_done and app.secret_unviewed:
             app.secret_unviewed = False
             if self.sc.input_credentials:
-                secret = ('<p>A new token was generated!</p><h3>Client Secret</h3><div>'
-                          f'<input type="text" value="{esc(app.client_secret)}"><button type="button">Copy</button>'
-                          '</div>' + reset_btn)
+                secret = ('<p>A new token was generated!</p>' + self.cred_row(
+                    "Client Secret", f'<input type="text" disabled value="{esc(app.client_secret)}">'
+                    '<button type="button">Copy</button>' + reset_btn))
             else:
                 secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
                           '<p class="warn">Copy it now; it is shown once.</p>')
@@ -521,11 +525,16 @@ class Handler(BaseHTTPRequestHandler):
                   'OAuth2 scope"></label><button type="button">Copy</button>')
         generator = self.portal_chrome(app) + generator
         self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
-                  + ((f'<h3>Client ID</h3><div><input type="text" value="{esc(app.client_id)}">'
-                      '<button type=button>Copy</button></div>')
+                  + (self.cred_row("Client ID", f'<input type="text" disabled value="{esc(app.client_id)}">'
+                                   '<button type=button>Copy</button>')
                      if self.sc.input_credentials else
                      f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>")
                   + f'{secret}</div>{redirects}{generator}<p><a href="/console">Back to applications</a></p>')
+
+    @staticmethod
+    def cred_row(label: str, inner: str) -> str:
+        """One credential row as on Discord: the label in its own div, the value in a field in the next div."""
+        return (f'<div class="row"><div><div><label>{label}</label></div><div><div>{inner}</div></div></div></div>')
 
     def portal_chrome(self, app: App) -> str:
         """Discord-like header buttons and app sidebar (only with crowded_oauth2): many links on every app page."""

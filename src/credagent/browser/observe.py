@@ -56,13 +56,25 @@ OBSERVE_JS = r"""
     return '';
   };
 
+  // The nearest short text that sits above an element among its ancestors' earlier siblings: a row's label that lives
+  // in a neighbouring div and is not linked to the field (Discord's "Client ID" / "Client Secret"; D-087).
+  const labelAbove = el => {
+    for (let a = el, d = 0; a && d < 6; a = a.parentElement, d++) {
+      for (let s = a.previousElementSibling, n = 0; s && n < 3; s = s.previousElementSibling, n++) {
+        const t = clean(s.innerText || '');
+        if (t && t.length <= 60 && !/^(copy|copied)$/i.test(t)) return t;
+      }
+    }
+    return '';
+  };
+
   // credential-looking elements
   const secretEls = [];
   for (const el of document.querySelectorAll('code,pre,kbd,samp,span,div,td,p,strong,b,li,label,a,dd,dt,th,em,small,h1,h2,h3,h4,h5,h6,input,textarea')) {
     if (!vis(el)) continue;
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
       const v = (el.value || '').trim();
-      const lab = labelOf(el) + ' ' + ctx(el) + ' ' + sectionOf(el);   // the heading above counts (D-086)
+      const lab = labelOf(el) + ' ' + ctx(el) + ' ' + sectionOf(el) + ' ' + labelAbove(el);   // D-086, D-087
       // A password-type field holds a credential only when its label names one ("Client Secret"), never when it is
       // a plain sign-in "Password" field (D-086: Discord run #6 showed the secret in a field like this).
       if (el.type === 'password' && !(CRED_LABEL.test(lab) && !/pass(word|code)/i.test(labelOf(el)))) continue;
@@ -148,24 +160,31 @@ OBSERVE_JS = r"""
     }));
   // Structure only, never a value: what kind of element holds anything that looks like a credential, so a failed
   // capture can be diagnosed from the log (D-086).
-  const hints = [];
+  // Flagged elements and fields come first, so a page full of look-alike text cannot crowd them out.
+  const hintsFirst = [], hintsText = [];
   for (const el of document.querySelectorAll('input,textarea,code,pre,span,div,td,p,strong,b,li,label,a,dd,dt,th,em,small,h1,h2,h3,h4,h5,h6')) {
-    if (hints.length >= 10) break;
     if (!vis(el)) continue;
     const isIn = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
     if (isIn) {
       const lab = labelOf(el);
-      const around = lab + ' ' + ctx(el) + ' ' + sectionOf(el);
-      if (!(CRED_LABEL.test(around) || ID_LABEL.test(around))) continue;
-      hints.push({ kind: 'input', tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(),
-                   readonly: !!el.readOnly, len: (el.value || '').length, flagged: secretEls.includes(el), label: lab.slice(0, 60) });
+      const above = labelAbove(el);
+      const around = lab + ' ' + ctx(el) + ' ' + sectionOf(el) + ' ' + above;
+      const flagged = secretEls.includes(el);
+      if (!flagged && !(CRED_LABEL.test(around) || ID_LABEL.test(around)) && (el.value || '').length < 15) continue;
+      hintsFirst.push({ kind: 'input', tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(),
+                        readonly: !!el.readOnly, disabled: !!el.disabled, len: (el.value || '').length, flagged,
+                        label: lab.slice(0, 60), above: above.slice(0, 60) });
     } else if (!el.children.length) {
       const t = clean(el.innerText);
-      if (t.length >= 15 && /^[A-Za-z0-9_\-.~+\/=]+$/.test(t))
-        hints.push({ kind: 'text', tag: el.tagName.toLowerCase(), parent: el.parentElement ? el.parentElement.tagName.toLowerCase() : '',
-                     len: t.length, flagged: secretEls.includes(el), mixed: mixed(t), digits: /^\d+$/.test(t) });
+      const flagged = secretEls.includes(el);
+      if (t.length >= 15 && /^[A-Za-z0-9_\-.~+\/=]+$/.test(t)) {
+        const h = { kind: 'text', tag: el.tagName.toLowerCase(), parent: el.parentElement ? el.parentElement.tagName.toLowerCase() : '',
+                    len: t.length, flagged, mixed: mixed(t), digits: /^\d+$/.test(t) };
+        (flagged ? hintsFirst : hintsText).push(h);
+      }
     }
   }
+  const hints = hintsFirst.concat(hintsText).slice(0, 10);
   const scroll = { y: Math.round(scrollY), height: Math.round(document.documentElement.scrollHeight),
                    view: Math.round(innerHeight) };
   return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners, headings,

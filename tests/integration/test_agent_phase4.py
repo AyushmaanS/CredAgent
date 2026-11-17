@@ -295,3 +295,29 @@ async def test_a_second_secret_reset_is_asked_with_a_warning(tmp_path):
         (reasons, o.run.status, o.run.status_reason, o.io.handoffs)
     assert len(resets) == 1  # the second one was declined
     assert o.run.status == "blocked"
+
+
+@sync
+async def test_the_scan_finds_and_names_fields_whose_label_sits_in_a_neighbouring_div(tmp_path):
+    """Probed structure of Discord's OAuth2 page (D-087): disabled text fields, labels not linked to them. Both are
+    flagged, the hints list them first (so a log shows them), and capture names them by the label above."""
+    import json
+
+    from credagent.browser.observe import observe_page
+    from credagent.secrets.capture import CAPTURE_JS, classify
+
+    with FakeProvider(scenario("discord_inputs")) as fp:
+        app = fp.state._new_app("credagent-demo-probe", CB)
+        app.reset_done, app.secret_unviewed = True, True
+        s = await open_pw_session(tmp_path / "profile", headless=HEADLESS)
+        try:
+            await s.page.goto(f"{fp.base_url}/apps/{app.id}/oauth2")
+            obs = await observe_page(s.page, Masker(), ["credagent-demo-probe", CB])
+            raw = await s.page.evaluate(CAPTURE_JS.replace("__XPATHS__", json.dumps(obs.secret_xpaths)))
+        finally:
+            await s.close()
+        secret = app.client_secret
+    assert len(obs.secret_xpaths) == 2
+    assert [h["above"] for h in obs.hints[:2]] == ["Client ID", "Client Secret"] and all(h["flagged"] for h in obs.hints[:2])
+    assert sorted(classify(dict(r)) for r in raw) == ["client_id", "client_secret"]
+    assert secret not in json.dumps(obs.hints) and secret not in obs.text  # structure only; the page text is masked
