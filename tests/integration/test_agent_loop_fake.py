@@ -284,3 +284,25 @@ def test_no_prompt_contains_a_credential_including_on_the_credential_page(tmp_pa
         assert not any(secret in p for p in prompts)
     run_files = "".join(f.read_text(errors="replace") for f in (tmp_path / "runs" / o.run.id).iterdir())
     assert not any(secret in run_files for secret in o.secrets)
+
+
+def test_waiting_and_reloading_are_not_progress_and_end_with_the_person_not_the_step_budget(tmp_path):
+    """Google run 6338 spent 48 steps waiting and reloading a page that had not changed. Waiting more than three times in a
+    row, or loading the same address a third time, is turned away, and six such answers in a row ask the person (D-097)."""
+    class Waiter(ScriptedLLM):
+        def decide(self, ctx):
+            self.calls += 1
+            return StepResult(step("wait", "the page has probably not finished loading", wait_ms=100), None, 0, None, "x", 1)
+
+    o = go(tmp_path, "success", llm=Waiter())
+    assert o.result.status in ("stuck", "handoff_pending"), o.result
+    assert o.llm.calls <= 14, o.llm.calls  # not the whole 60-step budget
+    assert any(h[0] == "DO" for h in o.io.handoffs)  # the person was asked
+
+    class Reloader(ScriptedLLM):
+        def decide(self, ctx):
+            self.calls += 1
+            return StepResult(step("navigate", "reload the page", url=ctx.snapshot.url), None, 0, None, "x", 1)
+
+    o = go(tmp_path / "reload", "success", llm=Reloader())
+    assert o.result.status in ("stuck", "handoff_pending") and o.llm.calls <= 14, (o.result, o.llm.calls)

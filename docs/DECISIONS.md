@@ -1069,6 +1069,22 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-097 Google run 6338 looped: the agent could not see Google's custom "Application type" dropdown — Decided (fix after reading the log and a read-only probe)
+**What happened.** With D-096 the OAuth choice was applied (`credential_kind` oauth_client), the sign-in, a project (two setup creations, asked) and Google Auth Platform setup all went through, and the agent reached "Create OAuth client ID". There it looped for 48 steps (wait, reload, navigate, a detour to the classic Credentials page and back), each reload showing "only the side navigation", until I stopped it at about step 56 to save tokens.
+
+**Cause (read-only probe of the open page, structure only).** The "Application type" control is a Google **`cfc-select` element with `role="combobox"`**, its label ("Application type") a neighbouring element, and the Name field only appears after a choice. The page snapshot lists only a fixed set of interactive elements (links, buttons, inputs, selects, ARIA roles button/link/tab/menuitem/checkbox/switch/radio), so the combobox was **not listed**: the agent saw the label and no control ("shows the 'Application type' label but no dropdown"), concluded the page had not rendered, and waited and reloaded. Nothing in the loop stopped waiting and reloading, because every reload changed the page slightly, so the no-change rule never fired.
+
+**Fixes.**
+- **Custom dropdowns are listed.** The snapshot now also lists `combobox`, `option`, `textbox`, `searchbox`, `menuitemradio`, `menuitemcheckbox` and `spinbutton` elements. A custom combobox is named by its aria-label, its `aria-labelledby` target or the nearest label above it (the D-087 lookup); an option by its text.
+- **The choice is the person's.** Clicking an *option* is a DECIDE ("Choosing 'Web application' (e.g. an app type) is the person's decision"), like a native dropdown; opening the combobox is allowed. This matches the consent screen ("any app-type choice is asked here").
+- **Waiting and reloading are not progress.** More than three `wait` actions in a row, or loading the same address a third time in a run, is turned away with a reason (counted as an unusable answer), and six in a row ask the person. A run can no longer spend its whole step budget (and tokens) on this.
+
+**Tests.** New fake scenario `custom_dropdown` (a combobox with a neighbouring label, option items, the rest of the form hidden until a choice, as on Google): without the snapshot fix the run pauses at a handoff exactly as Google's did; with it the person is asked about the item once and the app is created with that type. Unit test for the roles, the names and the DECIDE; a test that an agent that only waits, or only reloads, ends within 14 model calls with the person asked.
+
+**Not done / unknown.** Whether the rest of Google's form uses other custom controls (the Name field and "Authorized redirect URIs" appear after the choice; the first real attempt will show). The classic Credentials page was never needed. The probe showed `cfc-overlay`, `cfc-panel` and `cfc-menu` elements: popups may be rendered in overlays, which the scan reads like any other element.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

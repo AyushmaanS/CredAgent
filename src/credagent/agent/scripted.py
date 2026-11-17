@@ -38,6 +38,8 @@ class ScriptedLLM:
         self.confirmed = False  # a reveal or the provider's confirm dialog was clicked
         self.reset_clicked = False
         self.clicked: set[str] = set()
+        self.combo_opened = False
+        self.option_picked = False
         self.dirty: str | None = None  # page where something was typed that a Save button may still have to store
         self.selected: set[str] = set()
         self.done_urls: set[str] = set()  # pages where "done" was already said (code asks for more only once per page)
@@ -51,6 +53,14 @@ class ScriptedLLM:
         usable = [e for e in snap.elements if not e.disabled and e.xpath not in snap.refused]
         if any("Not captured yet" in n for n in ctx.notes):
             self.need_secret = True
+        option = next((e for e in usable if e.role == "option"), None)
+        if option is not None and not self.option_picked:  # an item of an opened custom dropdown: the person decides
+            self.option_picked = True
+            return _step("click", f"choose {option.name}", ref=option.ref)
+        combo = next((e for e in usable if e.role == "combobox"), None)
+        if combo is not None and not self.combo_opened:
+            self.combo_opened = True
+            return _step("click", f"open the {combo.name or 'dropdown'} list", ref=combo.ref)
         for e in usable:  # fill every empty field that has an approved value
             if e.role == "field" and not e.filled and not e.readonly and e.type != "password":
                 key = field_key_for(e.name or e.section)

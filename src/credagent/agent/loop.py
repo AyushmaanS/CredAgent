@@ -149,6 +149,8 @@ class AgentLoop:
         self.history: list[HistoryEntry] = []
         self._refused: set[tuple[str, str]] = set()
         self._last_good: str | None = None  # the last allowed, non-blank page seen: somewhere safe to go back to
+        self._waits = 0  # consecutive "wait" actions; and how often each address was loaded (D-097)
+        self._navs: dict[str, int] = {}
         self._rotations = 0  # secrets reset in this run: a second reset invalidates the first (D-086)
         self._typed: set[tuple[str, str]] = set()  # fields the agent filled, so a handoff card can say so
         self._clicks: dict[tuple[str, str], int] = {}
@@ -396,6 +398,17 @@ class AgentLoop:
             return None
         if act == "ask_person":
             return await self._ask_person(run, snap, gates, v)
+        self._waits = self._waits + 1 if act == "wait" else 0
+        if act == "wait" and self._waits > 3:  # waiting did not change the page: the model must try something else
+            return self._reject_loop(snap, v, "you have waited several times and the page did not change. Waiting is "
+                                              "not progress: click or scroll to a control, or ask_person")
+        if act == "navigate" and v.url:
+            where = v.url.split("#")[0].split("?")[0]
+            self._navs[where] = self._navs.get(where, 0) + 1
+            if self._navs[where] > 2:
+                return self._reject_loop(snap, v, "this address has already been loaded twice in this run and "
+                                                  "reloading does not change what the page shows. Use what the page "
+                                                  "offers, or ask_person")
         if act in ("scroll", "inspect", "back", "wait"):
             r = await self.ex.run(snap, act, ref=st.ref, direction=v.direction, ms=v.ms)
             entry = self._hist(act, v.target(), st.reason, r.text or ("" if r.ok else r.summary()),
@@ -501,6 +514,13 @@ class AgentLoop:
                  {"parts": res.captured, "unlabelled": res.unlabelled, "ambiguous": res.ambiguous,
                   "secret_hidden": res.secret_hidden, "limitations": res.limitations})
         return res
+
+    def _reject_loop(self, snap: Snapshot, v: Validated, why: str) -> str:
+        """A step that goes round in circles: told to the model, and counted as an unusable answer (six in a row ask
+        the person), so the run cannot spend its whole step budget on waiting and reloading (Google run, D-097)."""
+        self._hist(v.action, v.target(), v.step.reason, f"not done: {why}", "rejected")
+        self._flash.append(f"Not done: {why}.")
+        return "invalid"
 
     def _refuse(self, run: Run, snap: Snapshot, v: Validated, reason: str) -> str:
         if v.element is not None:

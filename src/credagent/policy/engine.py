@@ -170,7 +170,8 @@ def evaluate(
     # 4. Field rules: only code-owned values, never human-only fields; choices belong to the person
     if action.method in ("fill", "select", "check") and HUMAN_ONLY_FIELDS.search(label):
         return Verdict("DO", f"'{label[:60]}' is a field only the person fills.", "human_field")
-    if action.method == "select":
+    if action.method == "select" or (action.method == "click" and re.match(r"option\b", label.strip(), re.I)):
+        # A native dropdown, or an item of a custom one (a Google "Application type" list): a choice (D-097).
         return Verdict("DECIDE", f"Choosing '{label[:60]}' (e.g. an app type) is the person's decision.", "choice")
     if action.method == "check":
         return Verdict(

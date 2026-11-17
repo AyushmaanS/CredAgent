@@ -67,6 +67,8 @@ class Scenario:
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
     crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
     project_first: bool = False  # an app can only be created inside a project, which is created first (as on Google)
+    custom_dropdown: bool = False  # "Application type" is a custom combobox (role=combobox, role=option items, its label a
+    #                                neighbouring element) and the rest of the form appears after a choice (as on Google)
     signin_host: str = ""  # sign-in lives on another host (e.g. "localhost"): the console redirects there, and a
     #                        one-time ticket carries the session back (as accounts.google.com does for Google)
     input_credentials: bool = False  # OAuth2 page as the real Discord one (probe of run #7): the ID and the secret are in
@@ -429,6 +431,26 @@ class Handler(BaseHTTPRequestHandler):
             overwrite = (f'<div class="warn" id="overwrite-warning">{esc(overwrite_prompt)}'
                          '<label><input type="checkbox" name="overwrite" value="1"> Replace the '
                          "existing app (its current client secret stops working)</label></div>")
+        if self.sc.custom_dropdown:
+            combo = ('<div class="field"><div id="app-type-label">Application type</div>'
+                     '<div role="combobox" id="app-type-combo" tabindex="0" aria-haspopup="listbox" '
+                     'aria-expanded="false" onclick="document.getElementById(\'app-type-list\').hidden = false">'
+                     'Select an option</div>'
+                     '<div role="listbox" id="app-type-list" hidden>'
+                     + "".join(f'<div role="option" tabindex="0" onclick="document.getElementById(\'app-type-hidden\')'
+                               f'.value=\'{k}\';document.getElementById(\'app-type-list\').hidden=true;'
+                               f'document.getElementById(\'app-type-combo\').innerText=\'{esc(t)}\';'
+                               f'document.getElementById(\'rest\').hidden=false">{esc(t)}</div>'
+                               for k, t in APP_TYPES.items())
+                     + '</div></div><input type="hidden" name="app_type" id="app-type-hidden">')
+            return (f'<h1>Create OAuth client ID</h1>{f"<p class=err>{esc(error)}</p>" if error else ""}'
+                    f'<form method="post" action="/apps" id="new-app-form">{combo}<div id="rest" hidden>'
+                    f'<label>Application name <input name="name" value="{esc(v.get("name", ""))}" required></label>'
+                    f'<label>Description <input name="description" value="{esc(v.get("description", ""))}"></label>'
+                    f'<label>Homepage URL <input name="homepage_url" value="{esc(v.get("homepage_url", ""))}"></label>'
+                    f'<label>Authorization callback URL <input name="redirect_uri" '
+                    f'value="{esc(v.get("redirect_uri", ""))}" required></label>'
+                    f'{scopes}{overwrite}{terms}<button type="submit" id="create-app">Create app</button></div></form>')
         return (f'<h1>Register a new OAuth app</h1>{f"<p class=err>{esc(error)}</p>" if error else ""}'
                 f'<form method="post" action="/apps" id="new-app-form">'
                 f'<label>Application name <input name="name" value="{esc(v.get("name", ""))}" required></label>'

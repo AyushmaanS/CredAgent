@@ -139,6 +139,16 @@ OBSERVE_JS = r"""
     return 'button';
   };
   const nameOf = el => {
+    const arole = (el.getAttribute('role') || '').toLowerCase();
+    // Custom dropdowns and menus (Google's <cfc-select role=combobox>, <... role=option>): the options are named by
+    // their text, the control by its label, which is usually a neighbouring element (D-097).
+    if (/^(option|menuitemradio|menuitemcheckbox)$/.test(arole)) return clean(el.innerText || el.getAttribute('aria-label') || '').slice(0, 120);
+    if (/^(combobox|textbox|searchbox|spinbutton)$/.test(arole) && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') {
+      let t = el.getAttribute('aria-label') || '';
+      const lb = el.getAttribute('aria-labelledby');
+      if (!t && lb) t = lb.split(/\s+/).map((id) => { const n = document.getElementById(id); return n ? clean(n.innerText) : ''; }).join(' ');
+      return clean(t || labelAbove(el)).slice(0, 120);
+    }
     if (el.tagName === 'A' || el.tagName === 'BUTTON' || /^(button|link|tab|menuitem|switch)$/.test(el.getAttribute('role') || '')
         || el.tagName === 'SUMMARY') {
       return clean(el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || el.value || '').slice(0, 120);
@@ -146,7 +156,8 @@ OBSERVE_JS = r"""
     if (el.tagName === 'INPUT' && /^(submit|button|reset|image)$/.test(el.type)) return clean(el.value || el.getAttribute('aria-label') || '').slice(0, 120);
     return labelOf(el);
   };
-  const CLICKABLE = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=radio]';
+  const CLICKABLE = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=radio],'
+    + '[role=combobox],[role=option],[role=textbox],[role=searchbox],[role=menuitemradio],[role=menuitemcheckbox],[role=spinbutton]';
   const elements = Array.from(document.querySelectorAll(CLICKABLE))
     .filter(el => vis(el) && el.type !== 'hidden' && !secretEls.includes(el)).slice(0, 400).map(el => ({
       xpath: xp(el), tag: el.tagName.toLowerCase(), role: roleOf(el), name: nameOf(el),

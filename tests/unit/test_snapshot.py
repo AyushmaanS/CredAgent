@@ -90,3 +90,17 @@ def test_describe_change_reports_fields_checkboxes_and_secrets_appearing():
     out = describe_change(f0, f1)
     assert "field “Name” is now filled" in out and "“identify” is now checked" in out
     assert "credential-like values appeared" in out
+
+
+def test_custom_dropdown_roles_are_listed_and_the_choice_is_a_decide_d097():
+    from credagent.policy.engine import ProposedAction, evaluate
+
+    snap = build_snapshot(raw([
+        el("/c[1]", "combobox", "Application type", tag="cfc-select"),
+        el("/o[1]", "option", "Web application", tag="div"),
+    ]), Masker())
+    assert [(e.role, e.name) for e in snap.elements] == [("combobox", "Application type"), ("option", "Web application")]
+    pick = ProposedAction("click", "/x", "option 'Web application'")
+    assert evaluate(pick, snap.obs, [], ["127.0.0.1"], risk="reversible", risk_uncertain=False).decision == "DECIDE"
+    open_it = ProposedAction("click", "/x", "combobox 'Application type'")
+    assert evaluate(open_it, snap.obs, [], ["127.0.0.1"], risk="reversible", risk_uncertain=False).decision == "allow"

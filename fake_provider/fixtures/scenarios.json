@@ -135,6 +135,27 @@
         ]
       }
     },
+    "custom_dropdown": {
+      "description": "The 'Application type' control is a custom combobox (role=combobox, role=option items, label in a neighbouring element) and the name field only appears after a choice, as on Google's Create OAuth client page (D-097: the agent saw the label but no control, waited and reloaded 48 times). The agent must see and open it, and the choice of the item is the person's.",
+      "prd_acceptance": "(D-097)",
+      "config": {
+        "require_signin": false,
+        "terms": "none",
+        "app_type_choice": true,
+        "custom_dropdown": true
+      },
+      "llm": "live_or_stub",
+      "expect": {
+        "outcome": "succeeded",
+        "verification": "verified",
+        "handoffs": [
+          {
+            "kind": "DECIDE",
+            "why": "application type"
+          }
+        ]
+      }
+    },
     "shown_once_secret": {
       "description": "Secret is shown only on the first view after creation; a reload hides it. Capture must happen on first view by plain code.",
       "prd_acceptance": "shown-once secret",

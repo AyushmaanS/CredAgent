@@ -277,3 +277,19 @@ def test_a_project_made_first_is_not_the_app_and_the_agent_still_creates_the_app
     assert not [e for e in o.store.events(o.run.id) if e["type"] == "policy"
                 and e["data"].get("category") == "already_created"]
     assert_safe(audit)
+
+
+def test_a_custom_dropdown_is_seen_opened_and_its_item_is_the_persons_choice(tmp_path):
+    """Google run 6338: "Application type" is a custom combobox. The snapshot listed only the label, so the agent waited
+    and reloaded 48 times. Now the control is listed (named by its label), the agent opens it, and choosing an item is
+    the person's decision (D-097)."""
+    with FakeProvider(scenario("custom_dropdown")) as fp:
+        o = asyncio.run(run_phase(tmp_path, fp, new_run(fp, "combo"), llm=ScriptedLLM()))
+        apps = [vars(a).copy() for a in fp.state.apps.values()]
+        audit = fp.audit()
+    assert o.run.status == "succeeded", (o.run.status, o.run.status_reason)
+    assert o.io.handoffs == [("DECIDE", "other")], o.io.handoffs  # the item of the list: the person chooses
+    assert len(apps) == 1 and apps[0]["app_type"] in ("confidential", "public")  # the choice reached the provider
+    assert any("combobox" in s.action and "Application type" in s.action for s in o.run.steps), \
+        [s.action for s in o.run.steps]
+    assert_safe(audit)
