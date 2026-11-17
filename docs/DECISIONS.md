@@ -709,7 +709,22 @@ Tested: the Discord-like fake now shows the "Reset the client secret?" dialog. A
 - **Handoffs:** DO/DECIDE, cards, resume and per-provider consent stay; so does ATTEMPT-PROTOCOL v2.
 - **Only `verified` gives `succeeded`.**
 
+**Approved by the owner (2026-11-17), with the recommended answers to the scoping's five questions:** start with `anthropic/claude-sonnet-5.5` for the loop and measure; no screenshots for the model at first; keep the four code safeguards (docs-detour, repeat guard, form completion before a terms handoff, one app per run); research steps become plain guidance; the old code is removed from `main` after phase 5, tagged `pre-d078`. Phase 1 started.
+
 Scoping (what is reused, what is new, what is removed, risks, phases): `docs/design/llm-browser-agent.md`. The PRD, spec, sprint plan and README are updated when the rewrite lands, not before, so the documents stay true to the code at every commit. This entry is the record of the change until then.
+
+## D-079 D-078 phase 1 done: Playwright session, snapshot with refs, executor — Decided (implementation record)
+Built as **new modules beside the old ones**, so the 80 earlier real-Chrome tests stayed green until phase 5 removes the old code:
+- **`browser/pw_session.py`:** Playwright `connect_over_cdp` to the existing `ChromeProcess`. Reattach to a still-running Chrome from the saved pid and port; `detach()` leaves Chrome open; `close()` quits it gracefully. It also provides the browser-level **domain guard** (main-frame navigations outside the allowed domains are aborted; the person's handoffs lift it).
+- **`browser/snapshot.py`:** the agent's view of a page. The observer now also reports the interactive elements in document order, and the snapshot numbers them `e1…eN`. It shows URL, headings, dialogs, scroll position, element roles, names, states, options and links, and trimmed text. **Credential-like elements are never listed. Field values are never reported, only filled or empty.** Everything is masked. `describe_change(before, after)` says what an action did, including "no change".
+- **`browser/executor.py`:** click, type, select, navigate, scroll, inspect, back and wait. A ref is valid only for the snapshot that issued it and while the page is at the same address ("stale ref" otherwise). It refuses password and read-only fields, non-http(s) addresses and disabled controls. `inspect` on a field answers only whether it holds one of the run's approved values. A link that opens a new tab moves the executor to that tab. A closed browser raises `BrowserClosed`.
+
+**Findings:**
+- **Playwright works with the existing Chrome** (launched with Stagehand's flags): the persistent profile survives a graceful close (cookie still there after relaunch), and a detached Chrome can be re-attached with its page intact.
+- **After an aborted (blocked) navigation, Chrome moves the tab to an error page** that interrupts the next navigation. The executor now waits briefly and goes back, returns "blocked: that address is outside the allowed sites", and leaves the tab where it was.
+- **The Stagehand-specific Chrome flags** are not needed by Playwright. They stay until phase 5, then are trimmed.
+
+**Tests:** 5 unit tests (refs, secrets never in a snapshot, rendering and trimming, change description) and 6 in real Chrome (profile persistence, reattach, the domain guard, every action on the fake create form, the refusal rules, secrets in a snapshot or `inspect`, new-tab adoption and a closed browser). **86 of 86 real-Chrome tests pass.**
 
 ---
 

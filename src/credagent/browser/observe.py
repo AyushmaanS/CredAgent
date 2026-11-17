@@ -101,7 +101,44 @@ OBSERVE_JS = r"""
     .filter(vis).map(el => ({ xpath: xp(el), text: clean(el.innerText).slice(0, 400) }));
   const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role=heading]')).filter(vis)
     .map(el => clean(el.innerText).slice(0, 120)).filter(Boolean).slice(0, 60);
+  // Every interactive element in document order, for the agent's numbered snapshot (D-078). Credential-like
+  // elements are left out; values are never reported, only their length.
+  const roleOf = el => {
+    const r = (el.getAttribute('role') || '').toLowerCase();
+    if (r) return r;
+    const t = el.tagName;
+    if (t === 'A') return 'link';
+    if (t === 'BUTTON' || (t === 'INPUT' && /^(submit|button|reset|image)$/.test(el.type))) return 'button';
+    if (t === 'SELECT') return 'select';
+    if (t === 'TEXTAREA') return 'field';
+    if (t === 'INPUT') return el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'field';
+    if (t === 'SUMMARY') return 'button';
+    return 'button';
+  };
+  const nameOf = el => {
+    if (el.tagName === 'A' || el.tagName === 'BUTTON' || /^(button|link|tab|menuitem|switch)$/.test(el.getAttribute('role') || '')
+        || el.tagName === 'SUMMARY') {
+      return clean(el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || el.value || '').slice(0, 120);
+    }
+    if (el.tagName === 'INPUT' && /^(submit|button|reset|image)$/.test(el.type)) return clean(el.value || el.getAttribute('aria-label') || '').slice(0, 120);
+    return labelOf(el);
+  };
+  const CLICKABLE = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=radio]';
+  const elements = Array.from(document.querySelectorAll(CLICKABLE))
+    .filter(el => vis(el) && el.type !== 'hidden' && !secretEls.includes(el)).slice(0, 400).map(el => ({
+      xpath: xp(el), tag: el.tagName.toLowerCase(), role: roleOf(el), name: nameOf(el),
+      type: (el.type || '').toLowerCase(), href: el.tagName === 'A' ? el.href : '',
+      disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true',
+      checked: !!el.checked || el.getAttribute('aria-checked') === 'true',
+      readonly: !!el.readOnly, value_len: (el.value || '').length, section: sectionOf(el),
+      options: el.tagName === 'SELECT' ? Array.from(el.options).map(o => clean(o.text).slice(0, 80)).slice(0, 25) : [],
+      in_dialog: !!el.closest('[role=dialog],[aria-modal=true]'),
+      in_view: (() => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; })(),
+    }));
+  const scroll = { y: Math.round(scrollY), height: Math.round(document.documentElement.scrollHeight),
+                   view: Math.round(innerHeight) };
   return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners, headings,
+           elements, scroll,
            iframes: Array.from(document.querySelectorAll('iframe')).map(f => f.src || '').slice(0, 20),
            secret_xpaths: secretEls.map(xp).slice(0, 50) };
 })()
@@ -119,6 +156,8 @@ class Observation:
     forms: list[dict[str, Any]] = field(default_factory=list)
     banners: list[dict[str, Any]] = field(default_factory=list)
     headings: list[str] = field(default_factory=list)
+    elements: list[dict[str, Any]] = field(default_factory=list)  # interactive elements in document order
+    scroll: dict[str, int] = field(default_factory=dict)
     iframes: list[str] = field(default_factory=list)
     secret_xpaths: list[str] = field(default_factory=list)
     url_masked: str = ""           # safe for logs/models (query tokens may be credentials)
@@ -146,6 +185,7 @@ def from_raw(raw: dict[str, Any], masker: Masker) -> Observation:
         url=str(raw.get("url", "")), title=m(str(raw.get("title", ""))), text=m(str(raw.get("text", ""))),
         inputs=m(raw.get("inputs") or []), buttons=m(raw.get("buttons") or []), links=m(raw.get("links") or []),
         forms=m(raw.get("forms") or []), banners=m(raw.get("banners") or []), headings=m(raw.get("headings") or []),
+        elements=m(raw.get("elements") or []), scroll=dict(raw.get("scroll") or {}),
         iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []),
         url_masked=masker.mask_text(str(raw.get("url", ""))),
     )

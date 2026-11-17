@@ -1,6 +1,6 @@
 # Scoping: LLM agent loop over Playwright, run by the orchestrator (D-078)
 
-Status: **scoping for owner review** (2026-11-17). No code has been changed yet. Decision: `docs/DECISIONS.md` D-078.
+Status: **approved** (2026-11-17). Phase 1 done (D-079). Decision: `docs/DECISIONS.md` D-078.
 
 ## 1. Target architecture (owner)
 
@@ -136,7 +136,7 @@ Line counts are as of 2026-11-17.
 
 | # | Phase | Exit check |
 |---|---|---|
-| 1 | Playwright session over CDP, executor, snapshot with refs | Executor tests pass on the fake site; profile and reattach unchanged |
+| 1 | ✅ Playwright session over CDP, executor, snapshot with refs | Executor tests pass on the fake site; profile and reattach unchanged (D-079) |
 | 2 | Step contract, prompt builder, validation | Contract unit tests; prompt contains no secret (leak test) |
 | 3 | Agent loop with policy, hard checks, handoffs and budgets | Fake scenarios with the scripted LLM: success, terms, sign-in, CAPTCHA, blocked, cookie |
 | 4 | Capture, reset/reveal DECIDEs, verification, resume and reattach | Shown-once, hidden secret, reset with confirmation, resume, in-doubt click |

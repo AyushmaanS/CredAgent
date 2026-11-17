@@ -140,7 +140,9 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.x 👤 Owner approved the checkable-steps design (`docs/design/checkable-steps.md`, D-073) on 2026-11-17
 - [x] S6.z Checkable steps built (design steps 1–5, D-075): proofs by code, computed position, Jev request block, research and re-plan conditions; 79 real-Chrome tests pass
 - [ ] S6.w Real Discord run #5 with a freshly researched plan (conditions), owner present
-- [ ] S6.v 👤 **Waiting:** owner reviews the D-078 scoping (`docs/design/llm-browser-agent.md`): LLM agent loop over Playwright, Jev and Stagehand removed
+- [x] S6.v 👤 Owner approved the D-078 scoping on 2026-11-17 (phases 1–7 in `docs/design/llm-browser-agent.md` §6)
+- [x] S6.u Phase 1 (D-079): Playwright session over CDP, snapshot with refs, executor; 86/86 real-Chrome tests pass
+- [ ] S6.t Phase 2: step contract, prompt builder, validation (docs/design/llm-browser-agent.md §6) (`docs/design/llm-browser-agent.md`): LLM agent loop over Playwright, Jev and Stagehand removed
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 
