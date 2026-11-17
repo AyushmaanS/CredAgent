@@ -371,9 +371,13 @@ def fake_provider_plan(base_url: str) -> object:
     from pathlib import Path
 
     from credagent.state.models import Plan
+    from credagent.steps.validate import validate_steps
 
     raw = (Path(__file__).resolve().parents[2] / "fake_provider" / "fixtures" / "plan.json").read_text()
-    return Plan.model_validate(_json.loads(raw.replace("{base}", base_url))["plan"])
+    plan = Plan.model_validate(_json.loads(raw.replace("{base}", base_url))["plan"])
+    notes: list[str] = []
+    steps = validate_steps(plan.steps, plan.allowed_domains, notes)
+    return plan.model_copy(update={"steps": steps, "validation_notes": plan.validation_notes + notes})
 
 
 def verify_and_finish(o: Orchestrator, run: Run, deps: BrowserDeps, http: object, *, how: str) -> Run:

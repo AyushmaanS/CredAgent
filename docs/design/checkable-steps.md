@@ -1,6 +1,6 @@
 # Design: checkable steps (code-proven progress)
 
-Status: **approved by the owner** (2026-11-17), with the recommended answers to §13. Work starts with §11a.
+Status: **implemented** (2026-11-17), steps 0–5; see D-074 and D-075. Approved by the owner with the recommended answers to §13.
 Decision record: `docs/DECISIONS.md` D-073.
 
 ## 1. Why

@@ -486,12 +486,15 @@ class Handler(BaseHTTPRequestHandler):
         saved = "".join(f'<div><input type="text" name="redirect" aria-label="Select redirect URI" value="{esc(u)}">'
                         "</div>" for u in app.redirects)
         add = ("const d=document.getElementById('redirect-rows');const i=document.createElement('input');"
-               "i.type='text';i.name='redirect';d.appendChild(i);this.innerText='Add Another';")
+               "i.type='text';i.name='redirect';d.appendChild(i);this.innerText='Add Another';"
+               "document.getElementById('save-redirects').style.display='';")
         redirects = (f'<h3>Redirects</h3>'
                      f'<form method="post" action="/apps/{app.id}/redirects" id="redirects-form">'
-                     f'<div id="redirect-rows">{saved}</div>'
+                     f'<div id="redirect-rows" oninput="document.getElementById(\'save-redirects\').style.display=\'\'">'
+                     f'{saved}</div>'
                      f'<button type="button" onclick="{add}">Add Redirect</button>'
-                     '<button type="submit">Save Changes</button></form>')
+                     # As on Discord: "Save Changes" appears only once something is changed.
+                     '<button type="submit" id="save-redirects" style="display:none">Save Changes</button></form>')
         generator = ""
         if self.sc.crowded_oauth2:  # Discord's OAuth2 URL Generator: many scope checkboxes after the redirects
             names = ["identify", "email", "connections", "guilds", "guilds.join", "guilds.members.read", "gdm.join",

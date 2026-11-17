@@ -615,6 +615,42 @@ Work starts with step 0, the measurement.
 
 **Limits of the measurement:** 9 cases on fake pages, 3 repeats. Real portals may differ, so this is evidence for the design, not proof for every site.
 
+## D-075 Checkable steps implemented: progress proven by code — Decided (implements D-073)
+Built per `docs/design/checkable-steps.md`, steps 1–5:
+- **Checks (`src/credagent/steps/checks.py`):** the closed vocabulary.
+  - `at_page` binds `{app_id}` and never matches docs.
+  - `element_present` / `element_absent` match buttons, links, fields, headings and dialogs; the observer now records headings.
+  - `field_holds` is an **in-page equality test** returning only true/false, allowed only for approved non-secret values, and refused on secret, password or code fields.
+  - Also: `field_empty`, `checked`, `app_exists`, `credential_shown`.
+- **Step format:** `PlanStep` gains `where`, `target`, `value`, `done_when` and `inferred`; `Run` gains `proofs` and `bindings`. The validator (`steps/validate.py`):
+  - removes model conditions from the code-owned capture and live-test steps;
+  - keeps only allowed-domain pages in `where`;
+  - adds `app_exists` to the step that actually creates (the last non-conditional create step);
+  - marks agent steps without a checkable condition as *inferred*.
+  The converter (`steps/convert.py`) drops any invalid condition with a note.
+- **Loop (proof mode, when a plan has conditions):**
+  - after every observation, code evaluates the current step and later steps on their own page; global checks (`app_exists`, `credential_shown`) are evaluated from any page;
+  - proofs are recorded (`step_proven`); a proven later step implies the earlier ones (linear flows; recorded as *implied by*);
+  - **the position is the first step without proof**;
+  - Jev's "done" is a hint: if the checks disagree, the next request says which check is false (`jev_complete_rejected`), and a third rejection hands over to the navigator or the person;
+  - if a field the step names holds a *different* value, the person decides whether to replace it (D-071).
+- **Going to the step's page:** if the step happens on another page, code goes there first: a link on the page, then a link seen earlier in the run, then the allowed path itself (owner Q1).
+- **Jev request:** a structured block with the current step, done-when lines (✓/✗), a note when "done" was rejected, what is already done, the next two steps, and the last three actions with their effect. The step's named target is candidate `c0`.
+- **Research and re-planning:** both write `where_path`, `target_role` / `target_name`, `value` and `done_when` in the same JSON shape, through the same validator. Re-planning never rewrites proven steps.
+- **Legacy mode:** plans without conditions (all saved runs, including Discord #4) keep the earlier behaviour, and the cursor corrections and save heuristics run only there. In proof mode they are not used.
+
+**Tests:**
+- unit: every check, the validator, the converter, the position rules (implied proofs, `{app_id}` binding) and the Jev block;
+- research: conditions flow into the plan, and invalid ones are dropped;
+- real Chrome:
+  - the `discord_like` run is proven step by step (page, field held *and saved*, app exists);
+  - a lying "done" is rejected;
+  - legacy plans still run;
+  - all earlier regression tests (D-061 to D-072) pass in proof mode. **79 of 79 real-Chrome tests pass.**
+- **Online** (real Jev, Stagehand and LLM, fake provider): succeeded, every step proven by code checks, with **5 Jev decisions** where earlier runs took about 9–12.
+
+*Found while building:* an `{app_id}` learned from a step's done-when (rather than its `where`) was discarded. Fixed and unit-tested.
+
 ---
 
 ## Discrepancies between documents

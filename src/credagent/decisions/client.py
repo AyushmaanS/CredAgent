@@ -241,8 +241,12 @@ class RuleJev:
 
     def decide(self, state: PageState, log: DecisionLog) -> JevDecisions:
         log.jev_attempts += 1
-        goal = state.step_goal.lower()
-        expected = re.search(r"\(expected page: ([^)]+)\)", state.step_goal)
+        intent = state.step_goal
+        m = re.match(r"Current step \(\d+ of \d+\): (.*)", intent)
+        if m:  # checkable-steps request block (D-075): the stand-in reads only the step's intent
+            intent = m.group(1)
+        goal = intent.lower()
+        expected = re.search(r"\(expected page: ([^)]+)\)", intent)
         words = set(_WORD.findall(goal)) - STOP
         best, best_score = None, 0
         for c in state.candidates:

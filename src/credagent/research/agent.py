@@ -36,6 +36,8 @@ from credagent.research.schemas import (
 from credagent.research.sections import select as select_sections
 from credagent.research.tavily import TavilyError
 from credagent.state.models import Fact, Identification, Plan, PlanStep, Source
+from credagent.steps.convert import GUIDANCE, to_plan_step
+from credagent.steps.validate import validate_steps
 
 
 @dataclass(frozen=True)
@@ -353,7 +355,8 @@ class ResearchAgent:
                 "- console_url: the exact page where that credential is created, only if a source shows it; "
                 "console_url_source: the source url.\n"
                 "- setup_steps: what a person does in the console, in order, each with the source url it "
-                "comes from (null if inferred). Include sign-in and accepting terms as kind 'handoff'.\n"
+                "comes from (null if inferred). Include sign-in and accepting terms as kind 'handoff'. "
+                + GUIDANCE + "\n"
                 "- likely_blockers: account, verification, business, payment, terms, review, paid-plan or "
                 "partner requirements.\n"
                 "- oauth_metadata: a documented OAuth authorization-server metadata URL and whether open "
@@ -512,7 +515,7 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
         elif s.kind == "verify":
             verify_hints.append(text)
         elif len(steps) < max_steps:
-            steps.append(PlanStep(id=f"p{len(steps) + 1}", description=text, kind=s.kind))
+            steps.append(to_plan_step(f"p{len(steps) + 1}", text, s.kind, s.model_dump(), notes))
     if capture_hints or verify_hints:
         notes.append(f"{len(capture_hints) + len(verify_hints)} model-written capture/verify step(s) folded "
                      "into the code-owned capture and live-test steps (only the credential being created is "
@@ -569,6 +572,7 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
     if f.chosen_credential_kind == "unknown":
         unknowns.insert(0, "Which credential type this app issues was not established.")
     notes = list(dict.fromkeys(notes))  # dedupe, keep order
+    steps = validate_steps(steps, allowed, notes)
     return Plan(
         identification=Identification(canonical_name=triage.canonical_name, provider=triage.provider,
                                       confidence=triage.identification_confidence,

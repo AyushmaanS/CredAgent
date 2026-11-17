@@ -134,13 +134,20 @@ def new_run(fp, name, *, oauth_step=False):
         from credagent.state.models import PlanStep
 
         steps = list(plan.steps)
-        steps[5:5] = [
+        from credagent.steps.checks import Check, FieldRef, Target
+
+        oauth2 = Check(check="at_page", path="/apps/{app_id}/oauth2")
+        steps[5:5] = [  # as research will write them for Discord (design §4)
             PlanStep(id="p5b", kind="navigate", description="In the left sidebar of the application, open the OAuth2 "
-                     "page.", expected_page="/oauth2"),
+                     "page.", expected_page="/oauth2", target=Target(role="link", name="OAuth2"), done_when=[oauth2]),
             PlanStep(id="p5c", kind="fill", description="Under Redirects, click 'Add Redirect', enter the exact "
-                     "callback URL, and save."),
+                     "callback URL, and save.", where=[oauth2], value="redirect_uri",
+                     target=Target(role="button", name="Add Redirect"),
+                     done_when=[Check(check="field_holds", field=FieldRef(section="Redirects"), value="redirect_uri"),
+                                Check(check="element_absent", role="button", name="Save Changes")]),
             PlanStep(id="p5d", kind="click", description="On the OAuth2 page, click 'Reset Secret' to generate a new "
-                     "client secret."),
+                     "client secret.", where=[oauth2], target=Target(role="button", name="Reset Secret"),
+                     done_when=[Check(check="credential_shown", parts=["client_secret"])]),
         ]
         plan = plan.model_copy(update={"steps": steps})
     return Run(id=f"t5-{name}", app_input="Fakeprov", provider="Fakeprov (local)", plan=plan)
@@ -509,3 +516,41 @@ def test_redirect_with_a_stray_character_is_noticed_and_replaced_d071(tmp_path):
     assert any(k == "DECIDE" for k, _ in io.person.handoffs)  # asked before replacing
     assert saved == [CB], saved
     assert run.status == "succeeded", (run.status, run.status_reason)
+
+
+def test_legacy_plan_without_conditions_still_runs_d075(tmp_path):
+    """Runs saved before checkable steps (no conditions) keep today's behaviour."""
+    with FakeProvider(scenario("success")) as fp:
+        run = new_run(fp, "legacy")
+        run.plan = run.plan.model_copy(update={"steps": [s.model_copy(update={"where": [], "done_when": [],
+                                                                             "target": None, "inferred": False})
+                                                         for s in run.plan.steps]})
+        io = LateIO()
+        run, store = asyncio.run(_phase(tmp_path, fp, run, deps_for(tmp_path), io))
+    assert run.status == "succeeded" and run.proofs == {}
+    assert not any(e["type"] == "step_proven" for e in store.events(run.id))
+
+
+def test_jev_cannot_complete_a_step_without_proof_d075(tmp_path):
+    """Jev says "done" on the console for the step "open the form" (/apps/new): code's check disagrees."""
+
+    class LiesOnce(RuleJev):
+        lied = False
+
+        def decide(self, state, log):
+            d = super().decide(state, log)
+            if "Open the form" in state.step_goal and state.url.endswith("/console") and not LiesOnce.lied:
+                from credagent.decisions.jev import Decision
+                LiesOnce.lied = True
+                d.decisions["action_selection"] = Decision("action_selection", "step_complete", 0.99, False, {})
+            return d
+
+    with FakeProvider(scenario("success")) as fp:
+        deps = deps_for(tmp_path)
+        deps.jev = LiesOnce()
+        io = LateIO()
+        run, store = asyncio.run(_phase(tmp_path, fp, new_run(fp, "lie"), deps, io))
+    ev = store.events(run.id)
+    assert LiesOnce.lied and any(e["type"] == "jev_complete_rejected" for e in ev)
+    assert run.proofs["p2"]["by"] == "code checks" and "on page /apps/new" in run.proofs["p2"]["checks"][0]
+    assert run.status == "succeeded"

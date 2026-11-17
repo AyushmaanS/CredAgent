@@ -96,7 +96,9 @@ OBSERVE_JS = r"""
   const forms = Array.from(document.querySelectorAll('form')).map(f => ({ xpath: xp(f), text: clean(f.innerText).slice(0, 1500) }));
   const banners = Array.from(document.querySelectorAll('[role=dialog],[aria-modal=true],[id*=cookie],[class*=cookie],[id*=consent],[class*=consent]'))
     .filter(vis).map(el => ({ xpath: xp(el), text: clean(el.innerText).slice(0, 400) }));
-  return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners,
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role=heading]')).filter(vis)
+    .map(el => clean(el.innerText).slice(0, 120)).filter(Boolean).slice(0, 60);
+  return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners, headings,
            iframes: Array.from(document.querySelectorAll('iframe')).map(f => f.src || '').slice(0, 20),
            secret_xpaths: secretEls.map(xp).slice(0, 50) };
 })()
@@ -113,6 +115,7 @@ class Observation:
     links: list[dict[str, Any]] = field(default_factory=list)
     forms: list[dict[str, Any]] = field(default_factory=list)
     banners: list[dict[str, Any]] = field(default_factory=list)
+    headings: list[str] = field(default_factory=list)
     iframes: list[str] = field(default_factory=list)
     secret_xpaths: list[str] = field(default_factory=list)
     url_masked: str = ""           # safe for logs/models (query tokens may be credentials)
@@ -139,7 +142,7 @@ def from_raw(raw: dict[str, Any], masker: Masker) -> Observation:
     return Observation(
         url=str(raw.get("url", "")), title=m(str(raw.get("title", ""))), text=m(str(raw.get("text", ""))),
         inputs=m(raw.get("inputs") or []), buttons=m(raw.get("buttons") or []), links=m(raw.get("links") or []),
-        forms=m(raw.get("forms") or []), banners=m(raw.get("banners") or []),
+        forms=m(raw.get("forms") or []), banners=m(raw.get("banners") or []), headings=m(raw.get("headings") or []),
         iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []),
         url_masked=masker.mask_text(str(raw.get("url", ""))),
     )

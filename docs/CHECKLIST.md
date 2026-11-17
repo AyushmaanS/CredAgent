@@ -138,6 +138,8 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 
 ## Sprint 6 — Real-provider runs and demo coverage
 - [x] S6.x 👤 Owner approved the checkable-steps design (`docs/design/checkable-steps.md`, D-073) on 2026-11-17
+- [x] S6.z Checkable steps built (design steps 1–5, D-075): proofs by code, computed position, Jev request block, research and re-plan conditions; 79 real-Chrome tests pass
+- [ ] S6.w Real Discord run #5 with a freshly researched plan (conditions), owner present
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 

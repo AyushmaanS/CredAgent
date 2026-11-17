@@ -38,7 +38,10 @@ from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, nor
 from credagent.secrets.capture import CaptureResult, capture
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Handoff, Run, StepRecord
+from credagent.state.models import now as _now
 from credagent.state.store import RunStore
+from credagent.steps.checks import Context, evaluate_all, fields_for, match_at_page
+from credagent.steps.validate import has_checks
 
 DO_INSTRUCTIONS = {
     "sign_in": "Sign in (or create the account) in the CredAgent browser window. Complete any code or 2FA prompt.",
@@ -524,6 +527,168 @@ class BrowserLoop:
         self._cp(run, "plan_step_complete", {"cursor": run.plan_cursor, "by": "code: filled and saved"})
         return True
 
+    # ------------------------------------------------------------ checkable steps (D-075)
+    def _ctx(self, run: Run) -> Context:
+        return Context(values=self.values, allowed_domains=run.plan.allowed_domains, created=bool(run.created),
+                       app_name=self.values.app_name,
+                       credential_parts=set(run.credential.parts) if run.credential else set(),
+                       bindings=dict(run.bindings))
+
+    def _prove_by(self, run: Run, step: Any, obs: Observation, by: str, lines: list[str] | None = None) -> None:
+        run.proofs[step.id] = {"by": by, "checks": lines or [], "url": obs.url_masked, "at": _now()}
+        self._step(run, f"step proven: {step.description[:110]} ({by})", "agent", "done", lines or [])
+        self._cp(run, "step_proven", {"step": step.id, "by": by, "checks": lines or []})
+        self._jev_note = ""
+
+    def _position(self, run: Run) -> int:
+        for i, st in enumerate(run.plan.steps):
+            if st.id not in run.proofs:
+                return i
+        return len(run.plan.steps)
+
+    async def _prove(self, run: Run, page: Any, obs: Observation) -> Any:
+        """Evaluate the current step and every later step whose page is this one; record proofs; set the
+        position to the first step without proof (design §6). Returns "replace_pending" if a DECIDE is open."""
+        steps = run.plan.steps
+        cur_i = self._position(run)
+        self._last_results = []
+        if cur_i < len(steps) and steps[cur_i].where and not steps[cur_i].done_when:
+            self._last_results, _ = await evaluate_all(steps[cur_i].where, page, obs, self._ctx(run))
+        for i in range(cur_i, len(steps)):
+            st = steps[i]
+            if st.id in run.proofs or st.kind in ("capture", "verify") or not st.done_when:
+                continue
+            ctx = self._ctx(run)
+            where_res, bound = await evaluate_all(st.where, page, obs, ctx)
+            here = all(r.ok for r in where_res)
+            global_only = all(c.check in ("app_exists", "credential_shown") for c in st.done_when)
+            if i != cur_i and not ((st.where and here) or (global_only and not st.where)):
+                continue  # later steps are proven only on their own page, or by page-independent checks
+            if bound and run.created and "app_id" in bound and "app_id" not in run.bindings:
+                run.bindings["app_id"] = bound["app_id"]
+                ctx = self._ctx(run)
+                self._cp(run, "binding_learned", {"placeholder": "app_id"})
+            res, bound2 = await evaluate_all(st.done_when, page, obs, ctx)
+            if bound2 and run.created and "app_id" in bound2 and "app_id" not in run.bindings and all(
+                    r.ok for r in res if r.check.check == "at_page"):
+                run.bindings["app_id"] = bound2["app_id"]
+                self._cp(run, "binding_learned", {"placeholder": "app_id"})
+            if i == cur_i:
+                self._last_results = where_res + res
+            if here and all(r.ok for r in res):
+                self._prove_by(run, st, obs, "code checks", [r.line() for r in where_res + res])
+                # A linear setup flow: a later step proven means the steps before it are done (e.g. the app exists,
+                # so its form was filled). Recorded as implied, with the step that implies them.
+                for prev in steps[:i]:
+                    if prev.id not in run.proofs and prev.kind not in ("capture", "verify"):
+                        run.proofs[prev.id] = {"by": f"implied by step {st.id}", "checks": [], "url": obs.url_masked,
+                                               "at": _now()}
+                cur_i = self._position(run)
+                continue
+            if i == cur_i and here:
+                ans = await self._offer_replace(run, page, obs, st, res)
+                if ans == "pending":
+                    return "replace_pending"
+        run.plan_cursor = self._position(run)
+        return None
+
+    async def _offer_replace(self, run: Run, page: Any, obs: Observation, st: Any, res: list) -> str | None:
+        """A field the step names holds a different value (e.g. a trailing full stop): the person decides (D-071)."""
+        for r in res:
+            c = r.check
+            if c.check != "field_holds" or r.ok:
+                continue
+            want = self.values.get(c.value)
+            boxes = [b for b in fields_for(c.field, obs) if b.get("value_len")]
+            if not boxes or not want or boxes[0]["xpath"] in self._asked_replace:
+                continue
+            box = boxes[0]
+            self._asked_replace.add(box["xpath"])
+            label = box.get("label") or box.get("section") or c.value
+            answer = await self._handoff(
+                run, "DECIDE", "other",
+                f"The “{label[:50]}” box holds a different value ({box['value_len']} characters) than the approved "
+                f"one ({len(want)} characters: {want}). A stray character, such as a trailing full stop, makes it "
+                "not match.",
+                [f"“{label[:50]}”: {box['value_len']} characters"], obs,
+                instruction=f"Should the agent replace what is in “{label[:50]}” with {want}?",
+                options=[f"Yes, replace it with {want}", "No, leave it as it is"],
+                after="Replace it (if yes) and continue.",
+            )
+            if answer is None:
+                return "pending"
+            if answer.startswith("Yes"):
+                seq = self.store.begin_action(run, "fill", {"target": label[:60], "field": c.value,
+                                                            "why": "person: replace"})
+                await page.locator("xpath=" + box["xpath"]).fill(want)
+                await page.wait_for_timeout(self.budget.settle_ms)
+                self.store.end_action(run, seq, "done")
+                self._step(run, f"fill text field '{label[:60]}' = {want} (replacing a different value; your decision)",
+                           "agent", "done")
+            return "done"
+        return None
+
+    async def _go_where(self, run: Run, page: Any, obs: Observation, gates: list) -> bool:
+        """If the current step happens on another page, go there first (design §7): a link on this page whose
+        target matches, then a link seen earlier in this run, then the path itself (allowed domains only)."""
+        if run.plan_cursor >= len(run.plan.steps):
+            return False
+        st = run.plan.steps[run.plan_cursor]
+        if not st.where or all(r.ok for r in self._last_results[: len(st.where)]):
+            return False
+        tries = self._where_tries[st.id] = self._where_tries.get(st.id, 0) + 1
+        if tries > 2:
+            return False
+        ctx = self._ctx(run)
+        from urllib.parse import urljoin, urlparse
+
+        def path_ok(url: str) -> bool:
+            return all(match_at_page(c, url, ctx)[0] for c in st.where)
+
+        link = next((a for a in obs.links if a.get("href") and path_ok(a["href"])), None)
+        url = link["href"] if link else next((h for h in self._seen_links if path_ok(h)), None)
+        if url is None:
+            path = st.where[0].path or "/"
+            if "{" not in path.replace("{app_id}", "") and ("{app_id}" not in path or "app_id" in run.bindings):
+                url = urljoin(obs.url, path.replace("{app_id}", run.bindings.get("app_id", "")).replace("{base}", ""))
+                if not path_ok(url):
+                    url = None
+        if url is None or urlparse(url).scheme not in ("http", "https"):
+            return False
+        verdict = evaluate(ProposedAction(method="navigate", xpath=None, description=f"go to {urlparse(url).path}",
+                                          href=url), obs, gates, self._allowed, risk="read_only",
+                           risk_uncertain=False, already_created=bool(run.created))
+        if verdict.decision != "allow":
+            return False
+        seq = self.store.begin_action(run, "navigate", {"url": self.masker.mask_text(url),
+                                                        "why": f"step {st.id} happens on that page"})
+        await page.goto(url)
+        await page.wait_for_timeout(self.budget.settle_ms)
+        self.store.end_action(run, seq, "done")
+        self._step(run, f"went to the page where the step happens ({urlparse(self.masker.mask_text(url)).path})",
+                   "agent", "done")
+        self._pending_effect = ("navigate to the step's page", obs.fingerprint())
+        return True
+
+    def _jev_block(self, run: Run, intent: str) -> str:
+        """What Jev and the navigator see about progress (design §7); masked, under the 6,000-char limit."""
+        steps = run.plan.steps
+        i = run.plan_cursor
+        lines = [f"Current step ({i + 1} of {len(steps)}): {intent}"]
+        if self._last_results:
+            lines.append("Done when: " + "   ".join(r.line() for r in self._last_results))
+        if self._jev_note:
+            lines.append("Note: " + self._jev_note)
+        done = [st.description[:50] + " ✓" for st in steps[:i] if st.id in run.proofs]
+        if done:
+            lines.append("Already done: " + " · ".join(done[-4:]))
+        nxt = [st.description[:60] for st in steps[i + 1:i + 3]]
+        if nxt:
+            lines.append("Next: " + " · ".join(nxt))
+        if self._recent:
+            lines.append("Recent actions: " + " · ".join(self._recent))
+        return self.masker.mask_text("\n".join(lines))[:1500]
+
     def _mark_created(self, run: Run, what: str) -> None:
         """Record that this run created an app at the provider (D-063): never create a second one, and move
         the plan past its create step(s) so the agent does not go back to them."""
@@ -534,8 +699,8 @@ class BrowserLoop:
         # Later steps may mention creating too ("generate a new client secret"), and must not be skipped (D-064,
         # D-067). A capture elsewhere (e.g. on resume) records the app but leaves the plan where it is.
         cur = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
-        if cur is not None and cur.kind in ("click", "handoff", "navigate", "fill") and CREATE_RE.search(
-                cur.description):
+        if not getattr(self, "_proof", False) and cur is not None and cur.kind in (
+                "click", "handoff", "navigate", "fill") and CREATE_RE.search(cur.description):
             run.plan_cursor += 1
         if first:
             self._step(run, f"recorded: this run created {what[:160]}; it will not create another", "system",
@@ -655,6 +820,11 @@ class BrowserLoop:
 
             raw = [_replace(r, description=r.description + " (the app this run created)")
                    if r.method == "click" and self.values.app_name in r.description else r for r in raw]
+        step = self._run_ref.plan.steps[self._run_ref.plan_cursor] if getattr(self, "_run_ref", None) and \
+            self._run_ref.plan_cursor < len(self._run_ref.plan.steps) else None
+        if step is not None and step.target is not None:  # D-075: the step's named target is candidate c0
+            hit = [r for r in raw if step.target.matches(r.description)]
+            raw = hit[:1] + [r for r in raw if r not in hit[:1]]
         cands, mapping = normalise(raw, exclude=denied)
         return cands, mapping, source
 
@@ -686,6 +856,7 @@ class BrowserLoop:
         clicks: dict[tuple[str, str], int] = {}
         page_memory: dict = {}
         len_asked: set[str] = set()
+        self._asked_replace: set[str] = set()
         saved_on: set[str] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
@@ -704,10 +875,19 @@ class BrowserLoop:
                      {"steps": len(steps2), "cursor_from": run.plan_cursor, "cursor_to": cursor2})
             run.plan = run.plan.model_copy(update={"steps": steps2})
             run.plan_cursor = cursor2
+        self._proof = has_checks(run.plan.steps)  # checkable steps: code proves progress (D-075)
+        self._run_ref = run
+        self._last_results: list = []
+        self._recent: list[str] = []
+        self._pending_effect: tuple[str, str] | None = None
+        self._jev_note = ""
+        self._rejected: dict[str, int] = {}
+        self._where_tries: dict[str, int] = {}
+        self._seen_links: dict[str, str] = {}
         cur = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
         has_secret = bool(run.credential and set(run.credential.parts) & {"client_secret", "api_key", "token",
                                                                           "signing_secret"})
-        if run.created and not has_secret and cur is not None:
+        if not self._proof and run.created and not has_secret and cur is not None:
             # Starting (or resuming) with an app that exists but no secret captured: continue from the first step
             # after the create step. Steps that are already done are marked complete quickly; a second app can
             # never be created (D-063). This repairs a saved cursor that skipped console steps (D-064/D-065).
@@ -797,6 +977,8 @@ class BrowserLoop:
                 seen_cred.add(cred_key)  # look at each credential-like page state once, never re-capture it
                 res = await self._capture(run, page, obs)
                 if res.has_secret:
+                    if self._proof:  # record the remaining proofs (e.g. "this run's app exists") for the report
+                        await self._prove(run, page, obs)
                     return LoopResult("credential_page", "credential captured", n_obs, n_act)
                 if not revealed:
                     ctl = reveal_control(obs)
@@ -830,6 +1012,18 @@ class BrowserLoop:
                 continue
 
             fp = obs.fingerprint()
+            if self._pending_effect is not None:  # what the last action changed (shown to Jev, D-075)
+                what, before = self._pending_effect
+                self._recent = (self._recent + [f"{what} → {'the page changed' if fp != before else 'no change'}"])[-3:]
+                self._pending_effect = None
+            if self._proof:
+                self._seen_links.update({a["href"]: a["text"] for a in obs.links if a.get("href")})
+                results = await self._prove(run, page, obs)
+                if results == "replace_pending":
+                    return LoopResult("handoff_pending", "waiting for your answer about a field's value", n_obs, n_act)
+                if await self._go_where(run, page, obs, gates):
+                    n_act += 1
+                    continue
             no_progress = no_progress + 1 if fp == last_fp else 0
             last_fp = fp
             if no_progress >= self.budget.max_no_progress:
@@ -841,7 +1035,8 @@ class BrowserLoop:
             # D-071: a "type this value" step is checked by code first. If the box for the step's approved value
             # already holds a value of that length, the step is done (save first if it says so); if it holds
             # something else, the person decides whether to replace it. No model involved.
-            done_by_code = await self._fill_step_by_code(run, page, obs, gates, saved_on, len_asked)
+            done_by_code = False if self._proof else await self._fill_step_by_code(run, page, obs, gates, saved_on,
+                                                                                    len_asked)
             if done_by_code == "pending":
                 return LoopResult("handoff_pending", "waiting for your answer about a field's value", n_obs, n_act)
             if done_by_code:
@@ -854,7 +1049,7 @@ class BrowserLoop:
             filled = [i["label"][:60] for i in obs.inputs if i["value_len"] and i["type"] not in ("checkbox", "radio")]
             status = ("Form status: already filled: " + "; ".join(filled) + "\n") if filled else ""
             state = PageState(
-                step_goal=goal,
+                step_goal=self._jev_block(run, goal) if self._proof else goal,
                 url=obs.url_masked,
                 title=obs.title,
                 visible_text=(status + obs.text)[:6000],
@@ -927,6 +1122,21 @@ class BrowserLoop:
                                        instruction=instruction) is None:
                     return LoopResult("handoff_pending", why, n_obs, n_act)
                 continue
+            if act == "step_complete" and self._proof:
+                cur_step = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+                if cur_step is not None and cur_step.done_when:
+                    # D-075: Jev's "done" is a hint. Code's checks decide; say which one is not true yet.
+                    failing = [r.line() for r in self._last_results if not r.ok]
+                    n_rej = self._rejected[cur_step.id] = self._rejected.get(cur_step.id, 0) + 1
+                    self._jev_note = "You said this step is done, but these checks are not true yet: " + "; ".join(
+                        failing)
+                    self._cp(run, "jev_complete_rejected", {"step": cur_step.id, "failing": failing, "n": n_rej})
+                    if n_rej <= 2:
+                        continue
+                    act = "stuck"  # twice rejected: let the navigator or the person help
+                elif cur_step is not None:
+                    self._prove_by(run, cur_step, obs, "Jev (no checkable condition; inferred)")
+                    continue
             if act == "step_complete" and await self._save_if_step_says_so(run, page, obs, gates, goal, saved_on):
                 n_act += 1
                 continue
@@ -977,9 +1187,15 @@ class BrowserLoop:
 
             # 5. policy (code) — the model's choice is an input, never a permission
             cand = mapping[el]
-            if cand.method in ("fill", "select") and cand.filled and await self._save_if_step_says_so(
-                    run, page, obs, gates, goal, saved_on):
+            if not self._proof and cand.method in ("fill", "select") and cand.filled and \
+                    await self._save_if_step_says_so(run, page, obs, gates, goal, saved_on):
                 n_act += 1
+                continue
+            if cand.method in ("fill", "select") and cand.filled and self._proof:
+                # D-075: the field already holds something; re-filling is a no-op. The checks decide whether the
+                # step is done; offer Jev the rest of the page instead.
+                denied.add(cand.xpath)
+                self._jev_note = f"{cand.description} already holds a value; the step's checks show what is missing."
                 continue
             if cand.method in ("fill", "select") and cand.filled:
                 # Code rule (D-044): re-filling a field that already holds a value is a no-op, so the step is done.
@@ -1146,8 +1362,10 @@ class BrowserLoop:
                 continue
             self.store.end_action(run, seq, "done")
             n_act += 1
+            self._pending_effect = (f"{cand.method} {cand.description[:60]}", fp)
             btn_text = next((b.get("text") or "" for b in obs.buttons if b["xpath"] == cand.xpath), "")
-            if cand.method == "click" and re.fullmatch(r"save( changes)?", btn_text.strip(), re.I) and re.search(
+            if not self._proof and cand.method == "click" and re.fullmatch(r"save( changes)?", btn_text.strip(),
+                                                                           re.I) and re.search(
                     r"\bsave\b", goal, re.I):
                 saved_on.add(obs.url)
                 self._step(run, f"click {cand.description}", "agent", "done")

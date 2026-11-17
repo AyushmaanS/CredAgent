@@ -523,3 +523,29 @@ def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
     secret = SecretFileStore(tmp_path / "secrets").get(run.credential.parts["client_secret"].store_ref)
     disk = "".join(f.read_text() for f in (tmp_path / "runs" / "r-dcr").iterdir())
     assert secret not in disk  # never in run state, events or reports
+
+
+def test_research_conditions_become_checkable_steps_d075(tmp_path):
+    """Design §8: research writes where / target / done_when; code validates them into the plan."""
+    N = {"path": None, "role": None, "name": None, "field_label": None, "field_section": None, "value": None,
+         "parts": None}
+    f = findings(setup_steps=[
+        {"description": "Sign in", "kind": "handoff", "source_url": DOCS},
+        {"description": "Open the OAuth2 page", "kind": "navigate", "source_url": DOCS,
+         "where_path": None, "target_role": "link", "target_name": "OAuth2", "value": None,
+         "done_when": [{**N, "check": "at_page", "path": "/developers/applications/{app_id}/oauth2"}]},
+        {"description": "Add the callback under Redirects and save", "kind": "fill", "source_url": DOCS,
+         "where_path": "/developers/applications/{app_id}/oauth2", "target_role": "button",
+         "target_name": "Add Redirect", "value": "redirect_uri",
+         "done_when": [{**N, "check": "field_holds", "field_section": "Redirects", "value": "redirect_uri"},
+                       {**N, "check": "element_absent", "role": "button", "name": "Save Changes"},
+                       {**N, "check": "run_javascript"}]},  # not in the vocabulary: dropped with a note
+        {"description": "Open the general settings", "kind": "navigate", "source_url": None}])
+    o, _ = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
+    p = o.get("Acme").plan
+    oauth, redirect, settings = p.steps[1], p.steps[2], p.steps[3]
+    assert oauth.target.name == "OAuth2" and oauth.done_when[0].check == "at_page"
+    assert [c.check for c in redirect.done_when] == ["field_holds", "element_absent"]
+    assert redirect.where[0].path.endswith("/oauth2") and redirect.value == "redirect_uri"
+    assert settings.inferred  # no checkable condition: Jev's judgement, marked in the report
+    assert any("invalid and dropped" in n for n in p.validation_notes)

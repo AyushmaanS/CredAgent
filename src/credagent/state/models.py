@@ -19,6 +19,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from credagent.steps.checks import Check, Target
+
 MAX_REPLANS = 2
 
 RunStatus = Literal[
@@ -88,9 +90,15 @@ class Fact(Strict):
 
 class PlanStep(Strict):
     id: str
-    description: str
+    description: str  # the step's intent, shown to Jev and to the person
     kind: Literal["navigate", "fill", "click", "capture", "verify", "handoff", "check"]
     expected_page: str | None = None
+    # Checkable steps (design docs/design/checkable-steps.md): code proves completion from these.
+    where: list[Check] = Field(default_factory=list)  # which page the step happens on (empty = any)
+    target: Target | None = None  # the control the step starts with
+    value: str | None = None  # fill steps: which code-approved value
+    done_when: list[Check] = Field(default_factory=list)  # all must hold for the step to be done
+    inferred: bool = False  # an agent step research could not make checkable: Jev's judgement decides
 
 
 class Source(Strict):
@@ -272,6 +280,8 @@ class Run(Strict):
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run
     created: list[str] = Field(default_factory=list)  # what this run created at the provider (cleanup; D-063)
+    proofs: dict[str, dict] = Field(default_factory=dict)  # step id -> {"checks", "url", "at"}: why it is done
+    bindings: dict[str, str] = Field(default_factory=dict)  # placeholders bound from the live page ({app_id})
     checkpoint_seq: int = 0
 
     @model_validator(mode="after")
