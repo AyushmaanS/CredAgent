@@ -71,10 +71,16 @@ def rank_for_goal(cands: list, goal: str) -> list:
     20 (D-066). On Discord's app page nine fields and eleven buttons came before the sidebar's "OAuth2" link,
     so the one element the step named was never offered to Jev. Stable: equal scores keep page order."""
     words = set(_GOAL_WORD.findall(goal.lower())) - _GOAL_STOP
+    # Names quoted in the step ('c-d-2', “Reset Secret”) are matched whole: word splitting loses them (D-072).
+    quoted = {q.strip().lower() for q in re.findall(r"['‘“\"]([^'’”\"]{2,60})['’”\"]", goal) if q.strip()}
+    about_app = bool(re.search(r"\bapp(lication)?s?\b", goal, re.I))
 
     def score(c) -> int:
         desc = c.description.lower()
         hit = sum(1 for w in words if w in desc)
+        hit += 5 * sum(1 for q in quoted if q in desc)
+        if about_app and "(the app this run created)" in desc:
+            hit += 4
         return -(hit * 2 + (1 if c.method == "click" and hit else 0))
 
     return sorted(cands, key=score)

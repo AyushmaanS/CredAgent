@@ -568,6 +568,11 @@ Values are still never read; only their lengths are compared. Tested: the Discor
 
 *Also noted:* commands and URLs in my messages to the owner sit at the end of sentences. I now put them on their own line, with no punctuation after them.
 
+## D-072 Ranking matches names quoted in the step, and puts the run's own app first — Decided
+*Found in real run `20261116-190534-discord-a839`* (the owner continued it in a tab started before D-071): a re-planned step read "Click the 'c-d-2' application in the My Applications list". Splitting the step into words drops a name like `c-d-2`, so the app link scored nothing and fell outside the 20 candidates offered. The navigator then said, correctly, that none of the candidates was the app.
+
+**Fix:** `rank_for_goal` scores a name quoted in the step ('…', “…”) as a whole-string match (strong). When the step is about an app, the candidate marked "(the app this run created)" scores high too. A unit test reproduces the list page.
+
 ---
 
 ## Discrepancies between documents

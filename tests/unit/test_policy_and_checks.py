@@ -389,3 +389,14 @@ def test_docs_pages_are_detours_d070():
     assert is_docs_page("https://docs.discord.com/developers/platform/oauth2-and-permissions")
     assert is_docs_page("http://127.0.0.1:1/docs")
     assert not is_docs_page("https://discord.com/developers/applications/123/oauth2")
+
+
+def test_rank_for_goal_matches_quoted_names_and_the_runs_app_d072():
+    from credagent.browser.candidates import RawCandidate as R
+    from credagent.browser.loop import rank_for_goal
+
+    cands = ([R(f"/f{i}", "fill", f"text field 'Field {i}'") for i in range(15)]
+             + [R(f"/l{i}", "click", f"link 'Applications {i}'") for i in range(6)]
+             + [R("/app", "click", "link 'c-d-2 credagent-demo-20261116' (the app this run created)")])
+    ranked = rank_for_goal(cands, "Click the 'c-d-2' application in the My Applications list to open it.")
+    assert ranked[0].xpath == "/app"
