@@ -16,7 +16,7 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 
 | Works | Not built yet |
 |---|---|
-| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan; for a provider whose terms were checked, asks for your consent and then runs the browser agent | A real-provider run on the new agent loop with a verified credential (Sprint 6, in progress) |
+| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan; for a provider whose terms were checked, asks for your consent and then runs the browser agent | More real providers, API keys and the authorization-code flow (Sprint 6, in progress) |
 | Browser agent on the fake provider: an LLM chooses each step over Playwright, code policy gates every action, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) (D-078) | |
 | Unusable model answers and "service unavailable" proved on the fake provider (`--fake-provider llm_failure` / `service_unavailable`) | |
 | OAuth metadata check + dynamic client registration shortcut (fake provider) | Provider-specific live tests (API keys, authorization-code flow) arrive with the real providers (Sprint 6) |
@@ -25,7 +25,7 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 | `credagent resume` (re-checks the page, never repeats an unconfirmed click), `verify`, `secret` (masked; reveal on purpose) | |
 | `credagent status`, `runs`, `report`; crash-safe state; secrets masked before any model call | |
 
-No credential has been obtained and live-tested against a real provider on the new agent loop yet.
+One real credential (Discord, run #7) has been captured and live-tested on the new agent loop; nothing else has.
 
 ## Quick start
 
@@ -172,7 +172,7 @@ A credential is **working only if its live test passes** (`verified`). Only `ver
 
 ## Limitations
 
-- **No credential has been obtained from a real provider on the new loop yet.** Earlier real runs (Spotify stopped; Discord runs #2–#5 on the old Stagehand/Jev loop) did not end in a verified credential; they are listed honestly in `RESULTS.md`.
+- **One real provider so far.** Discord run #7 on the new loop ended `succeeded` with a verified credential (after fixes on the real page, D-086 to D-088); earlier runs (Spotify stopped; Discord #2–#6) did not, and all are in `RESULTS.md`. Other providers, API keys and the authorization-code flow are untested.
 - Tested on macOS with Google Chrome only.
 - The agent's behaviour on real consoles beyond the fake provider is unmeasured; the model is not deterministic, so runs vary (for example in which optional fields it fills).
 - It never deletes the apps it creates; clean them up in the provider's console.

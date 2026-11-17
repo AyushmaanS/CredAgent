@@ -213,6 +213,32 @@ def test_researched_token_endpoint_used_when_no_metadata(tmp_path):
     assert verify_run(run, st, Masker(), client(200, {})).label == "untested"
 
 
+def test_scope_in_form_body_wording_is_found(tmp_path):
+    """Discord run #7 (D-088): the plan said "...grant_type=client_credentials&scope=identify (the docs example uses
+    'identify connections')". The scope was not found, none was sent, and Discord answered invalid_scope."""
+    from credagent.verification.verify import researched_scope
+
+    run, st = run_with(tmp_path)
+    vp = ("Client-credentials token request using HTTP Basic auth with client_id:client_secret and form body "
+          "grant_type=client_credentials&scope=identify (the docs example uses 'identify connections'). A successful "
+          "response returns an access token. — endpoint https://discord.com/api/v10/oauth2/token")
+    run.plan = run.plan.model_copy(update={"verification_procedure": vp})
+    assert researched_scope(run) == "identify"
+    for text, want in (("body scope=identify+connections", "identify connections"),
+                       ("body scope=identify%20email", "identify email"), ("no scope named here", None),
+                       ("scope=identify [inferred]", None)):
+        run.plan = run.plan.model_copy(update={"verification_procedure": text})
+        assert researched_scope(run) == want, text
+    run.plan = run.plan.model_copy(update={"verification_procedure": vp})
+    seen = {}
+
+    def handler(request):
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"access_token": "tok_" + "Q1" * 20})
+    assert verify_run(run, st, Masker(), httpx.Client(transport=httpx.MockTransport(handler))).label == "verified"
+    assert "scope=identify" in seen["body"]
+
+
 def test_scope_from_sourced_procedure_is_sent(tmp_path):
     from credagent.verification.verify import researched_scope
 

@@ -56,6 +56,8 @@ def researched_token_endpoint(run: Run) -> str | None:
 
 
 _SCOPE_RE = re.compile(r"\bscope[s]?\s*[(:]?\s*['\"`]([A-Za-z0-9_.:\- ]{1,80})['\"`]", re.I)
+# The form-body wording: "scope=identify" or "scope=identify+connections" / "identify%20connections" (D-088).
+_SCOPE_FORM_RE = re.compile(r"\bscope=([A-Za-z0-9_.:\-+%]{1,80})", re.I)
 
 
 def researched_scope(run: Run) -> str | None:
@@ -64,7 +66,10 @@ def researched_scope(run: Run) -> str | None:
     if "[inferred]" in vp:
         return None
     m = _SCOPE_RE.search(vp)
-    return m.group(1).strip() if m else None
+    if m:
+        return m.group(1).strip()
+    m = _SCOPE_FORM_RE.search(vp)
+    return m.group(1).replace("%20", " ").replace("+", " ").strip() if m else None
 
 
 def verify_run(run: Run, store: SecretFileStore, masker: Masker, http: httpx.Client) -> VerificationResult:

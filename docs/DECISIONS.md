@@ -935,6 +935,21 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-088 Discord run #7: scope wording; the first real credential, captured and verified — Decided (owner: "make that fix and re-run the verification")
+**What happened.** After the D-087 fix, `credagent resume` re-attached to the open Chrome window, the agent said "done", and capture read the Client ID and Client Secret (named by the label above each) into `~/.credagent/secrets/<run>/` (folder 0700, files 0600) with no second reset. The live test then returned HTTP 400 `invalid_scope` and the run ended `partial` (`inconclusive`, honestly labelled).
+
+**Cause.** Discord needs a scope on a client-credentials request. This run's research wrote the test as `…&scope=identify (the docs example uses 'identify connections')`. The scope reader only understood quoted wording (`scope 'identify'`), found none, and sent the request without a scope. Checked offline from the saved plan: the parser returned `None`.
+
+**Fix.** `verification/verify.py` also reads the form-body wording `scope=identify`, `scope=identify+connections` and `scope=identify%20email` (inferred text is still ignored). New unit test with this run's exact sentence, including that the request carries `scope=identify`.
+
+**Result.** `credagent verify 20261117-122019-discord-eb41` made one token request to Discord with the stored credential: **HTTP 200, an access token was issued** (never stored). **The run is `succeeded` / `verified`: the first real-provider credential captured and live-tested by CredAgent on the D-078 loop.** The access token was registered with the masker and dropped.
+
+**Leak check after the run.** The 32-character client secret appears in no run file and nowhere in the repo or the fake-site state. The 19-digit Client ID appears in the run files because it is part of page URLs (IDs are not registered as secrets, D-062).
+
+**Honest limits.** One provider, one app, one run on the third attempt of this loop (#6 and #7's first half failed for reasons now fixed); a test account was advised and the owner remains responsible for it. The live test proves the client credentials authenticate, not that they work for a specific integration. The demo app `credagent-demo-20261117` still exists at Discord (the agent never deletes); the owner removes it. PRD acceptance still needs more real apps, including a blocked one and a partial or waiting one.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
