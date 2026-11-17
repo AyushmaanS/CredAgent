@@ -135,7 +135,8 @@ keeps working and shares the same saved runs. Details and limits: `docs/design/w
 - A real provider still needs a recorded terms check and your consent in the page, every session. Today only Discord
   and Spotify have a recorded terms check; for any other app the page researches and plans, then says the terms have
   not been checked yet and stops.
-- The "Advanced" section runs the local test site (Fakeprov) with the offline stand-in, which needs no keys or account.
+- The page has one input and one button. A run on the local test site (Fakeprov) with the offline stand-in, which needs no keys or account, is started through the API (`POST /api/runs` with `{"app": "x", "mode": "fake", "scenario": "success"}`) or the CLI, and can then be followed in the page.
+- Reopening `/` in a new tab does not list earlier runs. Reopen a run by its address (`/#/run/<id>`), or with `credagent runs` and `credagent resume <id>`.
 
 ## Fake provider (Fakeprov)
 

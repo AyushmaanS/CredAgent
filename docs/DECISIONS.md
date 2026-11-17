@@ -971,6 +971,17 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-090 Web UI simplified: Advanced and Recent removed from the landing page — Decided (owner, after a real Discord run through the page went well)
+**Change.** The landing page is now one application-name input, one button and the suggestion chips. The collapsed Advanced section (test-site mode, scenario, offline stand-in) and the Recent list are gone from the page, along with their state, styles and the unused `listRuns` call.
+
+**What stays.** The API still starts local test-site runs (`POST /api/runs` with `mode: "fake"`) and lists runs, so scripts, the CLI and the tests are unaffected. A run is still recovered after a refresh because its id is in the address (`#/run/<id>`).
+
+**Trade-off, stated plainly.** Without Recent, a new tab at `/` shows an empty landing page even when a run is waiting for you; reopen it from its address or with `credagent runs` / `credagent resume`. If that proves annoying, a single "a run is waiting for you" line would be a smaller fix than the old list.
+
+**Tests.** The page tests now start test-site runs through the API and follow them in the page, and the landing test asserts that no `details`, `select` or Recent list exists and that starting is refused up front, with the reason shown, when the research keys are missing.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

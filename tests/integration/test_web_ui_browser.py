@@ -41,13 +41,13 @@ async def open_page(p, ui, *, width=1000, height=900):
     return browser, page, logs, urls
 
 
-async def start_test_run(page, scenario, name="Test app"):
+async def start_test_run(page, ui, scenario, name="Test app"):
+    """The page starts real applications only; a test run on the local test site is started through the API (as a
+    script or the CLI would) and then followed in the page by its link."""
     await expect(page.get_by_role("heading", name="Get access to any app.")).to_be_visible()
-    await page.get_by_label("Application name").fill(name)
-    await page.get_by_text("Advanced").click()
-    await page.select_option("#mode", "fake")
-    await page.select_option("#scenario", scenario)
-    await page.get_by_role("button", name="Get credentials").click()
+    run_id = ui.start(scenario)
+    await page.evaluate(f"location.hash = '#/run/{run_id}'")
+    return run_id
 
 
 def test_the_whole_journey_in_the_page(ui):
@@ -59,7 +59,12 @@ def test_the_whole_journey_in_the_page(ui):
                 await expect(page.get_by_role("button", name="GitHub")).to_be_visible()  # suggestions fill the input only
                 await page.get_by_role("button", name="Linear").click()
                 assert await page.input_value("#app-name") == "Linear"
-                await start_test_run(page, "terms_checkbox")
+                # one name and one button: nothing else on the landing page
+                assert await page.locator("details, select, [aria-label='Recent runs']").count() == 0
+                # no research keys in the test environment, so starting is refused up front and the page says why
+                await expect(page.get_by_role("button", name="Get credentials")).to_be_disabled()
+                await expect(page.get_by_text("add FASTROUTER_API_KEY and TAVILY_API_KEY")).to_be_visible()
+                await start_test_run(page, ui, "terms_checkbox")
 
                 # Running → needs attention, with a plain explanation and a way to continue
                 await expect(page.locator(".attn-title")).to_contain_text("Your attention is needed", timeout=90_000)
@@ -109,7 +114,7 @@ def test_a_choice_is_made_with_a_radio_and_a_confirm_button(ui):
         async with async_playwright() as p:
             browser, page, _logs, _urls = await open_page(p, ui)
             try:
-                await start_test_run(page, "decide_app_type_and_scopes")
+                await start_test_run(page, ui, "decide_app_type_and_scopes")
                 await expect(page.get_by_text("Your decision")).to_be_visible(timeout=90_000)
                 confirm = page.get_by_role("button", name="Confirm choice")
                 await expect(confirm).to_be_disabled()
@@ -127,7 +132,7 @@ def test_save_and_stop_then_resume_from_the_page(ui):
         async with async_playwright() as p:
             browser, page, _logs, _urls = await open_page(p, ui)
             try:
-                await start_test_run(page, "terms_checkbox")
+                await start_test_run(page, ui, "terms_checkbox")
                 await expect(page.locator(".attn-title")).to_contain_text("Your attention is needed", timeout=90_000)
                 run_id = re.search(r"#/run/([\w.-]+)", page.url).group(1)
                 await page.get_by_role("button", name="Save and stop").click()
@@ -148,7 +153,7 @@ def test_a_failure_says_what_happened_and_offers_resume(ui):
         async with async_playwright() as p:
             browser, page, _logs, _urls = await open_page(p, ui)
             try:
-                await start_test_run(page, "service_unavailable")
+                await start_test_run(page, ui, "service_unavailable")
                 await expect(page.get_by_role("heading", name="The run stopped, and it can continue")).to_be_visible(timeout=90_000)
                 await expect(page.get_by_text("Recoverable")).to_be_visible()
                 await expect(page.get_by_role("button", name="Resume this run")).to_be_enabled()
@@ -164,7 +169,7 @@ def test_the_page_works_on_a_phone_sized_screen(ui):
             browser, page, _logs, _urls = await open_page(p, ui, width=375, height=812)
             try:
                 assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-                await start_test_run(page, "success")
+                await start_test_run(page, ui, "success")
                 await expect(page.get_by_role("heading", name="Credentials verified")).to_be_visible(timeout=90_000)
                 assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
                 for name in ("Reveal Client secret", "Copy Client secret"):

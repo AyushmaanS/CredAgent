@@ -90,7 +90,7 @@ Rows that are not reached stay "pending". The current one is "in progress", or "
 
 ## 6. Visual design
 
-Light neutral background, one centered column at most 720 px, system font stack, one accent colour, 1 px borders, 8 px radius, restrained shadows, no sidebars. Header: key-shaped logo, "Access Agent", a quiet info icon. Landing: headline "Get access to any app.", one sentence, a single input (any text), "Get credentials", suggestions (GitHub, Linear, Google Cloud) that only fill the input. A collapsed "Advanced" section offers the local test site (fake provider) with its scenarios, because the backend supports it. Status icons: green check, subtle spinner, grey dot, amber, red; every status also has text for accessibility. Responsive down to 360 px.
+Light neutral background, one centered column at most 720 px, system font stack, one accent colour, 1 px borders, 8 px radius, restrained shadows, no sidebars. Header: key-shaped logo, "Access Agent", a quiet info icon. Landing: headline "Get access to any app.", one sentence, a single input (any text), "Get credentials", suggestions (GitHub, Linear, Google Cloud) that only fill the input. Status icons: green check, subtle spinner, grey dot, amber, red; every status also has text for accessibility. Responsive down to 360 px.
 
 ## 7. Tests
 
@@ -118,4 +118,5 @@ Unit tests for `views.py` (every status/phase/handoff combination, and that no s
 - **Terms checks:** only Discord and Spotify have a recorded terms check (`consent/terms.py`). For the suggestion chips (GitHub, Linear, Google Cloud) and any other app the page researches and plans and then stops with "This provider's terms haven't been checked yet" and no browser is opened, exactly as the CLI does.
 - **Masked display** is the backend's (first four characters and a length for a secret), shown as is.
 - **Not covered by tests:** a real-provider run through the page (consent screen included: it is checked visually and by the API tests with a stubbed view, not against a live provider), Safari and Firefox.
+- **Advanced and Recent were removed (owner, 2026-11-17, after a real Discord run through the page).** The landing page is one input and one button. Local test-site runs are started through the API, which still supports them. A new tab at `/` no longer lists earlier runs; a run is reopened by its address (`#/run/<id>`) or from the CLI. `GET /api/runs` stays for scripts.
 

@@ -13,9 +13,9 @@ renderHeader(document.getElementById("header"));
 
 // UI state. It holds no credential: secret values live only inside secret-field.js while revealed.
 const S = {
-  config: null, recent: [], runId: null, view: null, error: null, notice: null, busy: false, unauthorized: false,
+  config: null, runId: null, view: null, error: null, notice: null, busy: false, unauthorized: false,
   choice: null, focusKey: null, lastKey: "",
-  draft: { app: "", mode: "real", scenario: "success", offline: true, account: "", advancedOpen: false },
+  draft: { app: "", account: "" },
   logState: { open: false, lines: [], after: 0 },
 };
 let pollTimer = null;
@@ -44,7 +44,6 @@ async function route() {
   S.runId = id;
   S.error = S.unauthorized ? S.error : null;
   if (id) { render(true); poll(id); return; }
-  try { S.recent = (await api.listRuns()).runs; } catch (e) { fail(e); }
   render(true);
 }
 
@@ -74,8 +73,7 @@ async function act(fn) {
 async function start() {
   const d = S.draft;
   await act(async () => {
-    const body = d.mode === "fake" ? { app: d.app.trim(), mode: "fake", scenario: d.scenario || "success", offline: d.offline } : { app: d.app.trim() };
-    const { run_id: id } = await api.startRun(body);
+    const { run_id: id } = await api.startRun({ app: d.app.trim() });
     S.error = null;
     location.hash = `#/run/${encodeURIComponent(id)}`;
   });
@@ -84,7 +82,7 @@ async function start() {
 function home() { location.hash = "#/"; }
 
 function render(force = false) {
-  const key = JSON.stringify([S.view, S.error, S.notice, S.busy, S.choice, S.runId, S.draft.mode, S.recent, S.unauthorized]);
+  const key = JSON.stringify([S.view, S.error, S.notice, S.busy, S.choice, S.runId, S.unauthorized]);
   if (!force && key === S.lastKey) return;
   S.lastKey = key;
   const active = document.activeElement;
@@ -104,8 +102,7 @@ function build() {
       h("p", {}, "This page needs the one-time link that `credagent ui` prints in the terminal. Run it again, or open that link, to sign this browser in."));
   }
   if (!S.runId) {
-    return renderLanding({ config: S.config, draft: S.draft, recent: S.recent, error: S.error, busy: S.busy,
-      onStart: start, onOpenRun: () => {}, onChange: () => render(true) });
+    return renderLanding({ config: S.config, draft: S.draft, error: S.error, busy: S.busy, onStart: start });
   }
   const v = S.view;
   if (!v) {
@@ -148,7 +145,7 @@ function build() {
 }
 
 function retry(v) {
-  S.draft.app = v.app.input; S.draft.mode = v.fake ? "fake" : "real";
+  S.draft.app = v.app.input;
   location.hash = "#/";
 }
 

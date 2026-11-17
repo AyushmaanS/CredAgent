@@ -34,7 +34,6 @@ const run = (id) => `/api/runs/${encodeURIComponent(id)}`;
 
 export const api = {
   config: () => request("GET", "/api/config"),
-  listRuns: () => request("GET", "/api/runs"),
   startRun: (payload) => request("POST", "/api/runs", payload),
   getRun: (id) => request("GET", run(id)),
   events: (id, after) => request("GET", `${run(id)}/events?after=${after}`),

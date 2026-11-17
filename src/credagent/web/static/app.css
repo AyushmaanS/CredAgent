@@ -46,19 +46,10 @@ input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
 .chip { font: inherit; font-size: 13.5px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 12px; cursor: pointer; color: var(--text); }
 .chip:hover { border-color: var(--border-strong); background: #f9fafb; }
-details.adv { margin-top: 22px; color: var(--muted); font-size: 14px; }
-details.adv > summary { cursor: pointer; width: fit-content; }
-details.adv .adv-body { margin-top: 12px; display: grid; gap: 12px; color: var(--text); }
 label.field { display: grid; gap: 6px; font-size: 13.5px; color: var(--muted); }
-label.check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--text); }
 .note { border-left: 3px solid var(--amber-line); background: var(--amber-soft); padding: 10px 12px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 14px; color: #78350f; margin-top: 14px; }
 .error { border: 1px solid #fecaca; background: var(--red-soft); color: #991b1b; padding: 10px 12px; border-radius: var(--radius); margin-top: 14px; font-size: 14px; }
 
-/* recent */
-.recent { margin-top: 44px; }
-.recent h2 { font-size: 13px; color: var(--muted); font-weight: 550; text-transform: uppercase; letter-spacing: .04em; }
-.recent a { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; }
-.recent a:hover .rname { text-decoration: underline; }
 .badge { align-self: flex-start; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
 .badge.completed { color: var(--green); border-color: #bbf7d0; background: var(--green-soft); }
 .badge.failed { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
