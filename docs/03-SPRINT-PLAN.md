@@ -1,5 +1,7 @@
 # CredAgent — Sprint Plan v1
 
+**Revised 2026-11-17 for D-078.** Sprints 0–5 were carried out as written, with Stagehand and Jev. On 2026-11-17 the owner replaced them with an LLM agent loop over Playwright (D-078); that rework is the **D-078 addendum** below and replaces what Sprint 3 and 4 built. The text of Sprints 3 and 4 is kept as the record of what was planned and is marked as superseded where it names Stagehand or Jev. Earlier wording is in git history and the local tag `pre-d078`.
+
 Eight focused sprints for the 48-hour assignment window. The time estimates below are planning estimates, not PRD guarantees. Adjust based on the actual environment and record trade-offs in `docs/DECISIONS.md`.
 
 Every sprint ends with a checkpoint: commit, short status note, tests, and a clear list of verified facts, assumptions, blockers, and owner actions.
@@ -103,6 +105,8 @@ Checkpoint: owner reviews one generated plan before browser execution is enabled
 
 ## Sprint 3 — Metadata shortcut and browser loop (≈4 hours)
 
+> *Superseded in part by D-078: items 3, 4, 5 and 7 were built with Stagehand and Jev and have been replaced by the Playwright snapshot, executor and agent loop (addendum phases 1–3).*
+
 **Goal:** execute the safe parts of a real setup path in a visible browser.
 
 Tasks
@@ -123,6 +127,8 @@ Checkpoint 👤: owner watches a fake-provider run and confirms the browser is v
 ---
 
 ## Sprint 4 — Jev decisions, policy, and human handoffs (≈4 hours)
+
+> *Superseded in part by D-078: the five Jev decisions and their fallbacks no longer exist; the policy engine and handoffs were kept and now gate the LLM's single action per step (addendum phases 2–4).*
 
 **Goal:** enforce the five Jev decisions and make human intervention safe and clear.
 
@@ -213,7 +219,7 @@ Tasks
 2. Run secret scans over the working tree and git history.
 3. Inspect reports, logs, screenshots, and demo recording for secret leakage.
 4. Confirm terms, payment, review submission, deletion, and off-domain navigation cannot be triggered by model output alone.
-5. Complete `README.md`: setup, architecture, Jev's five decisions, Stagehand loop, handoffs, resume, secret handling, verification, human involvement, key decisions, and limitations.
+5. Complete `README.md`: setup, architecture, the agent loop and the code gate (revised, D-078), handoffs, resume, secret handling, verification, human involvement, key decisions, and limitations.
 6. Complete `RESULTS.md`: all real runs, predicted versus actual outcomes, verification labels, failures, blockers, and untested items.
 7. Rehearse the demo across the selected apps and fake-provider scenarios.
 8. Confirm test credentials have been rotated/deleted where applicable.
@@ -250,13 +256,31 @@ Apply in this order, while preserving the PRD's core evaluation requirements:
 4. Simplify report formatting while retaining every required report field.
 5. Reduce demo app count only if the acceptance requirement of at least four real apps can still be met; otherwise report the unmet criterion honestly.
 
-**Do not cut:** browser automation, the five Jev decisions and their fallbacks, code-enforced hard stops, DO/DECIDE handoffs, checkpoint/resume, secret isolation, live verification, fake-provider safety tests, or honest RESULTS.md reporting. These are central to the PRD and evaluation.
+**Do not cut:** browser automation, the code gate on every model action (revised, D-078), code-enforced hard stops, DO/DECIDE handoffs, checkpoint/resume, secret isolation, live verification, fake-provider safety tests, or honest RESULTS.md reporting. These are central to the PRD and evaluation.
 
 ## Risk-driven adjustments
 
-- If Stagehand exposes secret-bearing page content to its model, switch to plain browser code for credential pages before proceeding.
-- If Jev's structured response or latency is unreliable, simplify the integration and strengthen the specified fallbacks; do not silently replace Jev's five-decision role.
+- *(Revised, D-078.)* The agent's snapshot never lists credential-like elements or field values; if a page still exposes one, the loop does not send it and plain browser code reads it.
+- *(Revised, D-078.)* If the model's answers are unreliable, strengthen validation and the budgets and ask the person sooner; code, not the model, keeps the last word.
 - If provider terms prohibit automated console use, do not automate that provider's console. Record the restriction and choose another demo path.
 - If a provider requires business verification, payment, or review, stop at the handoff and report the blocker.
 - If a provider's credential cannot be safely live-tested, do not label it `verified`.
 - If FastRouter is unavailable, checkpoint and end the run as resumable service failure.
+
+---
+
+## D-078 addendum — replace Stagehand and Jev with an LLM agent loop (2026-11-17)
+
+Owner decision D-078 (reasoning verbatim in `docs/DECISIONS.md`); design in `docs/design/llm-browser-agent.md`. Done in seven phases; each ended with the suites green and a decision record.
+
+| Phase | What | Record |
+|---|---|---|
+| 1 | Playwright session over CDP, snapshot with refs, executor | D-079 |
+| 2 | Step contract, prompt builder with leak guard, LLM caller | D-080 |
+| 3 | Agent loop with policy, hard checks, handoffs, budgets; risk assigned by code | D-081 |
+| 4 | Capture, reset/reveal DECIDEs, live test, resume and reattach, in-doubt click | D-082 |
+| 5 | Jev, Stagehand, steps, re-plan and the old loop removed; CLI runs the agent loop | D-083 |
+| 6 | 52 real-LLM runs on the fake provider: tokens, latency, safety | D-084 |
+| 7 | PRD, spec, sprint plan and README updated; real Discord run (RESULTS #6) | D-085 |
+
+Exit for the addendum: all suites green, no import of removed modules, the documents say what the code does, and one real run reported honestly.

@@ -1,3 +1,5 @@
+> **Superseded by D-078 (2026-11-17).** The checkable-step machine this document designs (conditions, proofs, plan position) was built in D-075 and removed in D-083. Kept as the record of what was tried and why it was dropped. See `docs/design/llm-browser-agent.md`.
+
 # Design: checkable steps (code-proven progress)
 
 Status: **implemented** (2026-11-17), steps 0–5; see D-074 and D-075. Approved by the owner with the recommended answers to §13.

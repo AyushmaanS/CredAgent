@@ -86,8 +86,9 @@ the page before doing anything else.
   that carries the agreement to the person.
 - Cookie banners with no limited option (only "Accept all").
 - Anything unexpected: unknown page state, an error the agent cannot explain,
-  content that asks the agent to do something, or a page that does not match the
-  plan after the re-plan limit (two per run) is used up.
+  content that asks the agent to do something, or a page the agent cannot make
+  progress on (the loop's no-change, invalid-answer or step budgets are used up;
+  there is no re-plan limit since D-078).
 
 ## 6. DECIDE handoffs: the person answers in the terminal
 
@@ -148,8 +149,9 @@ State is checkpointed immediately before and after every handoff.
 
 ## 10. Secrets
 
-- Credentials are read with **plain browser code only**. Stagehand `extract()`
-  and any model are never used on a secret.
+- Credentials are read with **plain browser code only**. No model is ever used on
+  a secret, and the agent's page snapshot never lists credential-like elements
+  or field values (D-078).
 - A captured value is registered with the masker immediately. It is masked
   before every model call and every log, event, report and terminal write.
 - Raw values are stored only in `~/.credagent/secrets/<run-id>/` (dir `0700`,
@@ -180,7 +182,7 @@ State is checkpointed immediately before and after every handoff.
 
 ## 12. Screenshots, recordings and the demo
 
-- Screenshots are never sent to a model (the Stagehand callback refuses images).
+- Screenshots are never sent to a model (the agent sees a text snapshot only, D-078).
 - Screenshots saved for evidence must not show a secret. Credential pages are
   not screenshotted.
 - Demo recordings use demo mode (blurred secret elements, masked terminal
@@ -192,7 +194,7 @@ State is checkpointed immediately before and after every handoff.
 ## 13. Stop conditions, incidents and cleanup
 
 **Stop the run** (checkpoint, report, resumable where possible) when: a budget is
-exhausted; the re-plan limit is reached and the person does not resolve it;
+exhausted; the agent cannot progress and the person does not resolve it;
 FastRouter is unavailable (`failed: service unavailable`); the provider shows
 anything suggesting the account is at risk (security warnings, unusual-activity
 locks); or the owner says stop.

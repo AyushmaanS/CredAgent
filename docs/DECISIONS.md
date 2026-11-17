@@ -887,12 +887,26 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-085 D-078 phase 7a done: the documents now say what the code does — Decided (documentation record)
+**What changed.** D-078 discrepancy #5 is closed: the documents were brought in line with the agent loop, with every revised requirement marked “revised, D-078” and the earlier wording left in git history and the local tag `pre-d078`.
+- **PRD** (`docs/CredAgent-PRD.md`): principle 6; F4 (browser agent loop) and F5 (step contract and code gate, replacing the Jev layer); Flow E (no re-plan); §8 rewritten (orchestrator, reasoning, hands, rules; what the model sees and cannot do; code-assigned risk; loop safeguards; the model-failure rule); the acceptance check, two risks, key decisions 1, 4, 5, 6 and open questions 1–2. **No principle about safety, terms, secrets or verification was weakened**; the hard stops, "accepting terms is always the person" and "only a passing live test is verified" are unchanged.
+- **Spec** (`docs/02-ENGINEERING-SPEC.md`): architecture and sequence, technology table, layout, configuration, secret rules, plan, §6.2 (no re-plan), §6.4 (agent loop, rewritten) and §6.5 (model contract and failure behaviour, rewritten), §6.6 (risk by code), §6.8, budgets, tests, open decisions and definition of done.
+- **Sprint plan**: a banner, "superseded" notes on Sprints 3 and 4, updated cut order and risk lines, and a D-078 addendum with the seven phases.
+- **Attempt protocol**: three sentences (no re-plan limit; no model ever sees a secret and the snapshot never lists one; screenshots never reach a model). Protocol version stays v2: no consent or safety rule changed.
+- **README**: status, the "works today" table, new sections on the approach, human involvement, verification, limitations and key decisions. **RESULTS.md**: run #5 marked as left paused (old loop; will not be resumed) and the untested line made precise. `docs/design/checkable-steps.md` carries a "superseded" banner.
+
+**Honest gaps.** The README still says no real-provider credential has been obtained on the new loop. The PRD's own acceptance checks (four real apps, resume demonstrated on a real handoff) remain unmet and are Sprint 6 and 7 work.
+
+**Next, and it needs the owner:** Discord run #6 on the new loop (RESULTS #6).
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
 3. Spec §5 `CredentialReference.storeRef` (single) vs. OAuth's two values → `parts` (D-023).
 4. PRD §10 does not classify a captured-but-`invalid` credential → `failed` (D-022).
-5. **PRD F4/F5/§8/§14 and spec §6.4/§6.5 (Stagehand, Jev) are superseded by D-078** (owner, 2026-11-17). Those documents are updated when the rewrite lands; until then D-078 is authoritative.
+5. ~~PRD F4/F5/§8/§14 and spec §6.4/§6.5 (Stagehand, Jev) are superseded by D-078~~ **Resolved in D-085**: the documents were updated and carry “revised, D-078” markers.
 
 ## Assumptions not yet verified
 - ~~A1. Structured outputs work for the chosen models.~~ Verified (D-009).

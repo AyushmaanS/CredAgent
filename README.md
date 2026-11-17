@@ -6,7 +6,7 @@ console, pauses for steps only a person should do, and ends with a credential
 stored outside the repo **plus a live test proving it works**, or an honest
 report of what blocked it.
 
-> **Work in progress — Sprint 5 of 7** (`docs/03-SPRINT-PLAN.md`). Progress: `docs/CHECKLIST.md`.
+> **Work in progress — Sprint 6** (`docs/03-SPRINT-PLAN.md`). The browser layer was rebuilt on 2026-11-17 as an LLM agent loop over Playwright (D-078, below). Progress: `docs/CHECKLIST.md`.
 > Every decision and assumption: `docs/DECISIONS.md`. Every live run, including failures: `RESULTS.md`.
 
 Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINEERING-SPEC.md`,
@@ -16,7 +16,7 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 
 | Works | Not built yet |
 |---|---|
-| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan, then pauses | Browser runs against **real** providers (need per-provider consent, Sprint 6) |
+| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan; for a provider whose terms were checked, asks for your consent and then runs the browser agent | A real-provider run on the new agent loop with a verified credential (Sprint 6, in progress) |
 | Browser agent on the fake provider: an LLM chooses each step over Playwright, code policy gates every action, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) (D-078) | |
 | Unusable model answers and "service unavailable" proved on the fake provider (`--fake-provider llm_failure` / `service_unavailable`) | |
 | OAuth metadata check + dynamic client registration shortcut (fake provider) | Provider-specific live tests (API keys, authorization-code flow) arrive with the real providers (Sprint 6) |
@@ -25,7 +25,7 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 | `credagent resume` (re-checks the page, never repeats an unconfirmed click), `verify`, `secret` (masked; reveal on purpose) | |
 | `credagent status`, `runs`, `report`; crash-safe state; secrets masked before any model call | |
 
-No credential has been obtained or live-tested against a real provider yet.
+No credential has been obtained and live-tested against a real provider on the new agent loop yet.
 
 ## Quick start
 
@@ -146,7 +146,38 @@ scripts/            secret scan, env check, Sprint 0 spikes (storage, Tavily)
 docs/               PRD, spec, sprint plan, protocol, decisions, checklist, spike results, samples
 ```
 
-## Approach, human involvement, verification, limitations
+## Approach
 
-To be written as the implementation lands (Sprint 7). See `RESULTS.md` for
-real-provider runs.
+**The agent loop (D-078).** The orchestrator keeps workflow state and runs a loop over a visible Chrome that CredAgent starts itself (persistent profile):
+
+```text
+Orchestrator → look (numbered text snapshot) → hard checks in code → LLM chooses ONE action
+             → code validates it → policy + risk → Playwright executes → record + checkpoint → repeat
+```
+
+- **The model proposes, code decides.** The model returns one structured action per step (click, type, select, navigate, scroll, inspect, back, wait, ask the person, done, give up), naming an element by its number in the current snapshot. Code rejects invalid answers, applies the hard stops and the policy, and assigns risk. No model can override a hard stop.
+- **What the model cannot see or do.** It sees text, never screenshots. Credential-like values are never listed and no field value is shown (only filled or empty). It types only **approved values by key** (app name, homepage, callback URL, description), so it cannot be talked into typing something else. Page text is treated as data, never as instructions.
+- **Code owns the rest:** hard stops (payment, review submission, deleting, off-site navigation, business verification), the one-app-per-run rule, capture of the credential by plain browser code, the live test, run state, and reports.
+- **Why not Stagehand and Jev?** The first version used both. Real runs on Discord showed that a stateless decision tool plus a step machine in code was hard to debug, so the owner replaced it with this simpler loop (reasoning and results in `docs/DECISIONS.md` D-078 to D-084).
+
+**Measured on the fake provider (D-084, 52 real LLM runs):** about 8 LLM calls per run, about 24k tokens per run, 2.2 s median per call, every run succeeded and no safety check failed. This is not a real-provider result, and real console pages are larger.
+
+## Human involvement
+
+The person does what only a person should: signing in, email codes, 2FA, CAPTCHA, identity or payment steps, and **accepting terms (always the person, including "By clicking Create you agree")**. The agent fills every other field first. Choices (an app type, a permission, resetting a secret that invalidates the old one) are asked in the terminal. Real providers need per-provider consent each session (`docs/ATTEMPT-PROTOCOL.md`). After a handoff the run resumes from its saved state, never blindly replaying a click.
+
+## Verification
+
+A credential is **working only if its live test passes** (`verified`). Only `verified` can end a run as `succeeded`; a pass with a limitation (for example an app in testing mode) is `partial`; everything else is reported as what it is, with the untested items listed.
+
+## Limitations
+
+- **No credential has been obtained from a real provider on the new loop yet.** Earlier real runs (Spotify stopped; Discord runs #2–#5 on the old Stagehand/Jev loop) did not end in a verified credential; they are listed honestly in `RESULTS.md`.
+- Tested on macOS with Google Chrome only.
+- The agent's behaviour on real consoles beyond the fake provider is unmeasured; the model is not deterministic, so runs vary (for example in which optional fields it fills).
+- It never deletes the apps it creates; clean them up in the provider's console.
+- Where the model's value for a field cannot be seen, a stray character typed earlier by a person is not noticed unless the model inspects the field (D-083).
+
+## Key decisions
+
+All of them, with evidence, are in `docs/DECISIONS.md`. The ones that shape the product: local CLI with owner-only secret files outside the repo (D-053), accepting terms is always the person (D-048 to D-050), unclear terms on a provider are automated by default with consent each session (D-059), one app per run (D-063), and the agent loop over Playwright (D-078).

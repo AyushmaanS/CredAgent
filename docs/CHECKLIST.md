@@ -139,7 +139,7 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 ## Sprint 6 — Real-provider runs and demo coverage
 - [x] S6.x 👤 Owner approved the checkable-steps design (`docs/design/checkable-steps.md`, D-073) on 2026-11-17
 - [x] S6.z Checkable steps built (design steps 1–5, D-075): proofs by code, computed position, Jev request block, research and re-plan conditions; 79 real-Chrome tests pass
-- [ ] S6.w Real Discord run #5 with a freshly researched plan (conditions), owner present
+- [x] S6.w Real Discord run #5 (old loop): stalled and left paused; superseded by D-078, replaced by S6.n
 - [x] S6.v 👤 Owner approved the D-078 scoping on 2026-11-17 (phases 1–7 in `docs/design/llm-browser-agent.md` §6)
 - [x] S6.u Phase 1 (D-079): Playwright session over CDP, snapshot with refs, executor; 86/86 real-Chrome tests pass
 - [x] S6.t Phase 2 (D-080): step contract, prompt builder with leak guard, LLM caller; real-model smoke check 5/5
@@ -147,7 +147,8 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.r Phase 4 (D-082): capture, reset/reveal DECIDEs, live test, resume and reattach, in-doubt click; 16 real-Chrome tests
 - [x] S6.q Phase 5 (D-083): Jev, Stagehand, steps, re-plan and the legacy loop removed; CLI runs the agent loop; 305 tests pass
 - [x] S6.p Phase 6 (D-084): 52 real-LLM runs on the fake provider (Sonnet 5.5 and Haiku 5.5), all succeeded, no safety problems; tokens and latency recorded; model unchanged
-- [ ] S6.o Phase 7: update PRD, spec, sprint plan and README; then the real Discord run (RESULTS #6) after the owner deletes the demo apps
+- [x] S6.o Phase 7a (D-085): PRD, spec, sprint plan, attempt protocol, README and RESULTS updated for D-078
+- [ ] S6.n 👤 Owner deletes the demo apps at Discord (and the old test app), then Discord run #6 on the new loop, owner present (RESULTS #6)
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 

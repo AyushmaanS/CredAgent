@@ -1,6 +1,6 @@
 # CredAgent — Product Requirements Document
 
-Status: v1 · Owner: Ayushmaan · Consumer: Claude Code (implementing agent)
+Status: v1, **revised 2026-11-17 for D-078** (marked “revised”; the earlier wording is in git history and the local tag `pre-d078`) · Owner: Ayushmaan · Consumer: Claude Code (implementing agent)
 Working name: **CredAgent** (rename freely). Deadline: submission within 48 hours of receiving the assignment.
 
 ---
@@ -40,7 +40,7 @@ A developer or agent builder who needs credentials for an app to start or ship a
 3. **The human does what only a human should do.** Sign-in, verification codes, CAPTCHA, identity checks, payment and **accepting terms** are always done by the person. The agent never accepts terms on anyone's behalf.
 4. **Clear handoffs, real resume.** Every pause tells the person exactly what to do, where, and what happens next. Resume continues from the saved step, not from scratch.
 5. **Secrets never leak.** Credentials never appear in the repo, logs, reports, screenshots, model inputs, or the demo.
-6. **Fast judgment where the options are known; reasoning where they are not; code where it matters.** Jev answers five closed decisions per page. The LLM handles open-ended reasoning. Code enforces safety, secrets and verification.
+6. **Reasoning in one place, rules in code.** *(revised, D-078)* One LLM reasoning layer chooses the next browser action from what the page shows. It never has the last word: code validates every action, applies the hard stops and policy, owns secrets, state and verification, and no model can override it.
 7. **Honest outcomes.** Blocked is a valid, useful outcome when the report explains it well.
 
 ## 6. Scope
@@ -52,8 +52,8 @@ A developer or agent builder who needs credentials for an app to start or ship a
 | F1 | **CLI**: `credagent get "<app>"`, `resume`, `status`, `runs`, `report`, `verify`, `secret` | Local tool on the owner's laptop. No hosted service |
 | F2 | **Research and plan**: identify the app, find its developer console and docs, decide the credential type and steps, predict blockers and outcome, choose how to test the credential | Bounded research agent (LLM + Tavily). Works for unfamiliar apps |
 | F3 | **Shortcut check**: read public OAuth metadata; if open dynamic client registration is available, register via API without the browser | Usually not available; recorded either way |
-| F4 | **Browser loop** with Stagehand: look → hard checks → Jev decisions → policy → act → record → checkpoint | Headed (visible) local browser with its own persistent profile |
-| F5 | **Jev decision layer** for exactly five closed decisions: element selection, action selection, blocker detection, risk assessment, completion detection | With defined fallbacks (section 8) |
+| F4 | **Browser agent loop** *(revised, D-078)*: Playwright over CDP to a CredAgent-owned Chrome. Each step: observe (numbered snapshot) → hard checks in code → **one LLM action** → validate → policy → execute → record → checkpoint | Headed (visible) local browser with its own persistent profile |
+| F5 | **Step contract and code gate** *(revised, D-078; replaces the Jev layer)*: the model returns one structured action (click, type, select, navigate, scroll, inspect, back, wait, ask the person, done, give up) naming an element by reference and a typed value by key; code rejects anything invalid, risky or forbidden | Section 8 |
 | F6 | **Handoffs**: DO (person acts in the browser) and DECIDE (person answers in the terminal) with a standard handoff card | Section 9 |
 | F7 | **Pause and resume**: state checkpointed after every step; resume re-checks the page before continuing; browser profile keeps sign-ins | Works after hours or days |
 | F8 | **Secret capture and storage**: masked before any model call; read by plain browser code; stored outside the repo with owner-only permissions | Shown-once secrets handled |
@@ -88,30 +88,26 @@ A developer or agent builder who needs credentials for an app to start or ship a
 
 **Flow D: resume later.** Person closes the terminal mid-handoff → later runs `credagent resume <run-id>` → browser reopens with the saved profile at the last page → agent re-checks the blocker → continues or explains why it is still blocked.
 
-**Flow E: unfamiliar app.** Any app name → research finds the console → the plan is written from scratch → when the real page differs from the plan, the LLM rewrites the remaining plan (at most twice) → otherwise asks the person.
+**Flow E: unfamiliar app.** Any app name → research finds the console → a plan is written as *guidance* → the agent reads each live page and chooses its own next action, so a page that differs from the plan needs no re-plan *(revised, D-078)* → when it cannot go on, it asks the person (DO or DECIDE) or stops.
 
-## 8. The decision layers (what decides what)
+## 8. The decision layers (what decides what) *(revised, D-078)*
 
 | Layer | Tool | Decides |
 |---|---|---|
-| Thinking | LLM via FastRouter | Research, planning, re-planning, open-ended page reasoning, text to type (descriptions), second opinions |
-| Fast judgment | **Jev** via FastRouter | Only the five closed decisions below |
-| Hands | Stagehand | Observing the page, clicking, typing, reading values |
-| Rules | Code | Hard stops, policy order, secrets, verification, state, reports |
+| Orchestrator | Code | Workflow state, phases, budgets, checkpoints, handoffs, consent, reports |
+| Reasoning | LLM via FastRouter, one structured call per browser step (default `anthropic/claude-sonnet-5.5`) | The next action, from the objective, the research guide, its recent actions and the page snapshot. Research and planning use the same model |
+| Hands | Playwright executor | Click, type, select, navigate, scroll, inspect, back, wait: by element reference from the current snapshot |
+| Rules | Code | Hard stops, policy order, risk of each action, secrets, capture, live verification, state, reports |
 
-**Jev's five decisions** (one Jev request per page asks all five):
+**What the model sees and cannot do.** It sees a numbered text snapshot (never a screenshot); credential-like values are not listed and every field value is hidden (only "filled" or "empty"); everything is masked before a call and a prompt that would leak a registered secret is never sent. It can only type **approved values by key** (app name, homepage URL, callback URL, description). It cannot accept terms, create a second app, delete, submit for review, pay, or leave the allowed sites: code refuses or hands those to the person. "Done" is a claim that code accepts only when a credential is shown and plain browser code has captured it.
 
-| Decision | Type | If Jev is uncertain |
-|---|---|---|
-| Element selection: which candidate does what this step needs? (candidates from Stagehand `observe()` plus "none of these") | Choice | **LLM** re-observes and picks |
-| Action selection: proceed / step complete / wait / go back / stuck | Choice | **LLM** decides |
-| Blocker detection: does a human need to act here? | Noul (yes/no probability) | **LLM second opinion**: continue only if the LLM says no human is needed, gives a reason, *and* code checks find nothing; otherwise pause |
-| Risk assessment: read-only / reversible / hard to undo / irreversible | Score | Assume the next higher risk level; code hard stops always apply |
-| Completion detection: has the credential been created and shown? | Noul | **Code** tries to read the credential and runs the live test |
+**Risk is assigned by code.** Hard stops first; creating the one planned app is consented once; buttons with a consequence verb (reset, regenerate, rotate, transfer, publish, confirm, …) are a DECIDE; links and typing approved values are reversible (D-081).
 
-**Jev-failure rule:** if a Jev call times out or errors, retry once; if it still fails, treat all five answers as uncertain and use the fallbacks above. If FastRouter itself is unavailable (LLM and Jev both down), save state and end as `failed: service unavailable`, resumable later.
+**Loop safeguards (code).** The page change of every action is reported back ("no change" is shown); the same control is not clicked twice on a page; documentation pages are left; a form is completed before a terms handoff; one app per run; step budget 60 and time budget 900 s (the person's time excluded); repeated unusable answers or no progress go to the person.
 
-**Rule of thumb:** Jev answers closed questions whose full answer set we wrote ourselves. Open-ended questions go to the LLM. Anything risky or final goes to code.
+**Model-failure rule.** An unusable answer is recorded and the model is asked again once; if FastRouter is unreachable twice, save state and end as `failed: service unavailable`, resumable later.
+
+**Rule of thumb:** the model proposes one step at a time; code decides whether it happens. Anything risky or final goes to code, and from there to the person.
 
 ## 9. Handoffs
 
@@ -144,7 +140,7 @@ Every pause prints a **handoff card**: what is done so far (n of m steps), what 
 4. **Works on unfamiliar apps**: at least one demo run on an app not used during development; behaviour explained even if blocked.
 
 Acceptance checks:
-- [ ] End-to-end runs on the fake provider site pass for: success, terms handoff (checkbox and implied wording), sign-in handoff + resume, shown-once secret, CAPTCHA stand-in, blocked, Jev failure fallback.
+- [ ] End-to-end runs on the fake provider site pass for: success, terms handoff (checkbox and implied wording), sign-in handoff + resume, shown-once secret, CAPTCHA stand-in, blocked, unusable model answers and model-down (D-078).
 - [ ] ≥4 real apps with different access paths run; at least one `succeeded` with `verified`, one `blocked`, one `partial` or `waiting_on_provider`; at least one unfamiliar app.
 - [ ] Resume demonstrated after a real handoff, including after closing and reopening.
 - [ ] No secret in repo history, logs, reports, screenshots or the demo (checked by a secrets scan and by reviewing the recording).
@@ -156,9 +152,9 @@ Acceptance checks:
 |---|---|
 | Agent clicks something harmful | Code hard stops (payment, terms, submit for review, delete, off-allow-list navigation); risk score; DECIDE for hard-to-undo |
 | Secret leaks to a model, log or video | Masking before every model call; plain-code extraction; no `extract()` on secrets; demo mode blur; recording review; post-demo rotation |
-| Stagehand sends credential page content to its model | Verify in Sprint 0; if it cannot be hidden, switch to plain browser code on credential pages |
-| Jev misjudges a page | Thresholds, fallbacks, logging every fallback, calibration on the fake site and real runs |
-| Unfamiliar console differs from the plan | Re-plan (max 2), then DECIDE/DO handoff |
+| Credential page content reaches a model *(revised, D-078)* | The snapshot never lists credential-like elements or field values; plain-code capture; masking and a leak guard before every call; tests scan prompts and every run file |
+| The model clicks or types the wrong thing, or obeys page text | Page text is data in the prompt; refs are validated against the snapshot; typed values only by approved key; policy and hard stops on every action; tests with a hostile model |
+| Unfamiliar console differs from the plan | The agent reads the live page each step; no fixed script. Budgets, no-change detection and the repeat guard end in a DECIDE/DO handoff |
 | Provider terms forbid automation | Check per provider before real runs; skip and document if forbidden |
 | Bot detection blocks the browser | Headed browser with a real profile; person handles CAPTCHA; report as observed |
 | Over-claiming results | Verification labels; RESULTS.md with failures and untested items |
@@ -166,19 +162,19 @@ Acceptance checks:
 
 ## 14. Key decisions so far
 
-1. Browser automation with **Stagehand**, local headed browser, persistent profile.
+1. *(revised, D-078)* Browser automation with **Playwright over CDP** to a CredAgent-owned local headed Chrome with a persistent profile (no Stagehand).
 2. **Email accounts and verification are human steps.**
 3. **Accepting terms is always DO**, never done by the agent.
-4. **Jev only for the five closed decisions**; open-ended work goes to the LLM.
-5. **LLM second opinion** for uncertain blocker detection; **Jev-failure rule** as in section 8.
-6. **One FastRouter key** for LLM and Jev (and Stagehand's model); Tavily for research.
+4. *(revised, D-078)* **One LLM reasoning layer** chooses each browser action; **code gates every action**. Jev is not used.
+5. *(revised, D-078)* The **model-failure rule** in section 8 replaces the Jev-failure rule.
+6. *(revised, D-078)* **One FastRouter key** for the LLM; Tavily for research.
 7. **Local CLI**, not serverless: long browser sessions, saved sign-ins and secrets need a local machine.
 8. Demo apps chosen in Sprint 6.
 
 ## 15. Open questions (resolve and record in `docs/DECISIONS.md`)
 
-1. Jev model ID and request/response format through FastRouter; latency in practice.
-2. Stagehand v4 local browser with a persistent profile; whether page content can be hidden from its model calls.
+1. ~~Jev model ID and latency~~ Moot since D-078; the step LLM's latency and token use were measured in D-084 (about 2 s and 2.7k tokens per call on the fake site).
+2. ~~Stagehand persistent profile and hiding page content~~ Resolved (D-012, D-013), then moot: CredAgent owns Chrome and builds the snapshot itself (D-079).
 3. Redirect URI to register by default (local placeholder vs. the callback the integration will actually use, e.g. Composio's).
 4. Secret store: file outside the repo with owner-only permissions (default) vs. OS keychain.
 5. Final demo app list and each provider's terms on automation.
