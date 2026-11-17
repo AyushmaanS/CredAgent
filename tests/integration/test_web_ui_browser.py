@@ -242,7 +242,7 @@ def test_how_it_works_and_my_approach_are_reached_from_the_header_and_not_the_ho
                 await page.emulate_media(media="screen")
                 for diagram in (".story", ".grid", ".stats", ".layers", ".run-strip"):
                     await expect(page.locator(diagram)).to_be_visible()
-                for words in ("Where human involvement was needed", "How the results were verified"):
+                for words in ("Where people step in", "How I checked it"):
                     await expect(page.get_by_role("heading", name=words)).to_be_visible()
                 await page.get_by_role("button", name="Get credentials").last.click()  # the page's own way back home
                 await expect(page.get_by_role("heading", name="Get access to any app.")).to_be_visible()

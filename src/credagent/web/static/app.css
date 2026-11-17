@@ -219,7 +219,7 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }
 .on-agent { background: #eff6ff; color: #2563eb; align-self: stretch; display: grid; place-items: center; }
 .on-you { background: var(--amber-soft); color: var(--amber-line); align-self: stretch; display: grid; place-items: center; }
 
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 18px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 18px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .stat dt { font-size: 12px; color: var(--muted); }
 .stat dd { margin: 2px 0 0; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
@@ -258,5 +258,6 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }
   .doc-section { margin-top: 22pt; break-inside: auto; }
   .doc-h2, .doc-h3 { break-after: avoid; }
   .mini, .layer, .story-item, .grid-row, .stat, .run-chip, .callout, .outcome, .role, .verdict, .journey li, .loop-cell { break-inside: avoid; }
+  .grid, .layers, .run-strip { break-inside: avoid; }
   .card, .mini, .layer, .grid, .stat, .loop, .verdicts, .role { box-shadow: none; }
 }

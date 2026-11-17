@@ -1,51 +1,45 @@
 import { h } from "../dom.js";
-import { page, section, cards, list, callout, stats, cta } from "./parts.js";
+import { page, section, cards, list, stats, cta } from "./parts.js";
 
-const PRINCIPLES = [
-  { tag: "1", title: "Look before you leap", text: "It researches first and writes a plan with sources, and code double-checks those sources before any browser opens." },
-  { tag: "2", title: "The AI suggests, code decides", text: "The rules that keep it safe live in code, where a clever or confused model can't talk its way past them." },
-  { tag: "3", title: "People keep their own steps", text: "Signing in, codes, CAPTCHAs, terms and real choices are never done on your behalf." },
-  { tag: "4", title: "Working means working", text: "A live test decides how a run ends. If it didn't pass, the report says so." },
+const IDEAS = [
+  { tag: "1", title: "Research first", text: "Read the provider's docs and make a plan before opening a browser." },
+  { tag: "2", title: "The AI suggests, code decides", text: "Safety rules live in plain code, so the AI can't talk its way past them." },
+  { tag: "3", title: "People do their own steps", text: "Signing in, codes, CAPTCHAs and terms are never done for you." },
 ];
 
-// How the design changed, from the decision log (D-061 to D-088) and RESULTS.md.
+// What actually happened, from RESULTS.md and the decision log.
 const STORY = [
-  { tone: "plain", when: "The first design", title: "Stagehand and Jev", text: "A decision tool that forgot everything between steps, plus a step-by-step script in code." },
-  { tone: "bad", when: "Discord runs 2 to 6", title: "Real pages broke it", text: "One run blocked by a bug, one I gave up on, one ran out of steps, one stalled. And it was hard to see why." },
-  { tone: "plain", when: "Decision 78", title: "Start over with a simple loop", text: "One AI step at a time, driving the browser, with plain code setting the rules around it." },
-  { tone: "ok", when: "Discord run 7", title: "A real credential, proven", text: "Captured from the real console and checked with a real token request." },
-  { tone: "warn", when: "Since then", title: "Google Cloud and Slack", text: "Both got as far as the console and turned up more bugs, now fixed (decisions 91 to 98). No credential from either yet." },
+  { tone: "bad", when: "First try", title: "It didn't work on real sites", text: "My first design fell over on Discord's real pages. It took five runs to find out why, and I gave up on one of them." },
+  { tone: "plain", when: "Second try", title: "I started over, simpler", text: "One AI step at a time, with plain code around it for the rules." },
+  { tone: "ok", when: "Discord, run 7", title: "A real credential", text: "It got the credential from Discord and proved it works with a real request." },
+  { tone: "warn", when: "Since then", title: "Google Cloud and Slack", text: "Both got as far as the console and hit more bugs, which I fixed. Neither has produced a credential yet." },
 ];
 
-// Who does each step. "agent" = CredAgent (model and code), "you" = a person.
+// Who does each step. "agent" = CredAgent, "you" = a person.
 const GRID = [
-  ["Research the app and write the plan", "agent", ""],
-  ["Give the go-ahead (each session)", "you", ""],
-  ["Sign in: password, codes, 2FA", "you", ""],
-  ["CAPTCHA or bot check", "you", ""],
-  ["Fill in the app name, callback URL and other fields", "agent", "approved values only"],
-  ["Accept the provider's terms and click Create", "you", "always you"],
-  ["Choose an app type or a permission", "you", "your call"],
-  ["Reset a secret (the old one stops working)", "you", "your call"],
-  ["Copy the credential off the page", "agent", "plain code, not the AI"],
-  ["Run the live test", "agent", ""],
-  ["Delete the apps it created", "you", "the agent never deletes anything"],
+  ["Research the app and make a plan", "agent", ""],
+  ["Say go, each session", "you", ""],
+  ["Sign in, enter codes, solve CAPTCHAs", "you", ""],
+  ["Fill in the app name and other fields", "agent", ""],
+  ["Accept the terms and click Create", "you", "always you"],
+  ["Choose an app type or permission, reset a secret", "you", "your call"],
+  ["Copy the credential off the page", "agent", ""],
+  ["Test that it works", "agent", ""],
+  ["Delete the app afterwards", "you", "it never deletes"],
 ];
 
 const BUILD = [
-  "I scrapped the first design and chose the simpler agent loop (decision 78).",
-  "I decided where secrets live (files only I can read, outside the project) and the default callback address (decision 53).",
-  "I decided that accepting terms is always a person's job, and that when a provider's terms are unclear, it can run only with my consent each session (decisions 48 to 50 and 59).",
-  "I picked which providers to try, when to stop and when to abandon a run, and I said yes before every real-provider run.",
-  "For this web page I chose a small local server, plain JavaScript, the name “CredAgent”, confirmations inside the page, and a simpler home screen.",
-  "Running it on real apps is what found the problems. I noticed Google offering an API-key screen when I'd asked for OAuth (decision 96), and a run going in circles (decision 97).",
+  "I threw out the first design and chose the simpler loop.",
+  "I decided where secrets are kept, and that a person always accepts terms.",
+  "I picked the providers to try, and I said yes before every real run.",
+  "Running it on real apps found the problems. I spotted things like Google offering an API-key screen when I wanted OAuth, and a run going in circles.",
 ];
 
-// Real-provider runs from RESULTS.md, in order. Colour is backed by a word.
+// The real-provider runs recorded in RESULTS.md. Colour is backed by a word.
 const RUNS = [
   ["1", "Spotify", "Stopped", "plain"], ["2", "Discord", "Blocked", "warn"], ["3", "Discord", "Abandoned", "plain"],
   ["4", "Discord", "Out of steps", "bad"], ["5", "Discord", "Stalled", "warn"], ["6", "Discord", "Blocked", "warn"],
-  ["7", "Discord", "Verified", "ok"],
+  ["7", "Discord", "Worked", "ok"],
 ];
 
 function story() {
@@ -71,51 +65,44 @@ function layers() {
     h("div", {}, h("strong", {}, title), h("p", {}, text)));
   return h("ol", { class: "layers" },
     layer("1", "Does the credential actually work?",
-      "On Discord (run 7), a real token request with the new credential came back with HTTP 200 and an access token. Only a passing test can end a run as a success."),
-    layer("2", "Automated tests",
-      "About 380 of them. Many drive a real Chrome window against a pretend provider that I can script: a clean run, a blocked one, a page that tries to trick the agent, terms, CAPTCHAs, cookie banners, a broken model, an outage."),
-    layer("3", "The real model, on a pretend provider",
-      "52 runs against the pretend provider (13 situations, run twice, with two models). All 52 succeeded and no safety check failed. A run took about 8 model calls. That's a test bench, not a real provider, so I don't count it as proof for real consoles."),
-    layer("4", "Nothing leaked",
-      "Tests comb through every saved file and all the terminal output looking for a leaked secret, and every commit is scanned for secrets too."),
-    layer("5", "An honest paper trail",
-      "Every real run goes in RESULTS.md with how it ended, failures included, and every decision is written down in docs/DECISIONS.md."));
+      "On Discord (run 7) I made a real request with the new credential and got an access token back. A run only counts as a success if a test like that passes."),
+    layer("2", "A fake developer site for testing",
+      "I built a small fake console that runs on this computer, with settings for sign-in, terms, CAPTCHAs, tricky pages and failures. About 380 automated tests run against it, many in a real Chrome window."),
+    layer("3", "Writing everything down",
+      "Every real run is in RESULTS.md, failures included, and every decision is in the decision log. Tests and a scan also check that no secret leaks into files or output."));
 }
 
 function runStrip() {
   return h("div", { class: "runs" },
     h("ol", { class: "run-strip" }, RUNS.map(([n, app, outcome, tone]) =>
       h("li", { class: `run-chip rc-${tone}` }, h("span", { class: "run-n" }, `#${n}`), h("strong", {}, outcome), h("span", { class: "run-app" }, app)))),
-    h("p", { class: "muted small" }, "The first seven runs on real providers, as written down in RESULTS.md. The Google Cloud and Slack attempts came after these."));
+    h("p", { class: "muted small" }, "The first seven runs on real providers, as written in RESULTS.md. The Google Cloud and Slack attempts came after these."));
 }
 
 export function renderApproach({ home }) {
   return page("My approach",
-    "How I went about building it, the places a person still has to step in, and how I checked that it works.",
-    section("The approach in short", null,
-      cards(PRINCIPLES, "four"),
-      callout("Everything's written down", "I worked in sprints and kept a log. Every decision that mattered is in it (98 so far, each with its evidence), and so is every real run, the failures included.")),
-    section("How the design changed", "My first design didn't survive contact with real developer consoles. Here's the short version of what happened. The long version is in the decision log.", story()),
-    section("Where human involvement was needed", "There are two kinds. The people stepping in during a run, and the calls I made while building it."),
-    h("h3", { class: "doc-h3" }, "During a run"),
-    grid(),
-    h("h3", { class: "doc-h3" }, "While building it"),
-    list(BUILD),
-    section("How the results were verified", "Five layers, starting with the strongest evidence.",
+    "How I built it, where people still step in, and how I checked it works.",
+    section("The idea", "You give it an app name. It works out how that app hands out credentials, does the clicking for you, and stops whenever a step is really yours.",
+      cards(IDEAS)),
+    section("How it went", "It took longer than I expected. Real developer sites are messier than I thought.", story()),
+    section("Where people step in", "Some steps are meant for a person. Here is who does what.",
+      grid(),
+      h("h3", { class: "doc-h3" }, "My own calls while building it"),
+      list(BUILD)),
+    section("How I checked it", null,
       stats([
-        { label: "Real credentials verified", value: "1", note: "Discord" },
+        { label: "Real credentials proven", value: "1", note: "Discord" },
         { label: "Automated tests", value: "~380" },
-        { label: "Measured model runs", value: "52", note: "52 succeeded" },
-        { label: "Decisions recorded", value: "98" },
+        { label: "Decisions written down", value: "98" },
       ]),
       layers(),
       runStrip()),
     section("What I can't claim yet", null,
       list([
-        "Only one real provider, Discord, has a credential I've verified. Other providers, API keys and the authorization-code flow haven't been tested.",
-        "I've only tested it on a Mac, with Google Chrome.",
-        "The model isn't predictable, so two runs on the same app can differ. For example, it may or may not fill in an optional field.",
-        "It never deletes the apps it creates, so you'll want to tidy those up in the provider's console.",
+        "Only Discord has produced a credential I've proven. Other providers and credential types are untested.",
+        "I've only tried it on a Mac, with Chrome.",
+        "The AI isn't predictable, so two runs on the same app can differ.",
+        "It never deletes the apps it creates. You'll want to tidy those up yourself.",
       ])),
     cta(home));
 }
