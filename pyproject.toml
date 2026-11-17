@@ -26,6 +26,7 @@ include = ["credagent*", "fake_provider*"]
 
 [tool.setuptools.package-data]
 fake_provider = ["fixtures/*.json"]
+credagent = ["web/static/*", "web/static/js/*", "web/static/js/components/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

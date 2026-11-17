@@ -3,6 +3,12 @@
 Status: **APPROVED v2 (2026-11-16)**; v1 was approved 2026-11-15. Real-provider
 walkthroughs additionally need per-provider consent (section 2) every time.
 
+**Amendment (2026-11-17, owner decision, D-089):** wherever this protocol says the person
+presses Enter or answers "in the terminal", the same confirmation may be given in the local
+web page (`credagent ui`). The checks are unchanged: the terms finding is shown, the owner
+types the account in their own words, an explicit confirm is required, the consent is
+recorded in the run, and every resume asks again. The page binds to 127.0.0.1 only.
+
 Derived from the PRD (`docs/CredAgent-PRD.md`) §5 (principles), §6.2 (out of
 scope), §7 (flows), §9 (handoffs) and §13 (risks). Where this protocol and
 the PRD differ, the PRD wins. In this document "the agent" means CredAgent and

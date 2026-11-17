@@ -664,3 +664,15 @@ def secret(run_id: str, reveal_name: str | None, print_it: bool) -> None:
 
 if __name__ == "__main__":
     cli()
+
+
+@cli.command("ui")
+@click.option("--port", default=8790, show_default=True, help="Local port (127.0.0.1 only).")
+@click.option("--no-open", is_flag=True, help="Do not open the page in your browser.")
+@click.option("--headless", is_flag=True, help="Test-site runs: hide the agent's browser window (for tests).")
+def ui(port: int, no_open: bool, headless: bool) -> None:
+    """Open the local web page: start a run, follow it, answer handoffs, see the result."""
+    from credagent.web.controller import Service
+    from credagent.web.server import serve
+
+    serve(Service(_settings(), headless=headless), port, open_browser=not no_open, echo=click.echo)

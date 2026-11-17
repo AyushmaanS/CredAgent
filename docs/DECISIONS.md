@@ -950,6 +950,27 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-089 Web UI for CredAgent: a local page and JSON API over the unchanged orchestrator — Decided (owner approved 2026-11-17)
+**Request.** A clean, minimal frontend: enter any app name, follow real progress, be told when your attention is needed, resume, and see the result with credentials masked.
+
+**Inspection.** The repo had no frontend, no HTTP API and no Node toolchain: the CLI was the only interface. The orchestrator already talks to the person through a small `IO` object (`say`, `choose`, `wait_enter`, awaitable-friendly) and run state is complete on disk (`run.json`, `events.jsonl`). So the page needed a second IO implementation and a read-only view of existing state, not a change to the backend. The proposal is `docs/design/web-ui.md`.
+
+**Owner decisions (asked first, as the brief says).** (1) A local API in this repo using only the Python standard library; (2) vanilla ES modules, no build step, no Node; (3) the header says **CredAgent** (the brief's "Access Agent" was not used); (4) **ATTEMPT-PROTOCOL amended** so the terminal confirmations (consent, DO "I did it", DECIDE answers) may be given in the page with the same checks; the protocol version stays v2 and carries a dated amendment.
+
+**Built (new code only; `cli/main.py` gains one `ui` command).**
+- `src/credagent/web/`: `server.py` (standard-library HTTP, static files, strict security checks), `controller.py` (one worker thread per active run: research and plan, terms check, consent, the browser agent; resume; verify; reveal), `webio.py` (blocks in a thread, awaitable in the event loop), `views.py` (pure functions: run and events to what the page shows), `static/` (HTML, one CSS file, ES-module components with all `fetch` calls in `api.js`).
+- API: `GET /api/config`, `GET/POST /api/runs`, `GET /api/runs/<id>` and `/events?after=`, `POST …/consent`, `…/answer`, `…/continue`, `…/stop`, `…/resume`, `…/verify`, `…/browser/focus`, `…/secrets/<part>/reveal`.
+- Page: landing (any name, suggestions fill the input, collapsed Advanced for the local test site), consent screen, running view with milestones and the latest activity, "Your attention is needed" (do or decide), result (masked credentials, Reveal, Copy, verification method and status, time), failure (recoverable, needs you, waiting, unrecoverable), paused (Resume), a collapsed activity log.
+- **Milestones are real facts** (identified, portal, credential type, go-ahead, browser opened, application registered, captured, verified); no percentage anywhere. Terminal wording in backend texts ("press Enter", "this terminal") is rewritten for the page; facts are never changed.
+
+**Security.** Binds 127.0.0.1; `Host` must match (DNS rebinding); a one-time launch token becomes an HttpOnly SameSite=Strict cookie; API calls need the cookie and a custom header; `Origin`, if sent, must match; no CORS; `no-store`, a strict CSP, no inline styles, no `innerHTML` anywhere; no access log; unexpected errors return a generic message. A secret is returned only by `reveal` on an explicit click, is held in memory by one component, hidden after 30 seconds and when the tab is hidden, never stored (checked: `localStorage` and `sessionStorage` empty), never in a URL, a log line, an event or the view. The attacker model is another page or process on the same machine, not someone with the owner's account.
+
+**Tests (all pass).** `test_web_views` (every state, masked-only, no secret), `test_web_server` (cookie and header, Host and Origin refusals, path traversal, bad bodies, reveal needs confirm), `test_web_io`; real Chrome against the fake provider and the offline stand-in: `test_web_api` (completion, reveal, a DO handoff, a DECIDE choice, stop and resume without a second app, a recoverable failure, refresh recovery) and `test_web_ui_browser` (the page itself: whole journey with refresh mid-run, reveal, hide and copy, a radio choice, stop and resume, a failure, a 375 px screen with no horizontal overflow, and the "open the link" screen). Screenshots of each state were reviewed; three defects found and fixed (a literal "null" under each credential, stretched status badges, an unhelpful "done so far" text).
+
+**Not done or not verified.** A real-provider run through the page; the consent screen against a live provider; Safari and Firefox; granted scopes (the backend does not record them); live detail during research (the backend logs it only afterwards). Listed with reasons in `docs/design/web-ui.md` section 9.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

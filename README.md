@@ -119,6 +119,24 @@ Real-browser tests open Chrome, so they are opt-in:
 CREDAGENT_BROWSER_TESTS=1 .venv/bin/python -m pytest tests/integration   # add CREDAGENT_HEADLESS=1 to hide the window
 ```
 
+## Web page
+
+```bash
+.venv/bin/credagent ui          # prints a link and opens it; Ctrl+C to stop
+```
+
+A small local page (127.0.0.1 only) for the same runs the CLI makes: enter an application name, follow the
+milestones, answer "Your attention is needed" handoffs with buttons instead of the terminal, resume a saved run, and
+see the result with the credentials masked until you press Reveal or Copy. It runs the same orchestrator; the CLI
+keeps working and shares the same saved runs. Details and limits: `docs/design/web-ui.md`.
+
+- Open the exact link `credagent ui` prints (it signs this browser in once). The page cannot be used from another
+  computer or another website.
+- A real provider still needs a recorded terms check and your consent in the page, every session. Today only Discord
+  and Spotify have a recorded terms check; for any other app the page researches and plans, then says the terms have
+  not been checked yet and stops.
+- The "Advanced" section runs the local test site (Fakeprov) with the offline stand-in, which needs no keys or account.
+
 ## Fake provider (Fakeprov)
 
 A local, clearly fake developer console used to test every path without real accounts:
@@ -139,7 +157,7 @@ Feasibility spikes (Sprint 0) are in `scripts/spikes/`; curated results are in
 
 ```text
 src/credagent/      CLI, orchestrator, research, reasoning (FastRouter), agent (LLM step loop),
-                    browser (Chrome + Playwright), state, secrets, reports, config
+                    browser (Chrome + Playwright), web (local page + JSON API), state, secrets, reports, config
 fake_provider/      Fakeprov fake developer console + scenario fixtures
 tests/              unit, integration (incl. opt-in real-browser test), fake_provider
 scripts/            secret scan, env check, Sprint 0 spikes (storage, Tavily)
