@@ -22,6 +22,11 @@ DEFAULT_DONT = {
 
 
 def progress(run: Run) -> str:
+    if run.loop == "agent":  # the plan is guidance for the agent, not a step counter (D-078)
+        agent = sum(1 for s in run.steps if s.actor == "agent" and s.outcome == "done")
+        person = sum(1 for s in run.steps if s.actor == "person" and s.outcome == "done")
+        created = f"; created: {', '.join(run.created)[:90]}" if run.created else ""
+        return f"{agent} actions by the agent, {person} by you{created}"
     total = len(run.plan.steps)
     # Plan steps finished, not actions: several actions (fills, a cookie click) can belong to one step.
     if run.phase == "browser":

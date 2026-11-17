@@ -757,6 +757,56 @@ Latency was 2.2–3.1 s and 2.4–2.5k tokens per call on these small pages. Rea
 
 **Open for phase 3 (needs a decision):** the policy engine needs a *risk* for a button click. Jev used to supply it, and when it was unsure the engine assumed "hard to undo", which caused most of the repeated yes/no questions. The new loop has no Jev, so code must assign risk. Recommendation in the phase 3 report.
 
+## D-081 D-078 phase 3 done: the agent loop; code assigns risk — Decided (owner approved the risk rule, 2026-11-17)
+**The risk rule (owner: "Yes, start phase 3", accepting the recommendation).** Jev used to supply a risk, and when it was unsure the engine assumed "hard to undo" and asked: the cause of the repeated "New Application?" questions. Code now assigns it (`policy/risk.py`):
+- the hard stops stay first and unchanged (delete, review, payment, verification, account security, terms, off-site, one app per run);
+- **creating the one planned app is already consented** (the consent screen says "Will create one app named …"), so the first create click is not asked again; a second is denied;
+- a button whose name carries a **consequence verb** (reset, regenerate, rotate, generate a new …, transfer, publish, make public, confirm, disable, enable, disconnect, leave, archive, convert, migrate, merge, overwrite, replace, ban, kick, erase, wipe, clear all) **asks the person**; any other button goes ahead and is logged;
+- links, navigation and typing approved values are read-only or reversible.
+- **Trade-off, accepted by the owner:** this *lets through* a button whose name is not on the list, where the old rule asked about unknown buttons. The hard stops are the backstop.
+
+**New: `agent/loop.py`, `agent/handoff.py`, `agent/scripted.py`, `policy/risk.py`.** Per step: look (plain code) → **hard checks in code** → one LLM call → validate → **policy** → execute → record.
+- **Hard checks** (before any model is asked):
+  - off-site pages: go back, else the person;
+  - documentation pages: go back (D-070);
+  - cookie banners: the most limited option, chosen by code;
+  - sign-in, CAPTCHA, codes, payment: the person;
+  - business verification: blocked.
+- **Policy** on every action that changes anything (unchanged rules plus the risk above): deny (recorded; the control is shown to the model as refused and cannot be chosen again), DO (the person acts, the card names the box and the button, the agent has filled the approved fields first), DECIDE (permissions, dropdown choices, consequence buttons; "Stop here" always offered).
+- **Detection and limits:**
+  - what each action changed, including "no change", is shown to the model on its next turn;
+  - after 3 unchanged actions it is told; after 6 the person is asked;
+  - the same control clicked twice on a page is refused (D-069);
+  - a step budget (60 LLM turns) and a time budget (900 s, not counting the person's turn);
+  - unusable or rejected answers are counted; 6 in a row asks the person.
+- **"done" is the model's claim:** code accepts it only when a credential is actually shown. Capture and the live test follow (phase 4).
+- **One app per run:** the model is told what exists; code marks an app as created when a create-looking button moves the page on to something that is not a create form (or when the person submits one); a second create is denied.
+- **Outage and leaks:** if the LLM is unreachable twice, the loop checkpoints and ends `failed: service unavailable` (resumable). A prompt that would leak a secret is never sent.
+- **Supporting changes:** `Snapshot.refused`; `Run.loop` (`legacy` | `agent`) so cards show agent-loop progress ("N actions by the agent, M by you") instead of a plan-step counter; the snapshot fingerprint now includes the elements.
+- **Size:** `loop.py` is 530 lines, plus 225 in `handoff.py`, against the scoping's estimate of about 350: the ported handoff and form-completion behaviour accounts for the difference.
+
+**Found while testing:**
+- **A real-model case:** on a terms form the model used `ask_person` *before filling anything*, skipping the careful terms path and giving a generic card. Fixed in two ways. Code recognises a terms page **however the model reaches it**: it fills the approved fields itself, then writes the card naming the box and the button. And prompt rule 2 now says: fill the other fields, then click create/submit or ask_person; either way CredAgent hands the agreement to the person. Regression-tested with a model that asks at once.
+- **A gap:** a snapshot's fingerprint ignored the element list, so a page that gained a link counted as unchanged in the handoff re-check. Fixed and unit-tested.
+
+**Tests:** 19 real-Chrome loop tests with the scripted stand-in on the fake provider:
+- success: cookie banner by code, one app created by the agent, every action bracketed;
+- terms (checkbox and implied): only the person accepts, the agent filled the fields first, the card names the box and the button;
+- sign-in, CAPTCHA, business verification (blocked), and a cookie banner without a limited option;
+- the browser domain guard is lifted only while the person acts;
+- **a hostile model** that proposes Delete, Billing, an off-site link or the terms checkbox cannot cause anything forbidden;
+- a second app is refused;
+- "done" without a credential is rejected with a reason the model sees;
+- invalid and rejected answers are recorded; an outage ends `failed: service unavailable`;
+- budgets and no-change detection stop a model that goes nowhere;
+- **no prompt contains a credential**, including the credential page's step.
+
+Plus unit tests for the risk table and the ported handoff helpers.
+
+**Early look, real LLM on the fake provider** (not the formal phase 6 measurement): success, sign-in and both terms variants all finished correctly, using 6–8 LLM calls each, about 2.8k tokens per call, and 13–38 s of LLM time per run (2–6 s per call; it varies). The model filled every field, then clicked Create. Policy handed the agreement to the person, who created the app.
+
+**Not yet:** capture, reset/reveal, the live test and resume (phase 4); orchestrator and CLI wiring, removal of Jev, Stagehand and the step machine (phase 5).
+
 ---
 
 ## Discrepancies between documents

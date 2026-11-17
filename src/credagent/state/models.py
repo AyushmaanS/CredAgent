@@ -275,7 +275,8 @@ class Run(Strict):
     untested: list[str] = Field(default_factory=list)
     browser: BrowserSession | None = None
     replans_used: int = Field(default=0, ge=0, le=MAX_REPLANS)
-    plan_cursor: int = 0  # index of the current plan step during browser execution
+    plan_cursor: int = 0  # index of the current plan step during browser execution (legacy loop only)
+    loop: Literal["legacy", "agent"] = "legacy"  # which browser loop ran this run (D-078)
     metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run

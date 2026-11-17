@@ -95,6 +95,7 @@ class Snapshot:
     scroll: dict[str, int]
     obs: Observation  # the full plain-code observation, for the hard checks
     truncated: int = 0  # interactive elements left out because of MAX_ELEMENTS
+    refused: set[str] = field(default_factory=set)  # xpaths the safety rules refused on this page (shown flagged)
     _by_ref: dict[str, Element] = field(default_factory=dict, repr=False)
 
     def element(self, ref: str | None) -> Element | None:
@@ -110,7 +111,12 @@ class Snapshot:
         return len(self.obs.secret_xpaths)
 
     def fingerprint(self) -> str:
-        return self.obs.fingerprint()
+        """Changes when the page meaningfully changes: address, title, text size, filled fields, and the elements
+        the agent can see (their roles, names and states)."""
+        import hashlib
+
+        state = "|".join(f"{e.key()}:{int(e.filled)}{int(e.checked)}{int(e.disabled)}" for e in self.elements)
+        return f"{self.obs.fingerprint()}|{hashlib.md5(state.encode(), usedforsecurity=False).hexdigest()[:12]}"
 
     def render(self, max_chars: int = RENDER_CHARS) -> str:
         """Compact text for the model. Elements are never cut mid-way; text comes last and is trimmed."""
@@ -128,7 +134,8 @@ class Snapshot:
             out.append(f"Note: {self.secret_count} credential-like value(s) are on this page and are hidden from you.")
         more = f", +{self.truncated} more not shown" if self.truncated else ""
         out.append(f"Elements ({len(self.elements)}{more}):")
-        out += [e.line(origin) for e in self.elements]
+        out += [e.line(origin) + (" [refused by safety rules: do not choose it]" if e.xpath in self.refused else "")
+                for e in self.elements]
         text = re.sub(r"\n{2,}", "\n", self.text).strip()[:TEXT_CHARS]
         out.append("Page text:\n" + text)
         body = "\n".join(out)

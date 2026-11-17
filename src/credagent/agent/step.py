@@ -122,6 +122,9 @@ def _ref_element(step: AgentStep, snap: Snapshot) -> Element:
     if el is None:
         raise StepRejected("unknown_ref", f"{step.ref!r} is not in the current snapshot. Refs are valid only for "
                            "the snapshot they appear in; look at the elements listed now.")
+    if el.xpath in snap.refused and step.action in ("click", "type", "select"):
+        raise StepRejected("refused", f'{el.role} "{el.name[:40]}" was refused by the safety rules on this page. '
+                           "Choose something else, or ask_person.")
     return el
 
 
