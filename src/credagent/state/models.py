@@ -235,7 +235,7 @@ class Consent(Strict):
     account: str  # the owner's own description, e.g. "my test Spotify account (Premium)"
     given_at: str = Field(default_factory=now)
     scope: str
-    terms_finding: Literal["prohibited", "unclear", "not_prohibited"]
+    terms_finding: Literal["prohibited", "unclear", "not_prohibited", "unchecked"]
     terms_record: str = ""
 
 

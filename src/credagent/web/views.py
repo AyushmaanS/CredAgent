@@ -34,7 +34,7 @@ HANDOFF_TITLES = {
     "off_allow_list": "The agent left the provider's site", "secret_hidden": "The secret could not be captured",
     "human_field": "Fill in a field yourself", "secret_rotation": "Confirm resetting a secret",
 }
-NO_RESUME = ("terms_unchecked", "terms_prohibited", "config")  # resuming would only hit the same wall
+NO_RESUME = ("terms_prohibited", "config")  # resuming would only hit the same wall
 _PLAIN = [
     (re.compile(r"\s*If you do not agree, press Ctrl\+C: nothing is submitted and the run is saved\."),
      " If you do not agree, choose “Save and stop”: nothing is submitted and the run is saved."),

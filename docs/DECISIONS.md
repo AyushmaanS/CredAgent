@@ -982,6 +982,21 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-091 The terms check no longer blocks an unfamiliar app — Decided (owner, 2026-11-17)
+**Owner instruction.** "Terms check for automated console checks needs to be skipped. Any unfamiliar app given as input has to start with the process we have. Remove that as a blocker."
+
+**What happened that prompted it.** A Google Cloud run through the page researched and planned, then stopped: Google had no recorded terms check (only Discord and Spotify do) and ATTEMPT-PROTOCOL §2.3 said an unchecked provider is never automated.
+
+**Change.** `consent/terms.py` gains `terms_for()`, which never returns None: a provider without a recorded check gets an explicit **"unchecked"** finding that may be automated, exactly like "unclear" (D-059). The CLI and the web page both use it, so GitHub, Linear, Google Cloud and any other app now reach the consent screen. Consent is unchanged and still asked every session, in your own words, with an explicit confirm; the screen now says "Not checked. No check of this provider's terms on automated console use has been recorded. Automating a console can go against a provider's terms and can lead to the account being restricted. A dedicated test account is strongly advised. Unchecked providers are automated too (your decision, D-091). You remain responsible for activity on your account." The run records `terms_finding: "unchecked"` in its consent entry. ATTEMPT-PROTOCOL §2.3 and its amendment note were updated; the protocol stays v2.
+
+**Kept on purpose.** A recorded **prohibited** finding still blocks (none exists today; both recorded findings are "unclear"). If you want that gone too, it is a one-line change, but a recorded prohibition is a fact the owner wrote down.
+
+**Risk stated plainly.** Automating a console without reading its terms can breach them and put the account at risk (Google, for example, often blocks sign-in in automated Chrome). That is now the owner's call per run, which is what the consent screen says.
+
+**Tests.** The old "unchecked provider never opens the browser" test now asserts the opposite for the consent screen and that no browser opens without consent; new test that `terms_for` never returns None and that only a recorded prohibition blocks.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

@@ -5,7 +5,8 @@ whether the console may be automated:
   prohibited     → never automated
   unclear        → automated by default (owner decision, D-059); reports say the wording was unclear
   not_prohibited → automated
-A provider with no entry is never automated: its terms have not been checked.
+  unchecked      → a provider with no entry. Automated like "unclear" (owner decision, 2026-11-17, D-091): an
+                   unfamiliar app must start, and the consent screen says plainly that no check was recorded.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Literal
 @dataclass(frozen=True)
 class TermsCheck:
     provider: str
-    finding: Literal["prohibited", "unclear", "not_prohibited"]
+    finding: Literal["prohibited", "unclear", "not_prohibited", "unchecked"]
     checked_on: str
     sources: list[str] = field(default_factory=list)
     summary: str = ""
@@ -25,7 +26,7 @@ class TermsCheck:
 
     @property
     def may_automate(self) -> bool:
-        return self.finding in ("unclear", "not_prohibited")
+        return self.finding in ("unclear", "not_prohibited", "unchecked")
 
 
 TERMS_CHECKS: dict[str, TermsCheck] = {
@@ -74,3 +75,16 @@ def lookup(*names: str | None) -> TermsCheck | None:
             if key == k or key.startswith(k + " ") or k in key.split():
                 return v
     return None
+
+
+def terms_for(*names: str | None) -> TermsCheck:
+    """The recorded check for a provider, or an explicit "unchecked" one: never None, never a blocker (D-091)."""
+    found = lookup(*names)
+    if found is not None:
+        return found
+    name = next((n.strip() for n in names if n and n.strip()), "this provider")
+    return TermsCheck(
+        provider=name, finding="unchecked", checked_on="not checked", record="none recorded",
+        summary="No check of this provider's terms on automated console use has been recorded. Automating a "
+                "console can go against a provider's terms and can lead to the account being restricted. "
+                "A dedicated test account is strongly advised.")

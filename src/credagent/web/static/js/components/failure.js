@@ -21,7 +21,6 @@ export function renderFailure(view, { busy, onResume, onRetry, onHome }) {
 }
 
 const PAUSED_TITLE = {
-  terms_unchecked: "This provider's terms haven't been checked yet",
   terms_prohibited: "This provider's terms prohibit automation",
   config: "A key is missing",
 };

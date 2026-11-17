@@ -21,7 +21,7 @@ export function renderConsent(attn, { draft, busy, onConsent, onStop }) {
       h("dt", {}, "Predicted"), h("dd", {}, attn.predicted),
       h("dt", {}, "Live test"), h("dd", {}, attn.live_test),
       h("dt", {}, "Afterwards"), h("dd", {}, attn.afterwards),
-      h("dt", {}, "Terms check"), h("dd", {}, `${String(t.finding || "").replace("_", " ")} (${t.checked_on}). ${t.summary || ""}`)),
+      h("dt", {}, "Terms check"), h("dd", {}, t.finding === "unchecked" ? `Not checked. ${t.summary || ""}` : `${String(t.finding || "").replace("_", " ")} (${t.checked_on}). ${t.summary || ""}`)),
     t.unclear_note && h("div", { class: "note" }, t.unclear_note),
     attn.blockers.length > 0 && h("details", { class: "log" }, h("summary", {}, "Known blockers"),
       h("ul", { class: "done-list" }, attn.blockers.map((b) => h("li", {}, b)))),

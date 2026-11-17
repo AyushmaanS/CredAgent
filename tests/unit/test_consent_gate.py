@@ -41,11 +41,23 @@ def cli(monkeypatch):
     return c
 
 
-def test_unchecked_provider_never_opens_the_browser(cli):
+def test_an_unchecked_provider_is_not_blocked_but_still_needs_consent(cli):
+    """D-091: a provider with no recorded terms check proceeds to the consent screen; the browser opens only after consent."""
     planned_run("Acme API", "Acme Inc.")
-    r = CliRunner().invoke(cli, ["resume", "r-acme"])
+    r = CliRunner().invoke(cli, ["resume", "r-acme"])  # no answer given: no consent
     assert r.exit_code == 0, r.output
-    assert "have not been checked yet" in r.output
+    assert "have not been checked yet" not in r.output
+    assert "Terms check:    not checked" in r.output and "Unchecked providers are automated too" in r.output
+    assert "No consent given" in r.output
+
+
+def test_terms_for_never_returns_none_and_only_a_recorded_prohibition_blocks():
+    from credagent.consent.terms import terms_for
+
+    unknown = terms_for("Google Cloud", "Google")
+    assert unknown.finding == "unchecked" and unknown.may_automate and unknown.provider == "Google Cloud"
+    assert terms_for("Discord").finding == "unclear" and terms_for("Discord").may_automate
+    assert not TermsCheck("X", "prohibited", "2026-11-16").may_automate
 
 
 @pytest.mark.parametrize("answers", ["", "\n", "my test account\nno\n"])

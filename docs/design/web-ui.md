@@ -115,7 +115,7 @@ Unit tests for `views.py` (every status/phase/handoff combination, and that no s
 - **Open the browser window** is best effort (macOS, by the saved Chrome pid). If the system refuses, the page says to switch to the Chrome window by hand.
 - **Granted scopes** are not recorded by the backend, so the result card does not show a permissions row. This is a missing capability, not an omission.
 - **Re-test** (`verify`) is offered for real providers only.
-- **Terms checks:** only Discord and Spotify have a recorded terms check (`consent/terms.py`). For the suggestion chips (GitHub, Linear, Google Cloud) and any other app the page researches and plans and then stops with "This provider's terms haven't been checked yet" and no browser is opened, exactly as the CLI does.
+- **Terms checks:** only Discord and Spotify have a recorded terms check (`consent/terms.py`). Since D-091 any other app is automated too: the consent screen says no check was recorded and the owner stays responsible. (Before D-091 the page stopped there, as the CLI did.)
 - **Masked display** is the backend's (first four characters and a length for a secret), shown as is.
 - **Not covered by tests:** a real-provider run through the page (consent screen included: it is checked visually and by the API tests with a stubbed view, not against a live provider), Safari and Firefox.
 - **Advanced and Recent were removed (owner, 2026-11-17, after a real Discord run through the page).** The landing page is one input and one button. Local test-site runs are started through the API, which still supports them. A new tab at `/` no longer lists earlier runs; a run is reopened by its address (`#/run/<id>`) or from the CLI. `GET /api/runs` stays for scripts.

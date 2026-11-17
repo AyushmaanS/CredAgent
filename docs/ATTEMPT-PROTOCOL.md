@@ -9,6 +9,10 @@ web page (`credagent ui`). The checks are unchanged: the terms finding is shown,
 types the account in their own words, an explicit confirm is required, the consent is
 recorded in the run, and every resume asks again. The page binds to 127.0.0.1 only.
 
+**Amendment (2026-11-17, owner decision, D-091):** a provider with no recorded terms check is
+no longer a blocker (section 2.3). Consent (section 2) is unchanged and still asked every
+session, now with the "no terms check recorded" notice.
+
 Derived from the PRD (`docs/CredAgent-PRD.md`) §5 (principles), §6.2 (out of
 scope), §7 (flows), §9 (handoffs) and §13 (risks). Where this protocol and
 the PRD differ, the PRD wins. In this document "the agent" means CredAgent and
@@ -41,7 +45,11 @@ A real-provider run may start only when **all** of these are true:
      **is** automated by default (owner decision, v2), and the run report and
      `RESULTS.md` say the wording was unclear. The owner is told before consenting;
    - **not prohibited**: the console may be automated.
-   A provider whose terms have not been checked is never automated.
+   - **unchecked** (no finding recorded): **automated too** (owner decision, 2026-11-17,
+     D-091: an unfamiliar app must be able to start). The consent screen says plainly that
+     no check was recorded, that automating a console can go against a provider's terms
+     and risk the account, and that the owner remains responsible. A recorded
+     **prohibited** finding still blocks.
    Reading the terms is not accepting them.
 4. **Account.** The owner names the account to use. It must be the owner's own
    account, preferably a dedicated test account or test org. Never a production

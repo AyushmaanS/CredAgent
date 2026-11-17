@@ -170,10 +170,14 @@ def _intended_actions(s: Settings, run, check) -> str:
     lines += [f"  Live test:      {p.verification_procedure[:200]}",
               "  Afterwards:     delete the app in the provider's console yourself when you no longer need it "
               "(the agent never deletes).",
-              f"  Terms check:    {check.finding.replace('_', ' ')} ({check.checked_on}; {check.record}). "
+              ("  Terms check:    not checked. " if check.finding == "unchecked" else
+               f"  Terms check:    {check.finding.replace('_', ' ')} ({check.checked_on}; {check.record}). ")
               + check.summary]
     if check.finding == "unclear":
         lines.append("                  Unclear wording is automated by default (your decision, protocol v2). "
+                     "You remain responsible for activity on your account.")
+    elif check.finding == "unchecked":
+        lines.append("                  Unchecked providers are automated too (your decision, D-091). "
                      "You remain responsible for activity on your account.")
     return "\n".join(lines)
 
@@ -218,17 +222,12 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     import asyncio
 
     from credagent.browser.chrome import ChromeError
-    from credagent.consent.terms import lookup
+    from credagent.consent.terms import terms_for
     from credagent.orchestrator import Orchestrator, execute_agent_phase, resume_agent_phase
     from credagent.state.models import Consent
 
-    check = lookup(run.app_name, run.provider, run.app_input)
+    check = terms_for(run.app_name, run.provider, run.app_input)
     name = run.app_name or run.app_input
-    if check is None:
-        click.echo(f"\n{name}'s terms on automated console use have not been checked yet, so the browser is not "
-                   "started (ATTEMPT-PROTOCOL §2.3). The plan is saved; once the terms are checked: "
-                   f"credagent resume {run.id}")
-        return
     if not check.may_automate:
         click.echo(f"\n{name}'s terms prohibit automated use of the console ({check.record}), so CredAgent will "
                    "not drive it. Follow the plan by hand if you want the credential.")

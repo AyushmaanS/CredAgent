@@ -131,16 +131,12 @@ class RunController:
         """Terms check, the person's consent, then the browser agent (the CLI's `_real_browser`)."""
         from credagent.browser.chrome import ChromeError
         from credagent.cli.main import _real_deps, _step_llm
-        from credagent.consent.terms import lookup
+        from credagent.consent.terms import terms_for
         from credagent.orchestrator import Orchestrator, execute_agent_phase, resume_agent_phase
 
         s, m = self.svc.settings, self.masker
-        check = lookup(run.app_name, run.provider, run.app_input)
+        check = terms_for(run.app_name, run.provider, run.app_input)
         name = run.app_name or run.app_input
-        if check is None:
-            self.error = {"kind": "terms_unchecked", "message": f"{name}'s terms on automated console use have not "
-                          "been checked yet, so the browser is not started (ATTEMPT-PROTOCOL §2.3). The plan is saved."}
-            return
         if not check.may_automate:
             self.error = {"kind": "terms_prohibited", "message": f"{name}'s terms prohibit automated use of the "
                           f"console ({check.record}), so CredAgent will not drive it."}
@@ -384,9 +380,11 @@ class Service:
                           "(the agent never deletes).",
             "terms": {"finding": check.finding, "checked_on": check.checked_on, "record": check.record,
                       "summary": plain(check.summary),
-                      "unclear_note": "Unclear wording is automated by default (your decision, protocol v2). You "
-                                      "remain responsible for activity on your account." if check.finding == "unclear"
-                      else None},
+                      "unclear_note": {
+                          "unclear": "Unclear wording is automated by default (your decision, protocol v2). You "
+                                     "remain responsible for activity on your account.",
+                          "unchecked": "Unchecked providers are automated too (your decision, D-091). You remain "
+                                       "responsible for activity on your account."}.get(check.finding)},
         }
 
     def give_consent(self, run_id: str, account: object, confirm: object) -> None:
