@@ -573,7 +573,7 @@ Values are still never read; only their lengths are compared. Tested: the Discor
 
 **Fix:** `rank_for_goal` scores a name quoted in the step ('…', “…”) as a whole-string match (strong). When the step is about an app, the candidate marked "(the app this run created)" scores high too. A unit test reproduces the list page.
 
-## D-073 Design: checkable steps, with progress proven by code — Approved (owner, 2026-11-17)
+## D-073 Design: checkable steps, with progress proven by code — Approved (owner, 2026-11-17); superseded by D-078
 After twelve Discord fixes (D-061 to D-072), the owner asked to step back from patching. Design: `docs/design/checkable-steps.md`.
 - **Checkable steps:** every browser step gets `where`, `target` and `done_when`, from a closed vocabulary that plain code evaluates (`at_page`, `element_present` / `element_absent`, `field_holds` as an in-page equality test with approved non-secret values, `app_exists`, `credential_shown`).
 - **Progress from proofs:** a step is done only with proof. The plan position is the first step not proven done, so the cursor corrections go away.
@@ -615,7 +615,7 @@ Work starts with step 0, the measurement.
 
 **Limits of the measurement:** 9 cases on fake pages, 3 repeats. Real portals may differ, so this is evidence for the design, not proof for every site.
 
-## D-075 Checkable steps implemented: progress proven by code — Decided (implements D-073)
+## D-075 Checkable steps implemented: progress proven by code — Decided (implements D-073); superseded by D-078
 Built per `docs/design/checkable-steps.md`, steps 1–5:
 - **Checks (`src/credagent/steps/checks.py`):** the closed vocabulary.
   - `at_page` binds `{app_id}` and never matches docs.
@@ -679,6 +679,38 @@ Fixes:
 
 Tested: the Discord-like fake now shows the "Reset the client secret?" dialog. A plan *without* a reset step gets the DECIDE at capture, then the confirmation, exactly one regeneration, capture and a verified live test. 80 of 80 real-Chrome tests pass.
 
+## D-078 Architecture change: an LLM agent loop over Playwright, run by the orchestrator; Jev and Stagehand removed — Decided (owner, 2026-11-17)
+**Owner's decision and reasoning (verbatim):**
+> *"I want to keep the following architecture to make things simple since Jev performs well only in bounded set up and is mostly stateless. Managing state via code and giving exhaustive set of bounded action for unfamiliar apps would is leading to a complex system which is also tough to debug what broke where."*
+>
+> *"User Request -> Orchestrator (Maintains workflow state and controls execution) -> LLM Reasoning Layer (Observes page → chooses next action → returns structured output -> Playwright Executor (Click · Type · Navigate · Scroll · Inspect) -> Browser Observation (DOM snapshot · URL · Visible elements · Page changes). Observation feeds back into the LLM until the objective is reached or the workflow is stopped. So basically it's Playwright + LLM overlooked by an orchestrator. Simple."*
+>
+> *"That means we're not using jev and stagehand. It is making the process tough to debug and introducing statefulness via code is becoming complex, hence we should move in this direction."*
+
+**Evidence behind it** (the Discord runs and D-074):
+- **Jev's element choice** was fine: 100 % when the target was offered.
+- **Jev's action and risk answers were weak:** uncertain on 27 % and 43 % of 130 live decisions. 13 of 20 "go back" answers came straight back, and the uncertain-risk rule produced most of the unnecessary questions.
+- **Stagehand added almost nothing:** 114 of 132 decisions used only plain-code candidates.
+- **The code built to compensate caused most of the bugs:** 10 of the 17 fixes from D-061 to D-077 were in CredAgent's glue code (plan position, candidate building, observer heuristics).
+- **Every failure took a long trace to localise,** across code, Stagehand, Jev, the fallback LLM, the navigator and re-planning.
+
+**What changes (supersedes):**
+- **PRD:**
+  - F4 ("Browser loop with Stagehand … Jev decisions …"), F5 (Jev's five closed decisions), §8 (decision layers and the Jev-failure rule);
+  - the §13 risks on Stagehand and Jev; §14 key decisions 1, 4, 5 and 6 ("Stagehand", "Jev only for the five closed decisions", "LLM second opinion", "one key for LLM, Jev and Stagehand").
+- **Engineering spec:** §3 (Stagehand, Jev), §6.4 (browser loop with Stagehand), §6.5 (Jev decision layer), and the Jev/Stagehand items in §9.
+- **Owner's original brief:** *"Browser automation is mandatory and must use Stagehand"* and *"Jev makes exactly five closed decisions per page."* The owner, as author of the brief and the PRD, replaces both. The rest of the brief stands.
+- **Designs:** D-073/D-075 (checkable steps) are superseded. Their step machine (position, proofs, conditions) is dropped, though some ideas may be reused as plain safety checks; see the scoping document.
+
+**What does not change:**
+- **Code still owns** hard stops, policy order, secret handling, terms, consent, the one-app rule, state and checkpoints, verification, and reports. *"Neither the LLM nor any model can override code policy"*, and the policy is applied before every executor action.
+- **Secrets** are read only by plain browser code and masked before every model call and every write.
+- **The browser** stays headed and visible, with a persistent profile, local only.
+- **Handoffs:** DO/DECIDE, cards, resume and per-provider consent stay; so does ATTEMPT-PROTOCOL v2.
+- **Only `verified` gives `succeeded`.**
+
+Scoping (what is reused, what is new, what is removed, risks, phases): `docs/design/llm-browser-agent.md`. The PRD, spec, sprint plan and README are updated when the rewrite lands, not before, so the documents stay true to the code at every commit. This entry is the record of the change until then.
+
 ---
 
 ## Discrepancies between documents
@@ -686,6 +718,7 @@ Tested: the Discord-like fake now shows the "Reset the client secret?" dialog. A
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
 3. Spec §5 `CredentialReference.storeRef` (single) vs. OAuth's two values → `parts` (D-023).
 4. PRD §10 does not classify a captured-but-`invalid` credential → `failed` (D-022).
+5. **PRD F4/F5/§8/§14 and spec §6.4/§6.5 (Stagehand, Jev) are superseded by D-078** (owner, 2026-11-17). Those documents are updated when the rewrite lands; until then D-078 is authoritative.
 
 ## Assumptions not yet verified
 - ~~A1. Structured outputs work for the chosen models.~~ Verified (D-009).
