@@ -8,13 +8,18 @@ import { renderAttention } from "./components/attention.js";
 import { renderProgressCard, renderRunHead, renderSteps } from "./components/progress.js";
 import { renderResult } from "./components/result.js";
 import { renderFailure, renderPaused } from "./components/failure.js";
+import { renderHowItWorks } from "./pages/how-it-works.js";
+import { renderApproach } from "./pages/approach.js";
+
+// Reading pages: static, no run behind them, reached from the header (not the home screen).
+const PAGES = { "#/how-it-works": { id: "how", title: "How it works", render: renderHowItWorks }, "#/approach": { id: "approach", title: "My approach", render: renderApproach } };
 
 const root = document.getElementById("app");
 renderHeader(document.getElementById("header"));
 
 // UI state. It holds no credential: secret values live only inside secret-field.js while revealed.
 const S = {
-  config: null, runId: null, view: null, error: null, notice: null, busy: false, unauthorized: false,
+  config: null, runId: null, page: null, view: null, error: null, notice: null, busy: false, unauthorized: false,
   choice: null, focusKey: null, lastKey: "",
   draft: { app: "", account: "", consoleUrl: "" },
   logState: { open: false, lines: [], after: 0 },
@@ -36,6 +41,14 @@ function fail(e) {
 
 async function route() {
   clearTimeout(pollTimer);
+  const page = PAGES[location.hash.replace(/\/$/, "")] || null;
+  if (page) {  // a reading page: leave any run alone (it keeps its saved state) and just show the text
+    S.page = page; S.runId = null; S.view = null;
+    render(true);
+    window.scrollTo(0, 0);
+    return;
+  }
+  S.page = null;
   const m = location.hash.match(/^#\/run\/([\w.-]+)/);
   const id = m ? decodeURIComponent(m[1]) : null;
   if (id !== S.runId) {
@@ -83,7 +96,7 @@ async function start() {
 function home() { location.hash = "#/"; }
 
 function render(force = false) {
-  const key = JSON.stringify([S.view, S.error, S.notice, S.busy, S.choice, S.runId, S.unauthorized]);
+  const key = JSON.stringify([S.view, S.error, S.notice, S.busy, S.choice, S.runId, S.unauthorized, S.page && S.page.id]);
   if (!force && key === S.lastKey) return;
   S.lastKey = key;
   const active = document.activeElement;
@@ -98,6 +111,7 @@ function render(force = false) {
 }
 
 function build() {
+  if (S.page) return S.page.render({ home });
   if (S.unauthorized) {
     return h("section", { class: "card bad", role: "alert" }, h("h2", {}, "Open CredAgent from its link"),
       h("p", {}, "This page needs the one-time link that `credagent ui` prints in the terminal. Run it again, or open that link, to sign this browser in."));
@@ -155,6 +169,11 @@ function retry(v) {
 }
 
 function titleAndFocus() {
+  if (S.page) {
+    document.title = `${S.page.title} · CredAgent`;
+    if (S.focusKey !== S.page.id) { S.focusKey = S.page.id; const hd = root.querySelector("h1[tabindex='-1']"); if (hd) hd.focus(); }
+    return;
+  }
   const v = S.view;
   const state = S.runId && v ? v.state : "idle";
   const name = v ? (v.app.name || v.app.input) : "";

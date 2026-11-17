@@ -136,6 +136,7 @@ keeps working and shares the same saved runs. Details and limits: `docs/design/w
   recorded terms finding (Discord and Spotify have one: "unclear") or says plainly that none is recorded, and a
   recorded "prohibited" finding would still block.
 - The page has one input and one button. A run on the local test site (Fakeprov) with the offline stand-in, which needs no keys or account, is started through the API (`POST /api/runs` with `{"app": "x", "mode": "fake", "scenario": "success"}`) or the CLI, and can then be followed in the page.
+- Two reading pages are linked from the header, not the home screen: **How it works** (`/#/how-it-works`: the journey, the agent loop, who decides what, the verdicts, handoffs, where credentials go, how a run ends) and **My approach** (`/#/approach`: the approach, how the design changed, who does each step, how the results were checked). They are plain text and diagrams in `web/static/js/pages/`; their numbers (tests, decisions, runs) are written by hand, so update them when those change (D-099).
 - Reopening `/` in a new tab does not list earlier runs. Reopen a run by its address (`/#/run/<id>`), or with `credagent runs` and `credagent resume <id>`.
 
 ## Fake provider (Fakeprov)

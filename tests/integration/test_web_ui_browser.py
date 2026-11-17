@@ -215,3 +215,39 @@ def test_a_missing_console_address_is_asked_for_in_the_page(ui):
                 await browser.close()
     asyncio.run(go())
     assert got == ["https://console.acme.example/apps"]
+
+
+def test_how_it_works_and_my_approach_are_reached_from_the_header_and_not_the_home_screen(ui):
+    """Two reading pages: header links, own addresses, no run behind them, the home screen unchanged, phone-sized fit."""
+    async def go():
+        async with async_playwright() as p:
+            browser, page, logs, urls = await open_page(p, ui)
+            try:
+                await expect(page.get_by_role("heading", name="Get access to any app.")).to_be_visible()
+                nav = page.get_by_role("navigation", name="Sections")
+                assert await nav.get_by_role("link").all_inner_texts() == ["How it works", "My approach"]
+                assert await page.locator("main .doc").count() == 0  # nothing of them on the home screen
+                await nav.get_by_role("link", name="How it works").click()
+                await expect(page.get_by_role("heading", name="How it works", level=1)).to_be_visible()
+                await expect(page).to_have_title("How it works · CredAgent")
+                await expect(nav.get_by_role("link", name="How it works")).to_have_attribute("aria-current", "page")
+                for diagram in (".journey", ".loop", ".roles", ".verdicts", ".outcomes"):
+                    await expect(page.locator(diagram)).to_be_visible()
+                await nav.get_by_role("link", name="My approach").click()
+                await expect(page.get_by_role("heading", name="My approach", level=1)).to_be_visible()
+                for diagram in (".story", ".grid", ".stats", ".layers", ".run-strip"):
+                    await expect(page.locator(diagram)).to_be_visible()
+                for words in ("Where human involvement was needed", "How the results were verified"):
+                    await expect(page.get_by_role("heading", name=words)).to_be_visible()
+                await page.get_by_role("button", name="Get credentials").last.click()  # the page's own way back home
+                await expect(page.get_by_role("heading", name="Get access to any app.")).to_be_visible()
+                await page.set_viewport_size({"width": 360, "height": 800})  # no sideways scrolling on a phone
+                for hash_ in ("#/how-it-works", "#/approach"):
+                    await page.evaluate(f"location.hash = '{hash_}'")
+                    await page.wait_for_timeout(150)
+                    assert await page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+                assert not [m for m in logs if "pageerror" in m], logs
+            finally:
+                await browser.close()
+
+    asyncio.run(go())

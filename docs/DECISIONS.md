@@ -1103,6 +1103,19 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 **Not done / unknown.** Why the model's JSON failed 12 times (the new message will show). Slack's text addressed to agents on the apps page was ignored by the agent, but its exact words were never saved, so whether it is hostile is unknown (the page flag `isAgentHandoffLandingEnabled` suggests a Slack feature for coding agents). The Slack app `credagent-demo-20261117` (A0CJN1KTBKK) exists in the owner's workspace and the owner should delete it. Not yet tried against real Google or Slack again.
 
+
+---
+
+## D-099 Two reading pages in the web UI: "How it works" and "My approach" — Decided (owner's request)
+
+**Request.** Add two sections to the page, reachable from the top of every screen but not part of the home screen: how the app works, in a structured way, and the owner's approach (what the approach was, where human involvement was needed, how results were verified), with diagrams where possible; then rewrite the text to sound human.
+
+**Decision.** The header's "i" popover (a short "How it works" blurb) is replaced by two links, `#/how-it-works` and `#/approach`. They are static pages (no run behind them; a run in progress keeps its saved state), built like the rest of the UI: plain ES modules, `createElement` only, and CSS classes only, because the Content-Security-Policy forbids inline styles. Diagrams are HTML/CSS (a journey, the agent loop as numbered cells, role columns, the four-way verdict, outcome bars, a design timeline, a who-does-what grid, stat tiles, verification layers, a run-history strip), each with real text so a screen reader reads the same thing. The text speaks to the reader as "you" on How it works and in the owner's first person on My approach.
+
+**Facts used.** Only what the README, RESULTS.md and DECISIONS.md already state: the six stages and the loop (D-078), the verdicts (policy engine), 52 of 52 fake-provider runs (D-084), Discord run 7 verified with an HTTP 200 token request (D-088), the seven runs in RESULTS.md, and the decisions the log credits to the owner (D-053, D-078, D-048 to D-050, D-059, D-096, D-097). Counts that will drift (about 380 tests, 98 decisions) are written by hand in `pages/approach.js`.
+
+**Not done / unknown.** The Google Cloud and Slack attempts are described in one line on My approach ("no credential from either yet"); they are not in RESULTS.md yet. The owner should read the first-person text and change anything that is not how they would say it. Tested in a real browser (desktop and a 360 px phone width) by `test_how_it_works_and_my_approach_are_reached_from_the_header_and_not_the_home_screen`.
+
 ---
 
 ## Discrepancies between documents
