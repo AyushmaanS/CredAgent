@@ -657,7 +657,7 @@ Built per `docs/design/checkable-steps.md`, steps 1–5:
 - **What happened next:** the agent stayed on "Click 'Create'" and showed "person needed" and "stuck" cards.
 
 Fixes:
-- **Slugs are names:** the observer no longer flags lowercase word slugs (`[a-z0-9]+(-[a-z0-9]+)+`) as secrets, the same exemption the masker already makes.
+- **The run's own values are names:** the observer is given the run's own approved, non-secret values (app name, homepage, callback, description) and never flags them as credentials. *Correction:* I first exempted all lowercase word slugs. That also exempted the fake site's client ID (`fpcid_…`) and could exempt real tokens such as Slack's `xoxb-…`, and three real-Chrome tests failed. So the exemption now covers exact approved values only.
 - **`app_exists` reads more text:** link, button and heading text as well as page text.
 - A unit test reproduces the list page.
 

@@ -444,7 +444,7 @@ class BrowserLoop:
         self._cp(run, "form_completed", summary)
         if changed:
             await page.wait_for_timeout(self.budget.settle_ms)
-            obs = await observe_page(page, self.masker)
+            obs = await observe_page(page, self.masker, self._not_secret())
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
 
@@ -528,6 +528,10 @@ class BrowserLoop:
         return True
 
     # ------------------------------------------------------------ checkable steps (D-075)
+    def _not_secret(self) -> list[str]:
+        v = self.values
+        return [x for x in (v.app_name, v.homepage_url, v.redirect_uri, v.description) if x]
+
     def _ctx(self, run: Run) -> Context:
         return Context(values=self.values, allowed_domains=run.plan.allowed_domains, created=bool(run.created),
                        app_name=self.values.app_name,
@@ -754,7 +758,7 @@ class BrowserLoop:
         if page is None:
             return None
         try:
-            now = await observe_page(page, self.masker)
+            now = await observe_page(page, self.masker, self._not_secret())
         except Exception:  # noqa: BLE001 - if the page cannot be read, let the main loop re-observe
             return None
         if blocker_kind == "secret_hidden":
@@ -916,7 +920,7 @@ class BrowserLoop:
                 return LoopResult("budget", "browser-loop budget exhausted", n_obs, n_act)
 
             # 1. look (plain code)
-            obs = await observe_page(page, self.masker)
+            obs = await observe_page(page, self.masker, self._not_secret())
             n_obs += 1
             if run.browser:
                 run.browser.last_url = obs.url_masked
@@ -929,7 +933,7 @@ class BrowserLoop:
                 self._step(run, "left the allowed domains; going back", "system", "denied", [obs.url_masked])
                 await page.go_back()
                 await page.wait_for_timeout(self.budget.settle_ms)
-                obs2 = await observe_page(page, self.masker)
+                obs2 = await observe_page(page, self.masker, self._not_secret())
                 if not host_allowed(obs2.url, allowed):
                     g = next(g for g in gates if g.kind == "off_allow_list")
                     if await self._handoff(run, "DO", "off_allow_list", g.reason, g.evidence, obs) is None:
@@ -1062,7 +1066,7 @@ class BrowserLoop:
                 # Spec §6.5: the element-selection fallback is "LLM re-observes and picks". Look again first;
                 # if the page changed, start over (hard checks run again) instead of picking from stale elements.
                 await page.wait_for_timeout(self.budget.settle_ms)
-                obs2 = await observe_page(page, self.masker)
+                obs2 = await observe_page(page, self.masker, self._not_secret())
                 n_obs += 1
                 if obs2.fingerprint() != fp:
                     self._cp(run, "re_observed", {"page_changed": True})

@@ -21,8 +21,9 @@ OBSERVE_JS = r"""
   const TOKEN = /^[A-Za-z0-9_\-.~+\/=]{20,}$/;
   const SECRET_LABEL = /(client[\s_-]*secret|secret[\s_-]*key|api[\s_-]*key|access[\s_-]*token|private[\s_-]*key|\btoken\b|\bsecret\b|password)/i;
   const mixed = t => /[A-Za-z]/.test(t) && /[0-9]/.test(t);
-  // Lowercase word slugs ("credagent-demo-20261117") are names, not secrets: same rule as the masker (D-076).
-  const slug = t => /^[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+$/.test(t);
+  // The run's own approved values (e.g. the app name "credagent-demo-20261117") are not secrets (D-076).
+  const NOT_SECRET = new Set(__NOT_SECRET__);
+  const slug = t => NOT_SECRET.has(t);
   const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
   const xp = el => { let p = ''; for (; el && el.nodeType === 1; el = el.parentNode) {
@@ -150,6 +151,9 @@ def from_raw(raw: dict[str, Any], masker: Masker) -> Observation:
     )
 
 
-async def observe_page(page: Any, masker: Masker) -> Observation:
-    raw = await page.evaluate(OBSERVE_JS)
+async def observe_page(page: Any, masker: Masker, not_secret: list[str] | None = None) -> Observation:
+    """`not_secret`: the run's own approved, non-secret values (app name, …), never treated as credentials."""
+    import json as _json
+
+    raw = await page.evaluate(OBSERVE_JS.replace("__NOT_SECRET__", _json.dumps(list(not_secret or []))))
     return from_raw(raw if isinstance(raw, dict) else {}, masker)
