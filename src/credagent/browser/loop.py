@@ -939,6 +939,12 @@ class BrowserLoop:
             run.plan = run.plan.model_copy(update={"steps": steps2})
             run.plan_cursor = cursor2
         self._proof = has_checks(run.plan.steps)  # checkable steps: code proves progress (D-075)
+        if self._proof:
+            for st in run.plan.steps:  # code-owned steps never carry proofs (an earlier version let Jev add them)
+                if st.kind in ("capture", "verify") and run.proofs.pop(st.id, None) is not None:
+                    self._cp(run, "proof_removed", {"step": st.id, "why": "code-owned step (D-077)"})
+            run.plan_cursor = next((i for i, st in enumerate(run.plan.steps) if st.id not in run.proofs),
+                                   len(run.plan.steps))
         self._run_ref = run
         self._last_results: list = []
         self._recent: list[str] = []
