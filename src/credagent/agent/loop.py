@@ -42,7 +42,8 @@ from credagent.state.models import Blocker, Evidence, Run, StepRecord
 from credagent.state.store import RunStore
 
 NEW_FORM_PATH = re.compile(r"/(new|create|register|add)(/|$)", re.I)
-SIGNIN_HINT = re.compile(r"(sign-?in|log-?in|/auth/|^accounts\.)", re.I)  # an address that is a sign-in page
+# An address that is a sign-in page. "/auth/" is not one: Google's console lives at /auth/clients (D-098).
+SIGNIN_HINT = re.compile(r"(sign-?in|log-?in|^accounts\.)", re.I)
 HIDDEN_VALUE_INSTRUCTION = (  # the person's part when the secret can no longer be shown (D-054)
     "The secret is no longer shown, and the agent could not get one itself. Make it visible in the browser window: "
     "click “Reset Secret” or “Regenerate secret” yourself (the old secret stops working, so this is your decision), "
@@ -149,6 +150,7 @@ class AgentLoop:
         self.history: list[HistoryEntry] = []
         self._refused: set[tuple[str, str]] = set()
         self._last_good: str | None = None  # the last allowed, non-blank page seen: somewhere safe to go back to
+        self._signin_asked: dict[str, int] = {}  # sign-in handoffs per address: "I did it" that changed nothing (D-098)
         self._waits = 0  # consecutive "wait" actions; and how often each address was loaded (D-097)
         self._navs: dict[str, int] = {}
         self._rotations = 0  # secrets reset in this run: a second reset invalidates the first (D-086)
@@ -333,6 +335,15 @@ class AgentLoop:
                 reason = (f"The provider sent the browser to its sign-in page ({host}), which is outside the allowed "
                           "sites. The agent does not act there; you sign in, then you are sent back to the console."
                           if signin else g.reason)
+                if signin:
+                    where = f"{host}{urlparse(snap.url).path}"
+                    self._signin_asked[where] = self._signin_asked.get(where, 0) + 1
+                    if self._signin_asked[where] > 2:  # the person said done twice and the page is the same
+                        why = (f"The browser is still on {host}, outside the allowed sites, after you signed in twice. "
+                               "Either that page is not a sign-in page, or the provider keeps sending you back to it.")
+                        self._step(run, f"asked to sign in on {host} three times with no change; stopping",
+                                   "system", "handed_off", [snap.url_masked])
+                        return LoopResult("stuck", why)
                 self._step(run, f"stopped at a page outside the allowed domains ({host}); asking the person",
                            "system", "handed_off", [snap.url_masked])
                 if await self.handoffs.do(run, "sign_in" if signin else "off_allow_list", reason, g.evidence, snap,

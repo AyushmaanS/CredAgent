@@ -261,6 +261,25 @@ def test_an_off_site_sign_in_redirect_goes_to_the_person_and_does_not_bounce_off
     assert "sign-in page (localhost)" in card and "outside the allowed sites" in card
 
 
+class NeverSignsIn(PersonIO):
+    """Presses "I did it" at the sign-in page without signing in: the page does not change."""
+
+    async def wait_enter(self, prompt):
+        h = self.run.pending_handoff
+        self.handoffs.append((h.kind, h.blocker_kind))
+        return True
+
+
+def test_the_same_off_site_sign_in_page_three_times_stops_the_run_with_a_reason_d098(tmp_path):
+    """Slack/Google runs: "I did it" changed nothing and the person was asked again about seven times. After two
+    asks on the same page the run stops (saved, resumable) and says what it sees."""
+    o = go(tmp_path, "signin_offsite", io_cls=NeverSignsIn)
+    assert o.result.status == "stuck", (o.result.status, o.result.reason)
+    assert "still on" in o.result.reason and "signed in twice" in o.result.reason
+    assert o.io.handoffs.count(("DO", "sign_in")) == 2, o.io.handoffs
+    assert any("three times with no change" in s.action for s in o.run.steps)
+
+
 def test_a_project_made_first_is_not_the_app_and_the_agent_still_creates_the_app(tmp_path):
     """Google run 20261117-152213: "Create project" was counted as the app, so "Create client" was refused as "another
     app" and the person had to create the credential themselves (D-094). A project is asked about; the app is still

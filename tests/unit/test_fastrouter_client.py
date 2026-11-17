@@ -73,3 +73,22 @@ def test_truncated_structured_output_is_reported_as_truncation():
 
     with pytest.raises(OutputTruncated):
         client(handler).chat([{"role": "user", "content": "x"}], json_schema={"type": "object"})
+
+
+def test_a_reply_with_words_around_the_object_is_still_one_object_d098():
+    def handler(req):
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": 'Sure, here is the action:\n{"a": 1}\nHope that helps!'}, "finish_reason": "stop"}]})
+
+    assert client(handler).chat([{"role": "user", "content": "x"}], json_schema={"type": "object"})["parsed"] == {"a": 1}
+
+
+def test_an_unparseable_reply_says_how_it_begins_and_ends_with_secrets_masked_d098():
+    def handler(req):
+        return httpx.Response(200, json={"choices": [{"message": {"content": f'{{"a": "{KEY}", "b": }}'},
+                                                      "finish_reason": "stop"}]})
+
+    with pytest.raises(ModelCallError) as e:
+        client(handler).chat([{"role": "user", "content": "x"}], json_schema={"type": "object"})
+    msg = str(e.value)
+    assert "not valid JSON" in msg and "starts" in msg and "ends" in msg and "error at char" in msg and KEY not in msg

@@ -402,6 +402,15 @@ class ResearchAgent:
         retrieved_hosts = [host_of(r["url"]) for r in results.values()]
         official = [d for d in triage.official_domains if any(on_domain(h, [d]) for h in retrieved_hosts)]
         inferred: list[str] = []
+        # A domain the model named that no retrieved page is on (api.slack.com when only docs.slack.dev was read) is
+        # still the provider's own when its name is the app's or provider's: kept, marked inferred, shown at the
+        # go-ahead screen (D-098). Without this the console URL on it was dropped and the run started blind.
+        names = [app, triage.canonical_name, triage.provider, chosen.name if chosen else None]
+        for d in triage.official_domains:
+            for reg in infer_official_domains([d], names):
+                if not on_domain(reg, official) and reg not in official:
+                    official.append(reg)
+                    inferred.append(reg)
         if not official and attempt > 1:  # the model named none, twice: fall back to the names (marked as inferred)
             inferred = infer_official_domains(retrieved_hosts, [app, triage.canonical_name, triage.provider,
                                                                 chosen.name if chosen else None])
@@ -536,8 +545,8 @@ def build_plan(f: Findings, triage: Triage, official: list[str], sources: list[S
     notes: list[str] = []
     quote_fail = 0
     if inferred_domains:
-        notes.append(f"The model named no official domain; {inferred_domains} were inferred from retrieved hosts whose "
-                     "domain matches the app or provider name. They are shown at the go-ahead screen.")
+        notes.append(f"{inferred_domains} were inferred from retrieved hosts or model-named domains whose name matches "
+                     "the app or provider name. They are shown at the go-ahead screen.")
     dropped = [d for d in triage.official_domains if d not in official]
     if dropped:
         notes.append(f"Dropped official domain(s) {dropped}: no retrieved source is on them.")

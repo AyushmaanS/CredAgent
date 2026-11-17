@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-from credagent.research.agent import on_domain
+from credagent.research.agent import infer_official_domains, on_domain
 from credagent.state.models import Plan
 
 
@@ -32,6 +32,15 @@ def accept_console_url(plan: Plan, raw: object) -> tuple[Plan | None, str]:
     allowed = list(plan.allowed_domains)
     if not on_domain(host, allowed):
         allowed.append(host)
-    note = f"Console address given by the owner: {host}{p.path[:60]}. Its host is allowed for this run."
+    # The provider's own sibling hosts (api.slack.com → app.slack.com, console.developers.google.com →
+    # console.cloud.google.com): after sign-in the console moves between them (D-098). Only when the domain's name is
+    # the app's or provider's, so a shared host (something.vercel.app) never opens its whole domain.
+    ident = plan.identification
+    siblings = [d for d in infer_official_domains([host], [ident.canonical_name, ident.provider])
+                if not on_domain(d, allowed) and d != host]
+    allowed.extend(siblings)
+    note = (f"Console address given by the owner: {host}{p.path[:60]}. Its host is allowed for this run"
+            + (f", and so is the provider domain {', '.join(siblings)}." if siblings else "."))
     return plan.model_copy(update={"console_url": url, "allowed_domains": allowed,
+                                   "domains_inferred": [*plan.domains_inferred, *siblings],
                                    "validation_notes": [*plan.validation_notes, note]}), ""

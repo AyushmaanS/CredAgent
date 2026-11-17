@@ -183,6 +183,18 @@ def test_unsupported_official_domain_dropped(tmp_path):
     assert any("acme-partner.example" in n for n in run.plan.validation_notes)
 
 
+def test_a_domain_the_model_named_that_no_page_is_on_is_kept_when_its_name_is_the_providers_d098(tmp_path):
+    """Slack: only docs.slack.dev was read, so api.slack.com (the console) and slack.com were dropped and the run
+    started with no console address and later bounced on app.slack.com."""
+    r = FakeReasoner({"triage": [triage(official_domains=["acme.example", "api.acme.dev", "acme-partner.example"])],
+                      "synthesis": [findings()]})
+    o, _ = orch(tmp_path, FakeSearcher(), r)
+    p = o.get("Acme").plan
+    assert "acme.dev" in p.allowed_domains and p.domains_inferred == ["acme.dev"]
+    assert "acme-partner.example" not in p.allowed_domains  # a different name: still dropped
+    assert any("inferred" in n and "acme.dev" in n for n in p.validation_notes)
+
+
 def test_triage_cannot_make_agent_read_unretrieved_urls(tmp_path):
     s = FakeSearcher()
     r = FakeReasoner({"triage": [triage(urls_to_read=["https://attacker.example/page", DOCS])],

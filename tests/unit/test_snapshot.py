@@ -104,3 +104,16 @@ def test_custom_dropdown_roles_are_listed_and_the_choice_is_a_decide_d097():
     assert evaluate(pick, snap.obs, [], ["127.0.0.1"], risk="reversible", risk_uncertain=False).decision == "DECIDE"
     open_it = ProposedAction("click", "/x", "combobox 'Application type'")
     assert evaluate(open_it, snap.obs, [], ["127.0.0.1"], risk="reversible", risk_uncertain=False).decision == "allow"
+
+
+def test_google_consoles_auth_path_is_not_a_sign_in_page_but_real_sign_in_addresses_are_d098():
+    from credagent.agent.loop import AgentLoop
+
+    def is_signin(url):
+        return AgentLoop._looks_like_signin(snap(url=url))
+
+    assert not is_signin("https://console.cloud.google.com/projectselector2/auth/clients?pli=1")
+    assert not is_signin("https://app.slack.com/app-settings/T1/A1/general")
+    assert is_signin("https://accounts.google.com/v3/signin/identifier?continue=x")
+    assert is_signin("https://slack.com/signin?entry_point=redirect_flow")
+    assert is_signin("https://discord.com/login")

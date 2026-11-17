@@ -1083,6 +1083,24 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 **Not done / unknown.** Whether the rest of Google's form uses other custom controls (the Name field and "Authorized redirect URIs" appear after the choice; the first real attempt will show). The classic Credentials page was never needed. The probe showed `cfc-overlay`, `cfc-panel` and `cfc-menu` elements: popups may be rendered in overlays, which the scan reads like any other element.
 
+
+---
+
+## D-098 Slack and Google runs: the console was dropped from the plan, then bounced and looped — Decided (fix after reading runs 2f3c, fa73)
+
+**What the logs showed.** (1) Slack run `20261117-185330-slack-2f3c`: research twice answered `console_url: https://api.slack.com/apps`, but the plan had `console_url: null` and `allowed_domains: [docs.slack.dev]`. A domain the model names is kept only if some retrieved page is on it, and only `docs.slack.dev` was read, so `api.slack.com` and `slack.com` were dropped and the console URL (which must be on a kept domain) with them. The owner then typed the console address, which added `api.slack.com` only. After the app was created, Slack redirects `api.slack.com/apps/<id>/general` to `app.slack.com/app-settings/…`: not allowed, so the agent went back, tried about eight settings paths, every one bounced, "Basic Information" was refused as off-list, and the agent gave up. (2) Google run `…174135-google-cloud-fa73`: the plan lacked `console.cloud.google.com`, the owner signed in, and the console page (address contains `/auth/clients`) was read as a sign-in page, so "sign in" was asked seven times in a minute. (3) Slack: the model's reply was not valid JSON 12 times (450–720 chars, finish_reason stop), each costing 10–20 s. The reply was never logged, so the cause is not known.
+
+**Decision (code).**
+- A domain the model named as official, with no retrieved page on it, is kept when its registrable domain's name is the app's or the provider's (`slack.com` for "Slack"); it is marked inferred and shown at the go-ahead screen. A different name (`acme-partner.example` for "Acme") is still dropped.
+- A console address the owner types also opens the provider's own domain, on the same name rule, and never a shared host (`something.vercel.app`). It is recorded in the plan's notes and `domains_inferred`.
+- "Looks like a sign-in page" no longer counts `/auth/` in the path (Google's console is at `/auth/clients`); the host (`accounts.*`), `signin`/`login` in the address, or a password/e-mail field still do.
+- The same off-site sign-in page asked about three times with no change stops the run (`stuck`, saved, resumable) and says what it sees, instead of asking again.
+- A reply with words around one JSON object (or a code fence) is parsed as that object; the schema check still decides. A reply that still fails now reports how it begins and ends and where it broke (masked), so the next occurrence is explained.
+
+**Tests.** `test_a_domain_the_model_named_…` (research), `test_an_owner_given_console_also_allows_the_providers_own_domain_…`, `test_a_reply_with_words_around_the_object…`, `test_an_unparseable_reply_says_how_it_begins…`, `test_google_consoles_auth_path_is_not_a_sign_in_page…`, and the real-browser `test_the_same_off_site_sign_in_page_three_times…`.
+
+**Not done / unknown.** Why the model's JSON failed 12 times (the new message will show). Slack's text addressed to agents on the apps page was ignored by the agent, but its exact words were never saved, so whether it is hostile is unknown (the page flag `isAgentHandoffLandingEnabled` suggests a Slack feature for coding agents). The Slack app `credagent-demo-20261117` (A0CJN1KTBKK) exists in the owner's workspace and the owner should delete it. Not yet tried against real Google or Slack again.
+
 ---
 
 ## Discrepancies between documents

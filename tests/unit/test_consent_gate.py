@@ -112,3 +112,18 @@ def test_no_console_address_given_means_no_browser(cli):
     RunStore(load_settings().runs_dir, Masker()).checkpoint(run, "plan_edited")
     r = CliRunner().invoke(cli, ["resume", "r-acme"], input="\n")
     assert r.exit_code == 0 and "No address given, so the browser was not started" in r.output
+
+
+def test_an_owner_given_console_also_allows_the_providers_own_domain_but_never_a_shared_host_d098():
+    from credagent.research.console import accept_console_url
+    from credagent.state.models import Identification
+
+    slack = Plan(allowed_domains=["docs.slack.dev"], identification=Identification(canonical_name="Slack", provider="Slack"))
+    ok, _ = accept_console_url(slack, "https://api.slack.com/apps")
+    # Slack sends the signed-in console to app.slack.com: that must stay on the list (the hang in run …2f3c)
+    assert ok.allowed_domains == ["docs.slack.dev", "api.slack.com", "slack.com"] and ok.domains_inferred == ["slack.com"]
+    from credagent.policy.hard_checks import host_allowed
+    assert host_allowed("https://app.slack.com/app-settings/T1/A1/general", ok.allowed_domains)
+    shared = Plan(allowed_domains=[], identification=Identification(canonical_name="Slack", provider="Slack"))
+    other, _ = accept_console_url(shared, "https://slack-clone.vercel.app/console")
+    assert other.allowed_domains == ["slack-clone.vercel.app"]  # its name is not the provider's: no sibling opened

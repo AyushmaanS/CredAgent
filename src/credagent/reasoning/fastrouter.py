@@ -102,13 +102,18 @@ class FastRouterClient:
         parsed = None
         if json_schema is not None:
             try:
-                parsed = json.loads(_strip_fences(content))
-            except json.JSONDecodeError:
+                parsed = _parse_object(content)
+            except json.JSONDecodeError as exc:
                 if finish in ("length", "max_tokens"):
                     raise OutputTruncated(
                         f"structured output cut off at max_tokens={max_tokens} ({len(content)} chars)") from None
+                # Where it broke and how it begins and ends (masked): the reply was never visible before (D-098).
+                t = content.strip()
+                shape = self._masker.mask_text(
+                    f"starts {t[:40]!r}, ends {t[-40:]!r}, error at char {exc.pos}: {exc.msg}")
                 raise ModelCallError(
-                    f"structured output was not valid JSON (finish_reason={finish}, {len(content)} chars)") from None
+                    f"structured output was not valid JSON (finish_reason={finish}, {len(content)} chars; {shape})"
+                ) from None
         return {
             "content": content,
             "parsed": parsed,
@@ -117,6 +122,20 @@ class FastRouterClient:
             "usage": data.get("usage"),
             "latency_ms": latency_ms,
         }
+
+
+def _parse_object(content: str) -> Any:
+    """The reply as JSON. A model that adds a sentence before or after the object, or a code fence, still gave one
+    object: take the first complete one. The schema check that follows is what decides if it is acceptable."""
+    text = _strip_fences(content)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        if start < 0:
+            raise
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        return obj
 
 
 def _strip_fences(text: str) -> str:
