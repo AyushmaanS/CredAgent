@@ -651,6 +651,18 @@ Built per `docs/design/checkable-steps.md`, steps 1–5:
 
 *Found while building:* an `{app_id}` learned from a step's done-when (rather than its `where`) was discarded. Fixed and unit-tested.
 
+## D-076 App names are not secrets; "app exists" also reads link text — Decided (found in Discord run #5)
+*Found in real run `20261117-080548-discord-1971`, the first real run with checkable steps.* Research wrote a check for every step; the redirect and Save steps were split as intended. The person clicked Create, and the run recorded the app as created.
+- **Why it stalled:** the create step's check, "this run's app exists", stayed false on the app list. The observer treats a 20+ character mix of letters and digits as a possible secret and removes it from page text. `credagent-demo-20261117` qualifies, so the app's name was hidden from the text the check read.
+- **What happened next:** the agent stayed on "Click 'Create'" and showed "person needed" and "stuck" cards.
+
+Fixes:
+- **Slugs are names:** the observer no longer flags lowercase word slugs (`[a-z0-9]+(-[a-z0-9]+)+`) as secrets, the same exemption the masker already makes.
+- **`app_exists` reads more text:** link, button and heading text as well as page text.
+- A unit test reproduces the list page.
+
+The run is resumable. Its proofs so far, and the app, are kept.
+
 ---
 
 ## Discrepancies between documents

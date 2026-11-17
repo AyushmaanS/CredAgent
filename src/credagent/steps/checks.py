@@ -256,7 +256,14 @@ async def evaluate(check: Check, page: Any, obs: Any, ctx: Context, *, new_bindi
         if not ctx.created:
             return False
         url_has_id = "app_id" in ctx.bindings and ctx.bindings["app_id"] in obs.url
-        return url_has_id or (bool(ctx.app_name) and ctx.app_name.lower() in (obs.text or "").lower())
+        if url_has_id:
+            return True
+        if not ctx.app_name:
+            return False
+        name = ctx.app_name.lower()
+        texts = [obs.text or "", *(a.get("text") or "" for a in obs.links), *(b.get("text") or "" for b in obs.buttons),
+                 *(getattr(obs, "headings", []) or [])]
+        return any(name in t.lower() for t in texts)
     if c == "credential_shown":
         return set(check.parts or []) <= ctx.credential_parts
     return False

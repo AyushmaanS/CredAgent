@@ -109,3 +109,10 @@ def test_evaluate_all_reports_each_check():
     ], FakePage({"/r0": CB}), o, ctx()))
     assert [r.ok for r in res] == [True, True, True] and bound["app_id"] == "123456789012345678"
     assert res[1].line().startswith("[✓]")
+
+
+def test_app_exists_sees_the_name_in_links_d076():
+    """Discord run #5: the app card's name was hidden from page text (it looked like a token)."""
+    o = obs(text="My Applications [SECRET-ELEMENT]",
+            links=[{"xpath": "/a", "text": "c-d-2 credagent-demo-20261117", "href": "x"}])
+    assert run(Check(check="app_exists"), o, ctx(created=True, app_name="credagent-demo-20261117"))

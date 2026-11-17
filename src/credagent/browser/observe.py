@@ -21,6 +21,8 @@ OBSERVE_JS = r"""
   const TOKEN = /^[A-Za-z0-9_\-.~+\/=]{20,}$/;
   const SECRET_LABEL = /(client[\s_-]*secret|secret[\s_-]*key|api[\s_-]*key|access[\s_-]*token|private[\s_-]*key|\btoken\b|\bsecret\b|password)/i;
   const mixed = t => /[A-Za-z]/.test(t) && /[0-9]/.test(t);
+  // Lowercase word slugs ("credagent-demo-20261117") are names, not secrets: same rule as the masker (D-076).
+  const slug = t => /^[a-z0-9]{1,20}(?:[-_][a-z0-9]{1,20})+$/.test(t);
   const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
   const xp = el => { let p = ''; for (; el && el.nodeType === 1; el = el.parentNode) {
@@ -63,7 +65,7 @@ OBSERVE_JS = r"""
     }
     if (el.children.length) continue;               // leaf elements only
     const t = clean(el.innerText);
-    if (t.length >= 20 && TOKEN.test(t) && mixed(t)) secretEls.push(el);
+    if (t.length >= 20 && TOKEN.test(t) && mixed(t) && !slug(t)) secretEls.push(el);
     // A numeric client/application ID (e.g. a Discord snowflake) is not secret, but it is part of the
     // credential being created: report it the same way so plain code can capture it next to its label.
     else if (/^\d{15,22}$/.test(t)) {
