@@ -379,7 +379,8 @@ class Service:
             "provider": check.provider, "app": run.app_name or run.app_input,
             "credential": p.credential_kind.replace("_", " "), "console": p.console_url,
             "domains": list(p.allowed_domains), "domains_inferred": list(p.domains_inferred),
-            "will_create": f"One app named “{v.app_name}”, description “{v.description}”",
+            "will_create": f"One app named “{v.app_name}”, description “{v.description}”. If the provider needs a "
+                           "project or workspace first, creating it is asked separately.",
             "callback": v.redirect_uri if p.needs_redirect_uri != "no" else None,
             "permissions": "None requested when creating the app; any permission or app-type choice is asked here.",
             "you_do": "Sign in, enter codes or 2FA, solve a CAPTCHA, accept the terms, anything unexpected (in the "

@@ -79,6 +79,13 @@ def pick_page(context: Any) -> Any | None:
     return real[-1] if real else None
 
 
+async def _connect(pw: Any, chrome: ChromeProcess) -> tuple[Any, Any, Any]:
+    browser = await pw.chromium.connect_over_cdp(chrome.cdp_url)
+    context = browser.contexts[0] if browser.contexts else await browser.new_context()
+    page = pick_page(context) or await context.new_page()
+    return browser, context, page
+
+
 async def open_pw_session(
     profile_dir: Path,
     *,
@@ -98,9 +105,18 @@ async def open_pw_session(
         chrome = ChromeProcess.launch(profile_dir, headless=headless)
     pw = await async_playwright().start()
     try:
-        browser = await pw.chromium.connect_over_cdp(chrome.cdp_url)
-        context = browser.contexts[0] if browser.contexts else await browser.new_context()
-        page = pick_page(context) or await context.new_page()
+        try:
+            browser, context, page = await _connect(pw, chrome)
+        except Exception:
+            if not reattached:
+                raise
+            # A Chrome that is running but cannot be driven: it has no window (the person closed it; on macOS Chrome
+            # stays alive without one, and DevTools then refuses to be driven, D-094). Quit it, which releases the
+            # profile, and open a fresh Chrome on the same profile: sign-ins live in the profile, so nothing is lost.
+            await chrome.graceful_close()
+            chrome = ChromeProcess.launch(profile_dir, headless=headless)
+            reattached = False
+            browser, context, page = await _connect(pw, chrome)
     except Exception:
         await pw.stop()
         raise

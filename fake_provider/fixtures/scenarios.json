@@ -115,6 +115,26 @@
         ]
       }
     },
+    "project_then_app": {
+      "description": "As Google: an app can only be created inside a project, so the project is created first. Creating the project is not creating the app: the agent asks the person about the project, then still creates the one app itself (D-094; the Google run counted 'Create project' as the app and refused 'Create client').",
+      "prd_acceptance": "(D-094)",
+      "config": {
+        "require_signin": false,
+        "terms": "none",
+        "project_first": true
+      },
+      "llm": "live_or_stub",
+      "expect": {
+        "outcome": "succeeded",
+        "verification": "verified",
+        "handoffs": [
+          {
+            "kind": "DECIDE",
+            "why": "create a project"
+          }
+        ]
+      }
+    },
     "shown_once_secret": {
       "description": "Secret is shown only on the first view after creation; a reload hides it. Capture must happen on first view by plain code.",
       "prd_acceptance": "shown-once secret",

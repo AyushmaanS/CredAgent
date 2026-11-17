@@ -66,6 +66,7 @@ class Scenario:
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
     crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
+    project_first: bool = False  # an app can only be created inside a project, which is created first (as on Google)
     signin_host: str = ""  # sign-in lives on another host (e.g. "localhost"): the console redirects there, and a
     #                        one-time ticket carries the session back (as accounts.google.com does for Google)
     input_credentials: bool = False  # OAuth2 page as the real Discord one (probe of run #7): the ID and the secret are in
@@ -105,7 +106,8 @@ class State:
         self.lock = threading.RLock()
         self.scenario = scenario
         self.sessions: dict[str, dict[str, Any]] = {}
-        self.tickets: dict[str, str] = {}  # one-time sign-in tickets (signin_host scenarios)
+        self.tickets: dict[str, str] = {}
+        self.projects: list[str] = []  # project_first scenarios  # one-time sign-in tickets (signin_host scenarios)
         self.apps: dict[str, App] = {}
         self.tokens: dict[str, str] = {}
         self.audit: list[dict[str, Any]] = []
@@ -138,7 +140,7 @@ class State:
     def snapshot(self) -> dict[str, Any]:
         return {"scenario": asdict(self.scenario), "sessions": self.sessions,
                 "apps": {k: asdict(v) for k, v in self.apps.items()}, "tokens": self.tokens,
-                "audit": self.audit, "captcha_words": self.captcha_words}
+                "audit": self.audit, "captcha_words": self.captcha_words, "projects": self.projects}
 
     def restore(self, data: dict[str, Any]) -> None:
         self.sessions = data.get("sessions", {})
@@ -146,6 +148,7 @@ class State:
         self.tokens = data.get("tokens", {})
         self.audit = data.get("audit", [])
         self.captcha_words = data.get("captcha_words", {})
+        self.projects = data.get("projects", [])
 
     def save(self) -> None:
         if self.state_file is None:
@@ -310,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
         routes = {
             "/": self.get_home, "/login": self.get_login, "/signup": self.get_signup,
             "/logout": self.get_logout, "/captcha": self.get_captcha, "/console": self.get_console,
-            "/apps/new": self.get_new_app, "/terms": self.get_terms, "/docs": self.get_docs,
+            "/apps/new": self.get_new_app, "/projects/new": self.get_new_project, "/terms": self.get_terms, "/docs": self.get_docs,
             "/billing": self.get_billing, "/verify-business": self.get_verify_business,
             "/oauth/authorize": lambda: self.get_authorize(q), "/api/me": self.get_me,
             "/.well-known/oauth-authorization-server": self.get_metadata,
@@ -375,6 +378,9 @@ class Handler(BaseHTTPRequestHandler):
     def get_console(self) -> None:
         if self.need_signin() or self.need_captcha("before_console"):
             return
+        if self.sc.project_first and not self.state.projects:
+            return self.page("Console", "<h1>Projects</h1><p>You need a project before you can create apps.</p>"
+                             '<p><a href="/projects/new" id="new-project">Create project</a></p>')
         body = "<h1>Your apps</h1>"
         if self.sc.decoy_token:
             body += '<p class="legal">Build <span>a8F3kQ9zL2mX7pR4tV6wY1bN5cJ0hD</span></p>'
@@ -435,9 +441,17 @@ class Handler(BaseHTTPRequestHandler):
                    '.submit()">Create app</button>' if self.sc.secret_after_reset else
                    '<button type="submit" id="create-app">Create app</button></form>'))
 
+    def get_new_project(self) -> None:
+        if self.need_signin():
+            return
+        self.page("New project", "<h1>New project</h1><form method=post action=/projects><label>Project name "
+                  '<input name=name></label><button type="submit">Create</button></form>')
+
     def get_new_app(self) -> None:
         if self.need_signin() or self.need_captcha("before_console") or self.need_captcha("on_create"):
             return
+        if self.sc.project_first and not self.state.projects:
+            return self.redirect("/console")
         if self.sc.blocked == "business_verification":
             return self.page("Verification required", '<div class="warn">Business verification '
                              "required before creating apps.</div>", 403)
@@ -652,6 +666,10 @@ class Handler(BaseHTTPRequestHandler):
                     f"fp_session={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")
                 return self.redirect(nxt if nxt.startswith("/") else "/console", {"Set-Cookie": cookie})
             return self.get_login("Incorrect email or password.")
+        if p == "/projects":
+            self.state.projects.append(one("name") or "project")
+            self.state.log("project_created", self.actor(), name=self.state.projects[-1])
+            return self.redirect("/console")
         if p == "/signup":
             self.state.log("account_created", self.actor(), terms_accepted=bool(one("accept_terms")))
             return self.page("Account", "<h1>Check your email</h1><p>We sent a verification code "

@@ -52,7 +52,9 @@ LIMITED_COOKIE = re.compile(
     r"use necessary cookies only|refuse( all)?|deny( all)?)$",
     re.I,
 )
-COOKIE_WORD = re.compile(r"cookie|consent|tracking|privacy choices", re.I)
+COOKIE_WORD = re.compile(r"cookie|tracking|privacy choices|your privacy", re.I)
+CONSENT_WORD = re.compile(r"consent", re.I)  # a banner is about cookies only with a consent button beside the word
+ACCEPT_BUTTON = re.compile(r"^(accept( all)?|allow( all)?|agree|i agree|got it)$", re.I)
 AGENT_INSTRUCTION = re.compile(
     r"(automated|ai) (agents?|assistants?)|ignore (all |any )?(previous|earlier|prior) "
     r"instructions|system prompt",
@@ -106,6 +108,18 @@ def is_docs_host(url: str) -> bool:
 def _quote(text: str, m: re.Match[str], pad: int = 60) -> str:
     a, b = max(0, m.start() - pad), min(len(text), m.end() + pad)
     return "…" + " ".join(text[a:b].split()) + "…"
+
+
+def _is_cookie_banner(text: str, obs: Observation) -> bool:
+    """A cookie banner, not just any dialog. A dialog that shows a credential ("OAuth client created: client ID,
+    client secret", whose text also mentions the OAuth consent screen) is never one (Google run, D-094)."""
+    if CREDENTIAL_TEXT.search(text) or re.search(r"client[\s_-]*id", text, re.I) or obs.secret_xpaths:
+        return False
+    if COOKIE_WORD.search(text):
+        return True
+    return bool(CONSENT_WORD.search(text)) and any(
+        x["in_dialog"] and (ACCEPT_BUTTON.match(x["text"].strip()) or LIMITED_COOKIE.match(x["text"].strip()))
+        for x in obs.buttons)
 
 
 def check(obs: Observation, allowed: list[str]) -> list[Gate]:
@@ -205,7 +219,7 @@ def check(obs: Observation, allowed: list[str]) -> list[Gate]:
             )
 
     for b in obs.banners:
-        if not COOKIE_WORD.search(b["text"]):
+        if not _is_cookie_banner(b["text"], obs):
             continue
         limited = [x for x in obs.buttons if x["in_dialog"] and LIMITED_COOKIE.match(x["text"].strip())]
         if limited:

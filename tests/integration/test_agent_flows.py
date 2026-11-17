@@ -259,3 +259,21 @@ def test_an_off_site_sign_in_redirect_goes_to_the_person_and_does_not_bounce_off
     assert len([a for a in audit if a["event"] == "app_created"]) == 1
     card = " ".join(" ".join(o.io.out).split())
     assert "sign-in page (localhost)" in card and "outside the allowed sites" in card
+
+
+def test_a_project_made_first_is_not_the_app_and_the_agent_still_creates_the_app(tmp_path):
+    """Google run 20261117-152213: "Create project" was counted as the app, so "Create client" was refused as "another
+    app" and the person had to create the credential themselves (D-094). A project is asked about; the app is still
+    created by the agent, once."""
+    with FakeProvider(scenario("project_then_app")) as fp:
+        o = asyncio.run(run_phase(tmp_path, fp, new_run(fp, "proj"), llm=ScriptedLLM()))
+        audit = fp.audit()
+    assert o.run.status == "succeeded", (o.run.status, o.run.status_reason)
+    assert o.io.handoffs == [("DECIDE", "other")], o.io.handoffs  # the person is asked about the project, once
+    assert [a["event"] for a in audit if a["event"] in ("project_created", "app_created")] == \
+        ["project_created", "app_created"]
+    assert [a["actor"] for a in audit if a["event"] == "app_created"] == ["unknown"]  # the agent made the app
+    assert len(o.run.created) == 1 and len(o.run.created_setup) == 1 and "project" in o.run.created_setup[0]
+    assert not [e for e in o.store.events(o.run.id) if e["type"] == "policy"
+                and e["data"].get("category") == "already_created"]
+    assert_safe(audit)

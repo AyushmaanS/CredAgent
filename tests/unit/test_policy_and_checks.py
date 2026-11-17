@@ -209,3 +209,20 @@ def test_docs_pages_are_detours_d070():
     assert not is_docs_host("https://discord.com/developers/applications/123/oauth2")
 
 
+def test_a_dialog_that_shows_a_credential_is_not_a_cookie_banner_d094():
+    """Google run: the "OAuth client created" dialog mentions the OAuth consent screen, and "consent" made it a cookie
+    banner, so the person was asked to "choose a cookie preference" with the credentials on screen."""
+    text = ("OAuth client created The client ID can always be accessed from Clients tab under Google Auth Platform. "
+            "Client ID Client secret Download JSON Learn more about the OAuth consent screen OK")
+    o = obs(banners=[{"xpath": "/d", "text": text}], buttons=[btn("/d/b", "OK", form=None, in_dialog=True)])
+    assert not [g for g in check(o, ALLOWED) if g.kind == "cookie_consent"]
+    consent_only = obs(banners=[{"xpath": "/d", "text": "Manage your consent preferences"}],
+                       buttons=[btn("/d/b", "Accept all", form=None, in_dialog=True)])
+    assert [g.action for g in check(consent_only, ALLOWED) if g.kind == "cookie_consent"] == ["DO"]  # a real banner still is
+    cookies = obs(banners=[{"xpath": "/d", "text": "We use cookies to improve this site"}],
+                  buttons=[btn("/d/b", "Reject all", form=None, in_dialog=True)])
+    assert [g.action for g in check(cookies, ALLOWED) if g.kind == "cookie_consent"] == ["AUTO"]
+    no_cookie_word = obs(banners=[{"xpath": "/d", "text": "Review the OAuth consent screen settings"}],
+                         buttons=[btn("/d/b", "Save", form=None, in_dialog=True)])
+    assert not [g for g in check(no_cookie_word, ALLOWED) if g.kind == "cookie_consent"]
+

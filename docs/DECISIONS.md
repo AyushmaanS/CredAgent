@@ -1025,6 +1025,26 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-094 Google Cloud run #3: project vs app, a credentials dialog taken for a cookie banner, "Add secret", a window-less Chrome — Decided (owner: "make the fixes and run the probe")
+**What the run showed (20261117-152213-google-cloud-6458).** After the D-093 fix the sign-in worked and the agent got much further: it asked about a project, filled the project form, set up Google Auth Platform and reached the OAuth client page. Four things went wrong, all read from the log:
+1. **"Can't create a new app again."** The code counted the "Create project" click as *the* app (any "Create …" matched), so "Create client" was refused as "would create another app (D-063)" and the person had to click it. Google needs a project, then a consent screen, then the client.
+2. **The credentials dialog was a "cookie banner".** The "OAuth client created" dialog mentions the OAuth *consent* screen; the cookie rule matched the bare word "consent", so the person was asked to "choose your cookie preference" with the credentials on screen.
+3. **"Add secret" was clicked unasked.** To get a secret the agent opened the client page and clicked "Add secret", which creates an extra client secret at Google; policy called it reversible. (There may now be two secrets on that client: check it.)
+4. **The secret was not recognised** in the creation dialog: the scan flagged one 20-character value in a table cell (not the secret) and nothing was captured; only the Client ID was.
+
+**Fixes.**
+- **One app means one credential resource.** A creation is `setup` (project, workspace, organisation, team, folder, tenant) or `credential` (app, client, integration, API key); a bare "Create" is judged by its page (title, headings, address). A setup creation is **asked** (the person says yes) and recorded in the new `Run.created_setup`; it never counts as the app, and a project is never refused as "another app". A second *credential* creation is still refused (D-063). The consent screen and the CLI say a project or workspace may be needed first and is asked separately; the system prompt says so too. New fake scenario `project_then_app` and a test: the person is asked about the project once, then the agent still creates the one app itself.
+- **Cookie banners.** A banner is about cookies only if its text says cookie, tracking or privacy choices, or says "consent" **and** a dialog button says accept/reject/decline. A dialog that mentions a client ID, a secret, an API key or a token, or any dialog while a credential is on screen, is never a banner. Real banners still behave as before.
+- **"Add/create/generate a (client) secret"** now asks the person, like "Reset Secret".
+- **A saved Chrome that cannot be driven** (found while trying to probe): the run's Chrome was alive but had **no window** (the window had been closed; on macOS Chrome keeps running), and DevTools then refuses to be driven ("Browser context management is not supported"). `credagent resume` would have failed. Now the stale Chrome is quit (which releases the profile) and a fresh one is opened on the same profile; sign-ins live in the profile. Test: a forced attach failure ends with a new Chrome and the old process gone.
+- **Diagnostics for the unrecognised secret.** `done_rejected` now also records, as structure only, any bullet-masked values (`masked`) and, for each dialog, how many leaves, inputs, token-like and masked values it has and its button names.
+
+**The probe could not be run.** The Chrome had no window, so there was no Google page to look at (and it could not be attached to at all, see above). The fix for the unrecognised secret therefore **waits for evidence**: the next real attempt will record the dialog's structure in `done_rejected`. If the secret is only shown masked, or shown once in a form the scan cannot read, that will say so.
+
+**Not done / unknown.** Whether Google shows the secret in the creation dialog in a readable form at all (recent Google changes hide client secrets after creation). Whether Google lets automated Chrome stay signed in over a longer run. The owner should check the Google client for an extra secret created by "Add secret".
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

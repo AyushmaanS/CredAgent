@@ -17,7 +17,7 @@ from credagent.browser.values import field_key_for
 from credagent.policy.engine import HUMAN_ONLY_FIELDS
 
 CREATE_BUTTON = re.compile(r"^(create|create app|create application|register)$", re.I)
-NEW_APP = re.compile(r"new app|new application|create an app", re.I)
+NEW_APP = re.compile(r"new app|new application|create an app|create project", re.I)
 CONSOLE_LINK = re.compile(r"developer console|^console$", re.I)
 REVEAL = re.compile(r"^(view|show|reveal|display)\b.{0,30}\b(secret|key|token)s?$", re.I)
 RESET = re.compile(r"^(reset|regenerate|rotate|generate( a)?( new)?)\b.{0,20}\b(client )?(secret|key|token)s?$", re.I)

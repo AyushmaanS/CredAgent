@@ -184,7 +184,24 @@ OBSERVE_JS = r"""
       }
     }
   }
-  const hints = hintsFirst.concat(hintsText).slice(0, 10);
+  // A credential that is hidden behind bullets or stars, and what a dialog holds (counts and button names only):
+  // the structure that explains why a credential on screen was not found (Google run, D-094).
+  const MASKED = /[*•●·]{4,}/;
+  for (const el of document.querySelectorAll('input,span,div,td,code,p')) {
+    if (hintsText.length + hintsFirst.length >= 14) break;
+    if (!vis(el) || (el.children.length && el.tagName !== 'INPUT')) continue;
+    const t = el.tagName === 'INPUT' ? (el.value || '') : clean(el.innerText);
+    if (t.length >= 8 && t.length <= 80 && MASKED.test(t)) hintsText.push({ kind: 'masked', tag: el.tagName.toLowerCase(), len: t.length });
+  }
+  for (const d of document.querySelectorAll('[role=dialog],[aria-modal=true]')) {
+    if (!vis(d)) continue;
+    const leaves = Array.from(d.querySelectorAll('*')).filter((x) => !x.children.length && vis(x));
+    hintsFirst.push({ kind: 'dialog', leaves: leaves.length, inputs: d.querySelectorAll('input,textarea').length,
+      tokenlike: leaves.filter((x) => /^[A-Za-z0-9_\-.~+\/=]{20,}$/.test(clean(x.innerText || ''))).length,
+      masked: leaves.filter((x) => MASKED.test(clean(x.innerText || ''))).length,
+      buttons: Array.from(d.querySelectorAll('button,[role=button]')).map((b) => clean(b.innerText || b.getAttribute('aria-label') || '').slice(0, 24)).filter(Boolean).slice(0, 6) });
+  }
+  const hints = hintsFirst.concat(hintsText).slice(0, 12);
   const scroll = { y: Math.round(scrollY), height: Math.round(document.documentElement.scrollHeight),
                    view: Math.round(innerHeight) };
   return { url: location.href, title: document.title || '', text, inputs, buttons, links, forms, banners, headings,
@@ -237,7 +254,7 @@ def from_raw(raw: dict[str, Any], masker: Masker) -> Observation:
         inputs=m(raw.get("inputs") or []), buttons=m(raw.get("buttons") or []), links=m(raw.get("links") or []),
         forms=m(raw.get("forms") or []), banners=m(raw.get("banners") or []), headings=m(raw.get("headings") or []),
         elements=m(raw.get("elements") or []), scroll=dict(raw.get("scroll") or {}),
-        iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []), hints=m(raw.get("hints") or [])[:10],
+        iframes=[str(x) for x in raw.get("iframes") or []], secret_xpaths=list(raw.get("secret_xpaths") or []), hints=m(raw.get("hints") or [])[:12],
         url_masked=masker.mask_text(str(raw.get("url", ""))),
     )
 

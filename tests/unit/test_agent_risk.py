@@ -8,6 +8,7 @@ from credagent.policy.engine import ProposedAction, evaluate
 from credagent.policy.hard_checks import check
 from credagent.policy.risk import assess_risk
 from credagent.secrets.masking import Masker
+from tests.unit.test_policy_and_checks import btn, obs
 from tests.unit.test_snapshot import el, raw
 
 ALLOWED = ["127.0.0.1"]
@@ -104,3 +105,35 @@ def test_still_needed_after_enter():
     assert still_needed(quiet, quiet, "unexpected", ALLOWED) == "nothing has changed on the page yet"
     changed = snap_with(el("/b", "button", "OK", tag="button"), el("/c", "link", "Next", tag="a"))
     assert still_needed(changed, quiet, "unexpected", ALLOWED) is None
+
+
+# ------------------------------------------------- a project first, secrets, banners (Google run, D-094)
+
+def test_creating_a_project_is_asked_but_the_app_is_still_the_one_consented_create():
+    from credagent.policy.engine import creation_kind
+
+    assert creation_kind("button 'Create project'") == "setup" and creation_kind("link 'New workspace'") == "setup"
+    assert creation_kind("button 'Create client'") == "credential" and creation_kind("button 'Create OAuth client'") == "credential"
+    assert creation_kind("button 'Create app'") == "credential" and creation_kind("button 'New Application'") == "credential"
+    # a bare "Create" is judged by its page
+    assert creation_kind("button 'Create'", "New project /projects/new") == "setup"
+    assert creation_kind("button 'Create'", "New app /apps/new") == "credential"
+    assert creation_kind("button 'Create'", "Create OAuth client for your project") == "credential"
+    assert creation_kind("button 'Create'", "") == "credential"
+    project = ProposedAction("click", "/b", "button 'Create'")
+    assert assess_risk(project, setup=True) == "hard_to_undo"   # the person says yes to a project
+    assert assess_risk(project) == "reversible"                  # the app: the one consented create
+    # with an app already created, a project is not denied as "another app" (it is asked), a second app still is
+    def ev(a, **k):
+        return evaluate(a, obs(buttons=[btn("/b", "Create", form=None)]), [], ALLOWED, risk_uncertain=False, **k)
+    assert ev(project, risk="hard_to_undo", already_created=False).decision == "DECIDE"
+    second_app = ProposedAction("click", "/b", "button 'Create client'")
+    assert ev(second_app, risk="reversible", already_created=True).category == "already_created"
+
+
+def test_adding_or_generating_a_secret_asks_the_person_like_a_reset():
+    for label in ("button 'Add secret'", "button 'Create client secret'", "button 'Generate a new secret'",
+                  "button 'Add another secret'", "button 'Reset Secret'"):
+        assert assess_risk(ProposedAction("click", "/b", label)) == "hard_to_undo", label
+    for label in ("button 'Copy'", "button 'Save changes'", "button 'Download JSON'"):
+        assert assess_risk(ProposedAction("click", "/b", label)) == "reversible", label

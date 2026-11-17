@@ -243,3 +243,34 @@ def test_new_tab_is_adopted_and_a_closed_browser_raises(tmp_path):
                 await ex.click(snap, ref)
             await s.playwright.stop()
     run(go())
+
+
+def test_a_saved_chrome_that_cannot_be_driven_is_replaced_by_a_fresh_one_on_the_same_profile(tmp_path, monkeypatch):
+    """A Chrome whose window was closed stays alive on macOS but refuses to be driven (Google run, D-094); resume must
+    not fail: the stale process is quit and Chrome is launched again on the same profile."""
+    import credagent.browser.pw_session as pws
+
+    async def go():
+        first = await open_pw_session(tmp_path / "profile", headless=HEADLESS)
+        record = first.record()
+        old_pid = first.chrome.pid
+        await first.detach()
+        real = pws._connect
+        calls = []
+
+        async def flaky(pw, chrome):
+            calls.append(chrome.pid)
+            if len(calls) == 1:
+                raise RuntimeError("Browser context management is not supported.")
+            return await real(pw, chrome)
+        monkeypatch.setattr(pws, "_connect", flaky)
+        second = await open_pw_session(tmp_path / "profile", headless=HEADLESS, existing=record)
+        try:
+            assert calls[0] == old_pid and calls[1] != old_pid          # re-attach failed, then a fresh Chrome
+            assert not second.reattached and second.chrome.pid != old_pid
+            await second.page.goto("about:blank")
+            assert pws.ChromeProcess(pid=old_pid, port=record.cdp_port, profile_dir=tmp_path).is_running() is False
+        finally:
+            await second.close()
+    run(go())
+

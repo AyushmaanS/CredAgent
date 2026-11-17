@@ -38,7 +38,8 @@ with 2 to 5 short options, when the person must choose something (a permission, 
 4. Type only approved values, by key (value_key). You cannot write other text into fields. If a field needs a value \
 that has no approved key, skip it when it is optional; otherwise ask_person.
 5. Create at most one app per run. If "Created so far" is not empty, never create another one: find and open the \
-existing one.
+existing one. A project or workspace the provider needs first is a separate step that the person approves; it is not \
+the app.
 6. Never delete anything, submit for review, pay, upgrade, or change account security. Stay on the allowed sites. \
 Documentation pages are not part of the console steps.
 7. Capturing the credential is done by code, not by you. When the page shows the new credential (for example a client \

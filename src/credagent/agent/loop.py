@@ -33,7 +33,7 @@ from credagent.agent.step import (
 from credagent.browser.executor import Executor, approved_values
 from credagent.browser.snapshot import Snapshot, describe_change, take_snapshot
 from credagent.browser.values import FieldValues, field_key_for
-from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, evaluate
+from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, creation_kind, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed, is_docs_host
 from credagent.policy.risk import assess_risk
 from credagent.secrets.capture import SECRET_PARTS, CaptureResult, capture
@@ -153,7 +153,8 @@ class AgentLoop:
         self._typed: set[tuple[str, str]] = set()  # fields the agent filled, so a handoff card can say so
         self._clicks: dict[tuple[str, str], int] = {}
         self._pending: tuple[HistoryEntry, Snapshot] | None = None
-        self._maybe_created: tuple[str, str] | None = None  # (label, path before) of a create-looking button click
+        # (label, path before, kind) of a create-looking button click; kind is "setup" or "credential" (D-094)
+        self._maybe_created: tuple[str, str, str] | None = None
         self._flash: list[str] = []  # code notes shown to the model once
         self._capture_fails = 0
         # The person submitted a form with terms earlier, but no app is recorded: it may have been created (D-063).
@@ -285,11 +286,22 @@ class AgentLoop:
         app now exists (one app per run, D-063)."""
         if self._maybe_created is None:
             return
-        label, path = self._maybe_created
+        label, path, kind = self._maybe_created
         self._maybe_created = None
         new_path = urlparse(now.url).path
         if new_path != path and not NEW_FORM_PATH.search(new_path):
-            self._mark_created(run, f"an app (created by clicking {label})")
+            if kind == "setup":  # a project/workspace: remembered, but the app is still to be created (D-094)
+                run.created_setup.append(f"a project or workspace (created by clicking {label})"[:200])
+                self._step(run, f"recorded: this run created a project or workspace first ({label[:80]}); the "
+                           "app is still to be created", "system", "done")
+                self._cp(run, "setup_created", {"what": label[:120]})
+            else:
+                self._mark_created(run, f"an app (created by clicking {label})")
+
+    @staticmethod
+    def _page_context(snap: Snapshot) -> str:
+        """What a bare "Create" button is about: the page's title, headings and address."""
+        return f"{snap.title} {' '.join(snap.obs.headings[:8])} {urlparse(snap.url).path}"
 
     def _mark_created(self, run: Run, what: str) -> None:
         if run.created:
@@ -405,8 +417,11 @@ class AgentLoop:
             dup = await self._confirm_maybe_duplicate(run, snap, v)
             if dup is not None:
                 return dup
-        verdict = evaluate(proposed, snap.obs, gates, self.allowed, risk=assess_risk(proposed, already_created=created),
-                           risk_uncertain=False, already_created=created)
+        setup = act == "click" and v.element is not None and CREATE_RE.search(proposed.description or "") is not None \
+            and creation_kind(proposed.description or "", self._page_context(snap)) == "setup"
+        verdict = evaluate(proposed, snap.obs, gates, self.allowed,
+                           risk=assess_risk(proposed, already_created=created, setup=setup),
+                           risk_uncertain=False, already_created=created and not setup)
         self._cp(run, "policy", {"candidate": proposed.description, "verdict": verdict.decision,
                                  "reason": verdict.reason, "category": verdict.category})
         if verdict.decision == "deny":
@@ -558,7 +573,8 @@ class AgentLoop:
         self._step(run, f"{v.action} {v.target()}", "agent", "done", [f"reason: {v.step.reason[:150]}"])
         if v.action == "click" and v.element is not None and v.element.role == "button" and CREATE_RE.search(
                 policy_description(v.element)):
-            self._maybe_created = (v.target(), urlparse(snap.url).path)
+            self._maybe_created = (v.target(), urlparse(snap.url).path,
+                                   creation_kind(policy_description(v.element), self._page_context(snap)))
         return None
 
     # ---------------------------------------------------------- the person

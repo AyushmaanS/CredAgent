@@ -74,6 +74,19 @@ CREATE_RE = re.compile(
     r"integration|api key|oauth app)\b|'(create|new)'",
     re.I,
 )
+# What an app's credential may have to live in first (Google: a project). Creating one is not creating the app (D-094).
+SETUP_RE = re.compile(r"\b(project|workspace|organi[sz]ation|team|folder|tenant)\b", re.I)
+
+
+def creation_kind(label: str, context: str = "") -> str:
+    """"setup" (a project or workspace made first) or "credential" (the app / client / key that holds the
+    credential). A bare "Create" button is judged by the page it is on (its title, headings and address)."""
+    if SETUP_RE.search(label):
+        return "setup"
+    if re.search(r"\b(app|apps|application|client|integration|api key|oauth app|credential)\b", label, re.I):
+        return "credential"
+    return "setup" if SETUP_RE.search(context) and not re.search(
+        r"\b(app|application|client|integration|oauth)\b", context, re.I) else "credential"
 
 
 @dataclass(frozen=True)

@@ -273,6 +273,7 @@ class Run(Strict):
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run
     created: list[str] = Field(default_factory=list)  # what this run created at the provider (cleanup; D-063)
+    created_setup: list[str] = Field(default_factory=list)  # a project/workspace made first: not the credential (D-094)
     checkpoint_seq: int = 0
 
     @model_validator(mode="before")

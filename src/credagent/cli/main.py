@@ -162,7 +162,8 @@ def _intended_actions(s: Settings, run, check) -> str:
         f"  Console:        {p.console_url}   (allowed domains: {', '.join(p.allowed_domains)}"
         + (f"; inferred from the app name, not named by research: {', '.join(p.domains_inferred)}"
            if p.domains_inferred else "") + ")",
-        f"  Will create:    one app named {v.app_name!r}, description {v.description!r}",
+        f"  Will create:    one app named {v.app_name!r}, description {v.description!r}. If the provider needs a "
+        "project or workspace first, creating it is asked separately.",
         f"  Callback URL:   {v.redirect_uri}" if p.needs_redirect_uri != "no" else "  Callback URL:   not needed",
         "  Permissions:    none requested when creating the app; any permission or app-type choice is asked here",
         "  You do:         sign in, codes/2FA, CAPTCHA, accepting terms, anything unexpected (in the browser)",
