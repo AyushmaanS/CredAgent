@@ -542,6 +542,21 @@ Tested: the `discord_like` fake now copies those quirks:
 
 The run hands Create to the person, saves exactly one redirect (the callback), asks before Reset Secret, and captures and live-tests. Unit tests cover the formless terms button and the section mapping.
 
+## D-070 No documentation detours; return to the page the previous step reached; a closed browser is reported plainly — Decided (found resuming the fresh Discord run)
+*Found in real run `20261116-190534-discord-a839`, resumed:*
+- **The navigator (D-068) went to the docs.** On the app list it picked a button labelled "apps", which led to Discord's **documentation** (`docs.discord.com`, an allowed domain). There Jev declared "open the OAuth2 page" done on the docs page "OAuth2 & Permissions".
+- **The redirect step then bounced.** Jev bounced between the app list and the app (`go_back` ↔ app link) without ever opening OAuth2.
+- **The navigator's reply was cut off once** (300-token limit).
+- **The owner then closed the browser window,** and the CLI crashed with "CDP client is closed".
+
+Fixes:
+- **Documentation pages are never part of console steps.** A page on `docs.*` or under `/docs` is undone with a code `go_back` unless the step is about the docs, so it can never complete a console step.
+- **Page memory:** when a navigate step completes, its URL is remembered. If a later step then gets `go_back` or `stuck` on a different page, the agent goes directly to the remembered page (at most twice).
+- **Navigator:** its reply limit is now 900 tokens, and it is told to prefer links over buttons of unclear effect and to stay in the console.
+- **A closed browser window** ends with a plain message (exit code 5): the run is saved, continue with `credagent resume`.
+
+Tested: a real-Chrome case where the decider sends the agent to the docs once; the agent goes back and the run succeeds. 74 of 74 earlier real-Chrome tests still pass.
+
 ---
 
 ## Discrepancies between documents

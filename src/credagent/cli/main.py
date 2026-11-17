@@ -259,6 +259,12 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
     except KeyboardInterrupt:
         click.echo(f"\nStopped. The run is saved; continue with: credagent resume {run.id}", err=True)
         sys.exit(130)
+    except RuntimeError as exc:
+        if "closed" not in str(exc).lower():
+            raise
+        click.echo("\nThe CredAgent browser window was closed, so the agent stopped. The run is saved up to the last "
+                   f"step; continue with: credagent resume {run.id}", err=True)
+        sys.exit(5)
     except SecretLeakError:
         click.echo("\nCredAgent stopped itself: it was about to write a value registered as secret into the run's "
                    "log, which it never does. Nothing was written. This is a CredAgent bug; the run is saved up "

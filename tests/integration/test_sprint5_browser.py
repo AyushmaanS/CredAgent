@@ -457,3 +457,29 @@ def test_navigator_opens_the_app_from_the_list_when_the_step_target_is_elsewhere
     assert any(e["type"] == "toward_goal" and e["data"]["element"] for e in store.events(run.id))
     assert run.status == "succeeded", (run.status, run.status_reason)
     assert created == []  # the existing app was used; nothing new was created
+
+
+def test_docs_detour_is_undone_d070(tmp_path):
+    """Discord run #4: the navigator led into the docs, where Jev declared 'open OAuth2' complete."""
+
+    class DocsOnceJev(RuleJev):
+        went = False
+
+        def decide(self, state, log):
+            d = super().decide(state, log)
+            docs = [c for c in state.candidates if c.description == "link 'Docs'"]
+            if docs and not DocsOnceJev.went:
+                from credagent.decisions.jev import Decision
+                DocsOnceJev.went = True
+                d.decisions["element_selection"] = Decision("element_selection", docs[0].id, 0.99, False, {})
+                d.decisions["action_selection"] = Decision("action_selection", "proceed", 0.99, False, {})
+            return d
+
+    with FakeProvider(scenario("success")) as fp:
+        deps = deps_for(tmp_path)
+        deps.jev = DocsOnceJev()
+        io = LateIO()
+        run, _ = asyncio.run(_phase(tmp_path, fp, new_run(fp, "docs"), deps, io))
+    assert DocsOnceJev.went
+    assert any("documentation page is not part of the console steps" in s.action for s in run.steps)
+    assert run.status == "succeeded", (run.status, run.status_reason)

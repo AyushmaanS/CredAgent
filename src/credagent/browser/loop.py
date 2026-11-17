@@ -80,6 +80,15 @@ def rank_for_goal(cands: list, goal: str) -> list:
     return sorted(cands, key=score)
 
 
+def is_docs_page(url: str) -> bool:
+    """The provider's documentation (docs.<host> or a /docs path), as opposed to its console."""
+    from urllib.parse import urlparse
+
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    return host.startswith("docs.") or host.startswith("developer-docs.") or p.path.startswith("/docs")
+
+
 def reveal_control(obs: Observation) -> dict | None:
     """A button or link that only shows the secret (e.g. Spotify's "View client secret")."""
     for c in list(obs.buttons) + list(obs.links):
@@ -620,6 +629,7 @@ class BrowserLoop:
         seen_cred: set[tuple] = set()
         toward_tried: set[str] = set()
         clicks: dict[tuple[str, str], int] = {}
+        page_memory: dict = {}
         saved_on: set[str] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
@@ -751,6 +761,18 @@ class BrowserLoop:
                 # step such as "Reset Secret"): keep following the plan. Seeing a credential-like value is not
                 # the same as having the credential (D-061).
 
+            # D-070: console steps are never done on the provider's documentation. A docs page reached while
+            # following console steps is a detour: go straight back (unless the step is about the docs).
+            goal_now = self._goal(run)
+            if is_docs_page(obs.url) and not re.search(r"\bdocs?\b|documentation", goal_now, re.I):
+                seq = self.store.begin_action(run, "go_back", {"why": "documentation page is a detour"})
+                await page.go_back()
+                await page.wait_for_timeout(self.budget.settle_ms)
+                self.store.end_action(run, seq, "done")
+                self._step(run, "went back: a documentation page is not part of the console steps", "system", "done")
+                n_act += 1
+                continue
+
             fp = obs.fingerprint()
             no_progress = no_progress + 1 if fp == last_fp else 0
             last_fp = fp
@@ -843,12 +865,27 @@ class BrowserLoop:
                 n_act += 1
                 continue
             if act == "step_complete":
+                cur_step = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+                if cur_step is not None and cur_step.kind == "navigate":
+                    page_memory["url"] = obs.url  # D-070: where the next steps happen
                 self._step(run, f"step complete: {goal[:120]}", "agent", "done", inferred=["decided by Jev"])
                 run.plan_cursor += 1
                 self._cp(run, "plan_step_complete", {"cursor": run.plan_cursor})
                 continue
             if act == "wait":
                 await page.wait_for_timeout(1500)
+                continue
+            if act in ("go_back", "stuck") and page_memory.get("url") and obs.url != page_memory["url"] \
+                    and host_allowed(page_memory["url"], allowed) and page_memory.get("used", 0) < 2:
+                # D-070: the step happens on the page the previous navigation step reached; go there directly.
+                page_memory["used"] = page_memory.get("used", 0) + 1
+                seq = self.store.begin_action(run, "navigate", {"url": self.masker.mask_text(page_memory["url"]),
+                                                                "why": "return to the page of the previous step"})
+                await page.goto(page_memory["url"])
+                await page.wait_for_timeout(self.budget.settle_ms)
+                self.store.end_action(run, seq, "done")
+                self._step(run, "returned to the page the previous step reached", "agent", "done")
+                n_act += 1
                 continue
             if act == "go_back":
                 seq = self.store.begin_action(run, "go_back", {})

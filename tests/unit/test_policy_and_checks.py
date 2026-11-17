@@ -381,3 +381,11 @@ def test_unlabelled_field_is_mapped_by_its_section_heading_d069():
     o = obs(inputs=[inp("/f/i1", "", type_="text", section="Redirects")])
     (c,) = [c for c in dom_candidates(o) if c.method == "fill"]
     assert c.field_key == "redirect_uri" and "Redirects" in c.description
+
+
+def test_docs_pages_are_detours_d070():
+    from credagent.browser.loop import is_docs_page
+
+    assert is_docs_page("https://docs.discord.com/developers/platform/oauth2-and-permissions")
+    assert is_docs_page("http://127.0.0.1:1/docs")
+    assert not is_docs_page("https://discord.com/developers/applications/123/oauth2")
