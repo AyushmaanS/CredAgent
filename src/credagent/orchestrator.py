@@ -229,16 +229,48 @@ class Orchestrator:
 class BrowserDeps:
     """Everything the browser phase needs; built by the CLI (online) or by tests/offline runs."""
 
-    jev: object  # JevClient | RuleJev
-    reasoner: object | None  # FastRouterClient for fallbacks/re-plans (None = offline)
-    llm_model: str | None
-    model_callback: object | None  # Stagehand model callback (None = offline: plain-code candidates)
     secret_store: object  # SecretFileStore
     profile_dir: object  # Path
     redirect_uri: str
+    jev: object | None = None  # legacy loop only (removed in D-078 phase 5)
+    reasoner: object | None = None  # legacy loop only
+    llm_model: str | None = None  # legacy loop only
+    model_callback: object | None = None  # legacy loop only (Stagehand)
     headless: bool = False
     allow_dcr: bool = False  # DCR creates a client at the provider: fake provider only until Sprint 6
     ephemeral_profile: bool = False  # delete the profile when the run ends (fake provider)
+
+
+def _metadata_step(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str, http: object) -> Run | None:
+    """Public OAuth metadata and the dynamic-registration shortcut (observed and recorded either way). Returns the
+    finished run if dynamic registration produced a credential (no browser needed), else None."""
+    from credagent.browser.candidates import FieldValues
+    from credagent.metadata.dcr import register
+    from credagent.metadata.discovery import discover
+
+    origin = "/".join(start_url.split("/")[:3])
+    meta = discover(run.plan, http, base_urls=[origin])  # type: ignore[arg-type]
+    run.metadata_check = meta.summary()
+    run.add_step(StepRecord(action=f"checked OAuth metadata ({len(meta.checked)} URLs)", actor="agent",
+                            outcome="done", evidence=[Evidence(kind="observed", text=meta.reason)]))
+    o._cp(run, "metadata_checked", {"dcr_eligible": meta.dcr_eligible, "reason": meta.reason})
+    o.io.say(f"OAuth metadata: {meta.reason}")
+    if meta.dcr_eligible and deps.allow_dcr and meta.registration_endpoint:
+        seq = o.store.begin_action(run, "dcr_register", {"endpoint": meta.registration_endpoint})
+        values = FieldValues.default(deps.redirect_uri)
+        out = register(meta.registration_endpoint, http, deps.secret_store, o.masker, run.id,  # type: ignore[arg-type]
+                       client_name=values.app_name, redirect_uri=deps.redirect_uri)
+        o.store.end_action(run, seq, "done" if out.ok else "failed", {"observed": out.observed})
+        run.add_step(StepRecord(action="dynamic client registration (no browser)", actor="agent",
+                                outcome="done" if out.ok else "failed",
+                                evidence=[Evidence(kind="observed", text=out.observed)]))
+        if out.ok and out.credential:
+            run.credential = out.credential
+            return verify_and_finish(o, run, deps, http, how="obtained by dynamic registration (no browser)")
+    elif meta.dcr_eligible:
+        o.io.say("Dynamic registration looks available, but it is not used at real providers yet (it creates a "
+                 "client without the console steps you consented to); continuing in the browser.")
+    return None
 
 
 async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str, io: object) -> Run:
@@ -247,53 +279,12 @@ async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, st
     from credagent.browser.candidates import FieldValues
     from credagent.browser.loop import BrowserLoop
     from credagent.browser.session import open_session
-    from credagent.metadata.dcr import register
-    from credagent.metadata.discovery import discover
 
     # 1. Public metadata / DCR shortcut (observed, recorded either way)
-    origin = "/".join(start_url.split("/")[:3])
     with httpx.Client() as http:
-        meta = discover(run.plan, http, base_urls=[origin])
-        run.metadata_check = meta.summary()
-        run.add_step(
-            StepRecord(
-                action=f"checked OAuth metadata ({len(meta.checked)} URLs)",
-                actor="agent",
-                outcome="done",
-                evidence=[Evidence(kind="observed", text=meta.reason)],
-            )
-        )
-        o._cp(run, "metadata_checked", {"dcr_eligible": meta.dcr_eligible, "reason": meta.reason})
-        o.io.say(f"OAuth metadata: {meta.reason}")
-        if meta.dcr_eligible and deps.allow_dcr and meta.registration_endpoint:
-            seq = o.store.begin_action(run, "dcr_register", {"endpoint": meta.registration_endpoint})
-            values = FieldValues.default(deps.redirect_uri)
-            out = register(
-                meta.registration_endpoint,
-                http,
-                deps.secret_store,
-                o.masker,
-                run.id,
-                client_name=values.app_name,
-                redirect_uri=deps.redirect_uri,
-            )
-            o.store.end_action(run, seq, "done" if out.ok else "failed", {"observed": out.observed})
-            run.add_step(
-                StepRecord(
-                    action="dynamic client registration (no browser)",
-                    actor="agent",
-                    outcome="done" if out.ok else "failed",
-                    evidence=[Evidence(kind="observed", text=out.observed)],
-                )
-            )
-            if out.ok and out.credential:
-                run.credential = out.credential
-                return verify_and_finish(o, run, deps, http, how="obtained by dynamic registration (no browser)")
-        elif meta.dcr_eligible:
-            o.io.say(
-                "Dynamic registration looks available, but it is not used at real providers yet (it creates a "
-                "client without the console steps you consented to); continuing in the browser."
-            )
+        done = _metadata_step(o, run, deps, start_url, http)
+        if done is not None:
+            return done
 
     # 2. Browser loop
     session = await open_session(deps.profile_dir, headless=deps.headless, model_callback=deps.model_callback)
@@ -328,9 +319,10 @@ async def _after_loop(o: Orchestrator, run: Run, deps: BrowserDeps, session: obj
         # Real providers: keep the window open so the person can finish and resume later.
         # Fake provider: its server stops with this process, so an open window would show a dead site.
         keep_open = not deps.ephemeral_profile
-        run.status_reason = (f"Paused at a handoff; the browser window stays open. Continue with: "
+        what = "Paused at a handoff" if result is not None else "Paused (stopped, or the browser window was closed)"
+        run.status_reason = (f"{what}; the browser window stays open. Continue with: "
                              f"credagent resume {run.id}" if keep_open else
-                             f"Paused at a handoff. The browser was closed; the fake site's state is saved. "
+                             f"{what}. The browser was closed; the fake site's state is saved. "
                              f"Continue with: credagent resume {run.id}")
         o._cp(run, "paused", {})
         o._report(run)
@@ -445,5 +437,75 @@ async def resume_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, io:
     try:
         result = await loop.run(run, session.page, session.stagehand, session.browser.context)
     except KeyboardInterrupt:
+        result = None
+    return await _after_loop(o, run, deps, session, result)
+
+
+# ---------------------------------------------------------------- the agent loop (D-078)
+
+
+async def execute_agent_phase(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str, io: object,
+                              llm: object, *, session: object | None = None) -> Run:
+    """Metadata / DCR shortcut, then the LLM agent loop over Playwright, then capture → live test → outcome.
+    `session`: an already open PwSession (tests); otherwise one is opened on the run's profile."""
+    import httpx
+
+    from credagent.agent.loop import AgentLoop
+    from credagent.browser.candidates import FieldValues
+    from credagent.browser.executor import BrowserClosed
+    from credagent.browser.pw_session import open_pw_session
+
+    with httpx.Client() as http:
+        done = _metadata_step(o, run, deps, start_url, http)
+        if done is not None:
+            return done
+    if session is None:
+        session = await open_pw_session(deps.profile_dir, headless=deps.headless)  # type: ignore[arg-type]
+    run.browser = session.record()  # type: ignore[attr-defined]
+    o._cp(run, "browser_opened", {"profile": str(deps.profile_dir)})
+    loop = AgentLoop(o.store, o.masker, io, llm, FieldValues.default(deps.redirect_uri),  # type: ignore[arg-type]
+                     secret_store=deps.secret_store)
+    try:
+        seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(start_url)})
+        await session.page.goto(start_url)  # type: ignore[attr-defined]
+        o.store.end_action(run, seq, "done")
+        result = await loop.run(run, session)
+    except (KeyboardInterrupt, BrowserClosed):
+        result = None
+    return await _after_loop(o, run, deps, session, result)
+
+
+async def resume_agent_phase(o: Orchestrator, run: Run, deps: BrowserDeps, io: object, llm: object,
+                             in_doubt: dict | None, *, session: object | None = None) -> Run:
+    """Continue a paused run (spec §6.8): restore the profile (or re-attach to the open Chrome), reopen the page and
+    let the agent look before it acts. A pending handoff is not assumed done: it is closed as "re-checked on resume",
+    and the same blocker produces a fresh card if it is still there. An action that was started but never confirmed
+    is never repeated without asking."""
+    from credagent.agent.loop import AgentLoop
+    from credagent.browser.candidates import FieldValues
+    from credagent.browser.executor import BrowserClosed
+    from credagent.browser.pw_session import open_pw_session
+
+    h = run.pending_handoff
+    if h is not None:
+        run.resolve_handoff(h.id, cancelled=True)
+        run.add_step(StepRecord(action=f"resumed: re-checking the page instead of assuming “{h.blocker_kind}” "
+                                "was done", actor="system", outcome="done"))
+    if session is None:
+        session = await open_pw_session(deps.profile_dir, headless=deps.headless,  # type: ignore[arg-type]
+                                        existing=run.browser)
+    reattached = bool(getattr(session, "reattached", False))
+    run.browser = session.record()  # type: ignore[attr-defined]
+    o._cp(run, "browser_opened", {"profile": str(deps.profile_dir), "reattached": reattached})
+    url = safe_resume_url(run)
+    if url and not reattached:
+        seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(url)})
+        await session.page.goto(url)  # type: ignore[attr-defined]
+        o.store.end_action(run, seq, "done")
+    loop = AgentLoop(o.store, o.masker, io, llm, FieldValues.default(deps.redirect_uri),  # type: ignore[arg-type]
+                     secret_store=deps.secret_store)
+    try:
+        result = await loop.run(run, session, in_doubt=in_doubt, resumed=True)
+    except (KeyboardInterrupt, BrowserClosed):
         result = None
     return await _after_loop(o, run, deps, session, result)

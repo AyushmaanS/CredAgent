@@ -1,6 +1,6 @@
 # Scoping: LLM agent loop over Playwright, run by the orchestrator (D-078)
 
-Status: **approved** (2026-11-17). Phases 1–3 done (D-079, D-080, D-081). Decision: `docs/DECISIONS.md` D-078.
+Status: **approved** (2026-11-17). Phases 1–4 done (D-079, D-080, D-081, D-082). Decision: `docs/DECISIONS.md` D-078.
 
 ## 1. Target architecture (owner)
 
@@ -139,7 +139,7 @@ Line counts are as of 2026-11-17.
 | 1 | ✅ Playwright session over CDP, executor, snapshot with refs | Executor tests pass on the fake site; profile and reattach unchanged (D-079) |
 | 2 | ✅ Step contract, prompt builder, validation | Contract unit tests; prompt contains no secret (leak test) (D-080) |
 | 3 | ✅ Agent loop with policy, hard checks, handoffs and budgets | Fake scenarios with the scripted LLM: success, terms, sign-in, CAPTCHA, blocked, cookie (D-081) |
-| 4 | Capture, reset/reveal DECIDEs, verification, resume and reattach | Shown-once, hidden secret, reset with confirmation, resume, in-doubt click |
+| 4 | ✅ Capture, reset/reveal DECIDEs, verification, resume and reattach | Shown-once, hidden secret, reset with confirmation, resume, in-doubt click (D-082) |
 | 5 | Remove Jev, Stagehand, steps and re-plan; prune state; update CLI | All suites green; no import of the removed modules |
 | 6 | Online fake runs with the real LLM; measure cost and latency | Recorded in DECISIONS |
 | 7 | Update PRD, spec, sprint plan and README; then the real Discord run | Owner review; RESULTS #6 |

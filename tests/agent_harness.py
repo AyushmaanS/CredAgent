@@ -12,8 +12,15 @@ from credagent.agent.loop import AgentLoop, LoopBudget
 from credagent.agent.scripted import ScriptedLLM
 from credagent.browser.candidates import FieldValues
 from credagent.browser.pw_session import open_pw_session
-from credagent.orchestrator import fake_provider_plan
+from credagent.orchestrator import (
+    BrowserDeps,
+    Orchestrator,
+    execute_agent_phase,
+    fake_provider_plan,
+    resume_agent_phase,
+)
 from credagent.secrets.masking import Masker
+from credagent.secrets.store import SecretFileStore
 from credagent.state.models import Run
 from credagent.state.store import RunStore
 
@@ -27,7 +34,7 @@ FORBIDDEN = {"app_deleted", "submitted_for_review", "payment_entered", "business
 class PersonIO:
     """Plays the person at each handoff, in the browser, marked as the person."""
 
-    def __init__(self, session, choose=None):
+    def __init__(self, session, choose=None, quit_at=None):
         self.session = session
         self.page = session.page
         self.run = None
@@ -35,6 +42,8 @@ class PersonIO:
         self.out = []
         self._choose = choose or (lambda options: options[0])
         self.guard_lifted_during_do = []
+        self.quit_at = quit_at  # the person closes the terminal at this handoff (1-based): Enter is never pressed
+        self.n = 0
 
     def say(self, text):
         self.out.append(text)
@@ -51,6 +60,9 @@ class PersonIO:
         h = self.run.pending_handoff
         self.handoffs.append((h.kind, h.blocker_kind))
         self.guard_lifted_during_do.append(self.session._guard is None)
+        self.n += 1
+        if self.quit_at is not None and self.n >= self.quit_at:
+            return False
         kind = h.blocker_kind
         if kind == "terms":
             await self._as_person("(() => { const t = document.getElementById('accept-terms'); if (t) t.click();"
@@ -108,10 +120,53 @@ async def run_agent_scenario(tmp_path, name, *, llm=None, budget=None, choose=No
                    guard_after=guard_after, secrets=secrets, masker=m)
 
 
-def assert_safe(audit):
-    assert not [a for a in audit if a["event"] in FORBIDDEN], audit
+def assert_safe(audit, allow=()):
+    assert not [a for a in audit if a["event"] in FORBIDDEN and a["event"] not in allow], audit
     assert all(a["actor"] == "person" for a in audit if a["event"] in ("terms_accepted", "signed_in", "captcha_solved"))
 
 
 def events(o, type_):
     return [e["data"] for e in o.store.events(o.run.id) if e["type"] == type_]
+
+
+def new_run(fp, name, plan_steps=None):
+    plan = fake_provider_plan(fp.base_url)
+    if plan_steps is not None:
+        plan = plan.model_copy(update={"steps": plan_steps})
+    return Run(id=f"a-{name}", app_input="Fakeprov", app_name="Fakeprov", provider="Fakeprov (local)", plan=plan)
+
+
+def fake_secrets(fp):
+    """Every secret the fake site has issued: client secrets and access tokens."""
+    with fp.state.lock:
+        return [a.client_secret for a in fp.state.apps.values()] + list(fp.state.tokens)
+
+
+async def run_phase(tmp_path, fp, run, *, llm, masker=None, choose=None, quit_at=None, ephemeral=True, resume=False,
+                    in_doubt=None, existing=None, start_url=None):
+    """One orchestrator phase (a fresh run, or a resume) in real Chrome with a harness person: metadata check →
+    agent loop → capture → live test → outcome. `existing`: a saved browser record to re-attach to."""
+    m = masker or Masker()
+    store = RunStore(tmp_path / "runs", m)
+    if not (tmp_path / "runs" / run.id).exists():
+        store.create(run)
+    deps = BrowserDeps(secret_store=SecretFileStore(tmp_path / "secrets"), profile_dir=tmp_path / "profile",
+                       redirect_uri=CB, headless=HEADLESS, allow_dcr=False, ephemeral_profile=ephemeral)
+    session = await open_pw_session(tmp_path / "profile", headless=HEADLESS, existing=existing)
+    io = PersonIO(session, choose, quit_at=quit_at)
+    io.run = run
+    o = Orchestrator(store, m, None, io)
+    if resume:
+        run = await resume_agent_phase(o, run, deps, io, llm, in_doubt, session=session)
+    else:
+        run = await execute_agent_phase(o, run, deps, start_url or (fp.base_url + "/"), io, llm, session=session)
+    return Outcome(run=run, io=io, store=store, masker=m, session=session, llm=llm, deps=deps)
+
+
+def assert_no_leak(tmp_path, run_id, secrets, printed=()):
+    assert secrets, "nothing to look for"
+    for f in (tmp_path / "runs" / run_id).rglob("*"):
+        if f.is_file():
+            body = f.read_text(encoding="utf-8", errors="replace")
+            assert not any(x in body for x in secrets), f"a secret leaked into {f.name}"
+    assert not any(x in "\n".join(printed) for x in secrets), "a secret leaked into terminal output"

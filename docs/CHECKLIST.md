@@ -144,7 +144,8 @@ Owner decisions (2026-11-16): keep the callback `http://127.0.0.1:8976/callback`
 - [x] S6.u Phase 1 (D-079): Playwright session over CDP, snapshot with refs, executor; 86/86 real-Chrome tests pass
 - [x] S6.t Phase 2 (D-080): step contract, prompt builder with leak guard, LLM caller; real-model smoke check 5/5
 - [x] S6.s Phase 3 (D-081): agent loop with policy, hard checks, handoffs and budgets; risk assigned by code; 19 real-Chrome loop tests
-- [ ] S6.r Phase 4: capture, reset/reveal DECIDEs, verification, resume and reattach, in-doubt click (docs/design/llm-browser-agent.md §6) (`docs/design/llm-browser-agent.md`): LLM agent loop over Playwright, Jev and Stagehand removed
+- [x] S6.r Phase 4 (D-082): capture, reset/reveal DECIDEs, live test, resume and reattach, in-doubt click; 16 real-Chrome tests
+- [ ] S6.q Phase 5: remove Jev, Stagehand, steps and re-plan, wire the CLI to the agent loop (`docs/design/llm-browser-agent.md` §6)
 - [x] S6.y Step 0: measured Jev's candidate limit (20/40/60, 243 calls): keep 20; misses come from ranking and vague steps (D-074)
 - [ ] Per sprint plan (each provider needs 👤 explicit consent + approved protocol)
 

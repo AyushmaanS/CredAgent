@@ -36,12 +36,19 @@ from credagent.browser.snapshot import Snapshot, describe_change, take_snapshot
 from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, evaluate
 from credagent.policy.hard_checks import blocking, check, host_allowed
 from credagent.policy.risk import assess_risk
+from credagent.secrets.capture import SECRET_PARTS, CaptureResult, capture
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Run, StepRecord
 from credagent.state.store import RunStore
 from credagent.steps.checks import is_docs_host
 
 NEW_FORM_PATH = re.compile(r"/(new|create|register|add)(/|$)", re.I)
+HIDDEN_VALUE_INSTRUCTION = (  # the person's part when the secret can no longer be shown (D-054)
+    "The secret is no longer shown, and the agent could not get one itself. Make it visible in the browser window: "
+    "click “Reset Secret” or “Regenerate secret” yourself (the old secret stops working, so this is your decision), "
+    "and leave the new secret showing. The agent then captures it by plain code without showing it. If you do not "
+    "want to, press Ctrl+C: the run is saved and the credential is reported as not captured."
+)
 
 
 class LoopIO(Protocol):
@@ -75,6 +82,7 @@ class AgentLoop:
     llm: Any  # StepLLM or ScriptedLLM: decide(PromptContext) -> StepResult
     values: FieldValues
     budget: LoopBudget = field(default_factory=LoopBudget)
+    secret_store: Any | None = None  # SecretFileStore: capture on the credential page (None = do not capture)
 
     # ------------------------------------------------------------ helpers
     def _cp(self, run: Run, event: str, data: dict | None = None) -> None:
@@ -116,8 +124,12 @@ class AgentLoop:
         return e
 
     # --------------------------------------------------------------- run
-    async def run(self, run: Run, session: Any) -> LoopResult:
+    async def run(self, run: Run, session: Any, *, in_doubt: dict | None = None, resumed: bool = False) -> LoopResult:
+        """`in_doubt`: the last action started before an interruption with no recorded end (D-056). `resumed`: this
+        run is continuing after a pause, so the model is told to look before acting."""
         self._stop: str | None = None
+        self.in_doubt = in_doubt if in_doubt and in_doubt.get("action") == "click" else None
+        self._resumed = resumed
         result = await self._run(run, session)
         if self._stop:  # a person's "no" ends the run honestly as blocked, not as a pending handoff
             run.add_blocker(Blocker(kind="other", description=self._stop, who_must_act="person",
@@ -138,6 +150,18 @@ class AgentLoop:
         self._pending: tuple[HistoryEntry, Snapshot] | None = None
         self._maybe_created: tuple[str, str] | None = None  # (label, path before) of a create-looking button click
         self._flash: list[str] = []  # code notes shown to the model once
+        self._capture_fails = 0
+        # The person submitted a form with terms earlier, but no app is recorded: it may have been created (D-063).
+        self._created_unknown = not run.created and any(
+            h.blocker_kind == "terms" and h.status == "completed" for h in run.handoffs)
+        if self._resumed:
+            earlier = "; ".join(f"[{st.actor}] {st.action[:70]}" for st in run.steps[-6:])
+            self._flash.append("This run was interrupted and has been resumed. The person may have done things by "
+                               "hand meanwhile, so look at the page before acting."
+                               + (f" Earlier in this run: {earlier}" if earlier else ""))
+            if self._created_unknown:
+                self._flash.append("A form with terms was submitted by the person before the interruption; it may "
+                                   "have created the app. Check the app list before creating anything.")
         self._n = 0
         steps = n_obs = n_act = no_change = invalid = give_ups = docs_back = 0
         await self._guard(True)
@@ -152,6 +176,8 @@ class AgentLoop:
             snap = await self._observe()
             n_obs += 1
             gates = check(snap.obs, self.allowed)
+            if run.browser:
+                run.browser.last_url = snap.url_masked  # where a resumed run reopens the browser
             self._cp(run, "page_observed", {**snap.obs.summary(), "elements": len(snap.elements),
                                             "gates": [f"{g.kind}:{g.action}" for g in gates]})
             if self._pending is not None:  # what the previous action did, now that the page has settled
@@ -320,13 +346,7 @@ class AgentLoop:
     async def _perform(self, run: Run, snap: Snapshot, gates: list, v: Validated) -> LoopResult | str | None:
         st, act = v.step, v.action
         if act == "done":
-            if any(g.kind == "credential_shown" for g in gates):
-                self._hist("done", "", st.reason, "a credential is shown; code takes over (capture, live test)")
-                self._cp(run, "agent_done_accepted", {})
-                return LoopResult("credential_page", "credential page reached")
-            self._hist("done", "", st.reason, "not done: no credential is shown on this page", "rejected")
-            self._flash.append("Not done: no credential is shown on this page yet. Keep going.")
-            return "invalid"
+            return await self._done(run, snap, gates, st.reason)
         if act == "give_up":
             self._hist("give_up", "", st.reason, "the person was asked to help")
             why = self.masker.mask_text(st.reason)[:300]
@@ -352,6 +372,11 @@ class AgentLoop:
         key = (path, re.sub(r"\s+", " ", v.element.name.lower()).strip() if v.element else v.url or "")
         if act == "click" and self._clicks.get(key, 0) >= 2:  # D-069: the same control again and again is not progress
             return self._refuse(run, snap, v, "this control was already clicked twice on this page with no result")
+        if act == "click" and self._created_unknown and v.element is not None and CREATE_RE.search(
+                policy_description(v.element)):
+            dup = await self._confirm_maybe_duplicate(run, snap, v)
+            if dup is not None:
+                return dup
         verdict = evaluate(proposed, snap.obs, gates, self.allowed, risk=assess_risk(proposed, already_created=created),
                            risk_uncertain=False, already_created=created)
         self._cp(run, "policy", {"candidate": proposed.description, "verdict": verdict.decision,
@@ -364,6 +389,71 @@ class AgentLoop:
             return await self._person_decides(run, snap, gates, v, verdict)
         return await self._execute(run, snap, v, key)
 
+    async def _done(self, run: Run, snap: Snapshot, gates: list, reason: str) -> LoopResult | str | None:
+        """The model says it is finished. Code agrees only when a credential is shown AND (with a secret store)
+        a secret was actually captured by plain code; otherwise the model is told exactly what is missing."""
+        if not any(g.kind == "credential_shown" for g in gates):
+            self._hist("done", "", reason, "not done: no credential is shown on this page", "rejected")
+            self._flash.append("Not done: no credential is shown on this page yet. Keep going.")
+            return "invalid"
+        if self.secret_store is None:  # nothing to capture with (loop tests without a store)
+            self._hist("done", "", reason, "a credential is shown; code takes over")
+            self._cp(run, "agent_done_accepted", {})
+            return LoopResult("credential_page", "credential page reached")
+        res = await self._capture(run, snap)
+        if res.has_secret or (run.credential and set(run.credential.parts) & SECRET_PARTS):
+            self._hist("done", "", reason, "the credential was captured by code; the live test follows")
+            self._cp(run, "agent_done_accepted", {})
+            return LoopResult("credential_page", "credential captured")
+        self._capture_fails += 1
+        if res.secret_hidden:
+            msg = ("Not captured yet: the page says the secret was shown only once and is now hidden. The only way to "
+                   "get a usable secret is the page's reset or regenerate control. That invalidates the old secret, "
+                   "so CredAgent asks the person first. Click it, confirm the provider's prompt, then say done.")
+        elif res.captured:
+            msg = ("Not captured yet: only " + ", ".join(res.captured) + " was captured; the secret is not shown. "
+                   "Look for a control that shows or generates it (view/show secret, reset/regenerate), then say "
+                   "done again.")
+        else:
+            msg = ("Not captured yet: credential-like values are on the page but none has a label CredAgent can "
+                   "recognise, so nothing was stored. Look for the page that shows the client ID and secret with "
+                   "labels.")
+        self._flash.append(msg)
+        self._hist("done", "", reason, "not done: the secret was not captured", "rejected")
+        if self._capture_fails >= 3:
+            self._capture_fails = 0
+            if await self.handoffs.do(run, "secret_hidden", "CredAgent could not capture the secret by itself.",
+                                      [res.observed()], snap, gates, instruction=HIDDEN_VALUE_INSTRUCTION,
+                                      after="Re-check the page and capture the secret by plain code, without "
+                                            "showing it.") is None:
+                return LoopResult("handoff_pending", "secret not captured")
+            return None
+        return "invalid"
+
+    async def _capture(self, run: Run, snap: Snapshot) -> CaptureResult:
+        """Plain-code capture of the credential on this page (D-054). Values go straight to the owner-only store;
+        run state gets references and masked displays only."""
+        seq = self.store.begin_action(run, "capture_credential", {"elements": len(snap.obs.secret_xpaths)})
+        res = await capture(self.ex.page, snap.obs, store=self.secret_store, masker=self.masker, run_id=run.id,
+                            plan_kind=run.plan.credential_kind)
+        self.store.end_action(run, seq, "done", {"observed": res.observed()})
+        if res.credential is not None:
+            self._mark_created(run, "an app (its credential page was reached)")
+            if run.credential is not None and not res.has_secret:
+                res.credential.parts = {**run.credential.parts, **res.credential.parts}
+            run.credential = res.credential
+            run.observed_limitations = res.limitations
+            shown = ", ".join(f"{k} {p.masked_display}" for k, p in res.credential.parts.items())
+            self._step(run, f"captured the credential by plain browser code ({', '.join(res.captured)}); stored "
+                       "outside the repo", "agent", "done", [res.observed(), shown, *res.limitations[:2]])
+        else:
+            self._step(run, "credential-like value(s) seen, but nothing labelled to capture", "system", "skipped",
+                       [res.observed()])
+        self._cp(run, "credential_captured" if res.credential else "credential_not_captured",
+                 {"parts": res.captured, "unlabelled": res.unlabelled, "ambiguous": res.ambiguous,
+                  "secret_hidden": res.secret_hidden, "limitations": res.limitations})
+        return res
+
     def _refuse(self, run: Run, snap: Snapshot, v: Validated, reason: str) -> str:
         if v.element is not None:
             self._refused.add((urlparse(snap.url).path, v.element.xpath))
@@ -372,7 +462,52 @@ class AgentLoop:
         self._step(run, f"denied: {v.target()}", "system", "denied", [reason])
         return "invalid"
 
-    async def _execute(self, run: Run, snap: Snapshot, v: Validated, key: tuple[str, str] | None = None) -> str | None:
+    async def _confirm_maybe_duplicate(self, run: Run, snap: Snapshot, v: Validated) -> LoopResult | str | None:
+        """A form with terms was submitted earlier in this run but no app is recorded: creating again could make a
+        duplicate (D-063). The person says whether one exists."""
+        label = v.target()
+        ans = await self.handoffs.decide(
+            run, "unexpected",
+            f"{label} would create an app, but you submitted a form with terms earlier in this run, which may "
+            "already have created one. Creating another makes a duplicate.", [label], snap,
+            ["Yes, create it (none exists yet)", "No, one already exists"],
+            instruction="Look at the provider's app list in the browser. If the app already exists, choose “No”: the "
+                        "agent will not create another, and will open the existing one.",
+            after="Create it once (if yes) and continue.")
+        if ans is None:
+            return LoopResult("handoff_pending", "possible duplicate app: waiting for you")
+        self._created_unknown = False
+        if ans.startswith("No"):
+            self._mark_created(run, "an app (created earlier in this run; confirmed by the person)")
+            self._flash.append("The person says the app already exists: open it, do not create another.")
+            return self._refuse(run, snap, v, "the person says an app already exists")
+        return None
+
+    async def _confirm_in_doubt(self, run: Run, snap: Snapshot, v: Validated) -> LoopResult | None:
+        """The last click before an interruption has no recorded result: it may already have happened. Repeating it
+        could, for example, create a second app, so the person says whether it did (D-056)."""
+        self.in_doubt = None
+        ans = await self.handoffs.decide(
+            run, "unexpected",
+            "Before the interruption the agent started this click, and CredAgent cannot tell whether it happened: "
+            f"{v.target()}. Doing it again could repeat it (e.g. create a second app).", [v.target()], snap,
+            ["Yes, do it (it did not happen)", "No, stop here"],
+            instruction="Look at the browser window. If the action already happened, stop here and check the console "
+                        "yourself. Otherwise let the agent do it once.",
+            after="Do it once (if yes) and continue.")
+        if ans is None:
+            return LoopResult("handoff_pending", "an unconfirmed action is waiting for your answer")
+        if ans.startswith("No"):
+            self._stop = f"person chose not to repeat an unconfirmed action: {v.target()}"
+            return LoopResult("blocked", self._stop)
+        return None
+
+    async def _execute(self, run: Run, snap: Snapshot, v: Validated, key: tuple[str, str] | None = None
+                       ) -> LoopResult | str | None:
+        if v.action == "click" and self.in_doubt and self.in_doubt.get("target") == v.target():
+            stop = await self._confirm_in_doubt(run, snap, v)
+            if stop is not None:
+                return stop
         seq = self.store.begin_action(run, v.action, {"target": v.target()})
         r = await self.ex.run(snap, v.action, ref=v.step.ref, value=v.value, option=v.option, url=v.url)
         self.store.end_action(run, seq, "done" if r.ok else "failed", {"error": r.error} if r.error else None)

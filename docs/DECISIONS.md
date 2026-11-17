@@ -809,6 +809,22 @@ Plus unit tests for the risk table and the ported handoff helpers.
 
 ---
 
+## D-082 D-078 phase 4 done: capture, reset and reveal, live test, resume, in-doubt click — Decided (implementation record)
+**What phase 4 added to the agent loop and orchestrator** (no change to any rule; the owner's phase 4 go-ahead covered it).
+- **"done" is still only a claim.** Code accepts it when a credential is shown **and** plain browser code has captured a secret. If it has not (secret hidden, only the ID shown, or values with no readable label), the model is told exactly what is missing ("Not captured yet: …") and must try a reveal, reset or another page. After 3 misses in a row, code asks the person (DO, `secret_hidden`) to get the secret shown without it appearing in the terminal, then looks again.
+- **Reset and regenerate are asked, never assumed.** The risk rule (D-081) classes a reset/regenerate button as hard to undo, so the person decides (DECIDE). Only after "yes" does the agent click it, and then also the provider's own confirmation prompt ("Yes, do it!"). The fake audit shows exactly one regeneration, and "No" leaves the secret alone (run not succeeded, nothing regenerated).
+- **Capture and verification are code.** Capture reads values with plain browser code, stores them in the owner-only secret store and registers them with the masker before anything is written or sent. The live test, the outcome (`succeeded` only when `verified`; `partial` for testing mode with the observed limitation) and the report reuse the unchanged `_after_loop` and `verify_and_finish`.
+- **Resume (`resume_agent_phase`).** A pending handoff is closed as "re-checked on resume", never assumed done; the page is reopened from the last URL saved in run state (the loop now records it at every observation), or the existing Chrome is re-attached by saved pid and port, and the loop looks before it acts. Resume notes tell the model the run is resumed and what already exists (so it does not create a second app).
+- **In-doubt click.** An action started with no recorded end is passed in as `in_doubt`. When the model chooses that same click again, code asks the person first (DECIDE: "do it (it did not happen)" / "stop here"). "Stop" ends the run `blocked`; the app is never created twice.
+- **Possible duplicate.** If a form with terms was submitted earlier in this run and no app is recorded, the next create click is asked as a DECIDE too (D-063).
+- **Scripted stand-in** (tests and `--offline` fake-provider runs only) gained the capture playbook: confirm dialog → reveal → reset → OAuth2 page. It says "done" once per page and only then follows the code's hints; my first version kept resetting a secret that was already on screen, and the test's own audit assertion (no unprompted regeneration) caught it.
+
+**Tests: `tests/integration/test_agent_phase4.py`, 16 real-Chrome tests** through the full phase (metadata check, loop, capture, live test, outcome): capture and live test for six scenarios (plain, shown-once, terms checkbox, reveal button, numeric client ID, decoy token), shown-once is not read twice, hidden secret with the person regenerating, testing mode → partial, Discord-like reset with confirmation (one regeneration, after the person said yes), reset declined, resume after the terminal and browser closed, resume re-attached to the still-open Chrome (the person signed in meanwhile: nothing asked), in-doubt click both ways, and leak scans of run files, events, reports and terminal output for every secret the fake site issued. `tests/agent_harness.py` gained `run_phase`, `new_run`, `fake_secrets`, `assert_no_leak` and a person who can close the terminal at handoff N.
+
+**Not yet:** wiring into the CLI, removal of Jev, Stagehand, the step machine and the legacy loop (phase 5); cost and latency with the real model (phase 6); a real Discord run (phase 7). The legacy path still runs the old way until phase 5.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
