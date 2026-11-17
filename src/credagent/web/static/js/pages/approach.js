@@ -92,6 +92,9 @@ function runStrip() {
 export function renderApproach({ home }) {
   return page("My approach",
     "How I went about building it, the places a person still has to step in, and how I checked that it works.",
+    h("div", { class: "doc-tools no-print" },
+      h("button", { class: "btn", type: "button", onclick: () => window.print() }, "Export as PDF"),
+      h("span", { class: "muted small" }, "Opens your browser's print window. Choose “Save as PDF” as the destination.")),
     section("The approach in short", null,
       cards(PRINCIPLES, "four"),
       callout("Everything's written down", "I worked in sprints and kept a log. Every decision that mattered is in it (98 so far, each with its evidence), and so is every real run, the failures included.")),

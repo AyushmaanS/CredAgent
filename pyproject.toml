@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "credagent"
 version = "0.1.0"
-description = "Local CLI agent that obtains and live-verifies developer credentials for an app."
+description = "Local agent (web page and CLI) that obtains and live-verifies developer credentials for an app."
 requires-python = ">=3.11"
 dependencies = [
   "playwright==1.65.2",  # connects over CDP to the CredAgent-owned Chrome; no browser download needed

@@ -1,10 +1,18 @@
 # CredAgent
 
-A local CLI agent: give it an app name and it researches how that app issues
-credentials, opens a visible browser, works through the provider's developer
-console, pauses for steps only a person should do, and ends with a credential
-stored outside the repo **plus a live test proving it works**, or an honest
-report of what blocked it.
+A local agent with a simple web page (and a command line). Type an app name and it researches how that app
+issues credentials, opens a visible Chrome window, works through the provider's developer console, pauses for
+steps only a person should do, and ends with a credential stored outside the repo **plus a live test proving it
+works**, or an honest report of what blocked it.
+
+```bash
+.venv/bin/credagent ui     # prints a link to a local page: one input, one button
+```
+
+The page is the main way to use it: you follow the progress, answer "Your attention is needed" cards with buttons,
+and see the result with the credentials masked. It also has two reading pages, **How it works** and **My approach**
+(which can be exported as a PDF: the page has an "Export as PDF" button, and a copy is in `docs/my-approach.pdf`). The command line (`credagent get`, `resume`, `verify` and so on) does the same
+runs from a terminal and shares the same saved state. See "Web page" below.
 
 > **Work in progress — Sprint 6** (`docs/03-SPRINT-PLAN.md`). The browser layer was rebuilt on 2026-11-17 as an LLM agent loop over Playwright (D-078, below). Progress: `docs/CHECKLIST.md`.
 > Every decision and assumption: `docs/DECISIONS.md`. Every live run, including failures: `RESULTS.md`.
@@ -16,7 +24,8 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 
 | Works | Not built yet |
 |---|---|
-| `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan; for a provider whose terms were checked, asks for your consent and then runs the browser agent | More real providers, API keys and the authorization-code flow (Sprint 6, in progress) |
+| **Web page** (`credagent ui`): enter an app name, follow milestones, answer handoffs and give your go-ahead with buttons, reveal or copy credentials on purpose, resume a saved run; plus "How it works" and "My approach" pages ([details](#web-page)) | Public hosting: the page and agent are local-only (127.0.0.1, macOS Chrome) |
+| `credagent get "<app>"` (command line): researches the app (Tavily + LLM) and writes a checked plan; for a provider whose terms were checked, asks for your consent and then runs the browser agent | More real providers, API keys and the authorization-code flow (Sprint 6, in progress) |
 | Browser agent on the fake provider: an LLM chooses each step over Playwright, code policy gates every action, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) (D-078) | |
 | Unusable model answers and "service unavailable" proved on the fake provider (`--fake-provider llm_failure` / `service_unavailable`) | |
 | OAuth metadata check + dynamic client registration shortcut (fake provider) | Provider-specific live tests (API keys, authorization-code flow) arrive with the real providers (Sprint 6) |
@@ -41,7 +50,13 @@ python3 -m venv .venv
 git config core.hooksPath .githooks    # pre-commit secret scan + lint (for contributors)
 ```
 
-**No API keys needed** for these:
+**Start the web page** (needs the API keys below to research a real app):
+
+```bash
+.venv/bin/credagent ui          # prints a link; open that exact link
+```
+
+**No API keys needed** for these (command line):
 
 ```bash
 .venv/bin/credagent --help
@@ -56,7 +71,7 @@ git config core.hooksPath .githooks    # pre-commit secret scan + lint (for cont
 .venv/bin/python scripts/sample_cards.py                       # regenerate docs/samples/handoff-cards.md
 ```
 
-**With your own API keys** (see "Local environment" below):
+**With your own API keys** (see "Local environment" below), from the command line instead of the page:
 
 ```bash
 .venv/bin/credagent get "GitHub"       # research + plan (~1–2 min); real-provider browser runs: Sprint 6
@@ -125,7 +140,7 @@ CREDAGENT_BROWSER_TESTS=1 .venv/bin/python -m pytest tests/integration   # add C
 .venv/bin/credagent ui          # prints a link and opens it; Ctrl+C to stop
 ```
 
-A small local page (127.0.0.1 only) for the same runs the CLI makes: enter an application name, follow the
+The main interface: a small local page (127.0.0.1 only) for the same runs the CLI makes: enter an application name, follow the
 milestones, answer "Your attention is needed" handoffs with buttons instead of the terminal, resume a saved run, and
 see the result with the credentials masked until you press Reveal or Copy. It runs the same orchestrator; the CLI
 keeps working and shares the same saved runs. Details and limits: `docs/design/web-ui.md`.
@@ -158,7 +173,7 @@ Feasibility spikes (Sprint 0) are in `scripts/spikes/`; curated results are in
 ## Repository layout
 
 ```text
-src/credagent/      CLI, orchestrator, research, reasoning (FastRouter), agent (LLM step loop),
+src/credagent/      CLI, web page, orchestrator, research, reasoning (FastRouter), agent (LLM step loop),
                     browser (Chrome + Playwright), web (local page + JSON API), state, secrets, reports, config
 fake_provider/      Fakeprov fake developer console + scenario fixtures
 tests/              unit, integration (incl. opt-in real-browser test), fake_provider
@@ -184,7 +199,7 @@ Orchestrator → look (numbered text snapshot) → hard checks in code → LLM c
 
 ## Human involvement
 
-The person does what only a person should: signing in, email codes, 2FA, CAPTCHA, identity or payment steps, and **accepting terms (always the person, including "By clicking Create you agree")**. The agent fills every other field first. Choices (an app type, a permission, resetting a secret that invalidates the old one) are asked in the terminal. Real providers need per-provider consent each session (`docs/ATTEMPT-PROTOCOL.md`). After a handoff the run resumes from its saved state, never blindly replaying a click.
+The person does what only a person should: signing in, email codes, 2FA, CAPTCHA, identity or payment steps, and **accepting terms (always the person, including "By clicking Create you agree")**. The agent fills every other field first. Choices (an app type, a permission, resetting a secret that invalidates the old one) are asked in the page (or the terminal). Real providers need per-provider consent each session (`docs/ATTEMPT-PROTOCOL.md`). After a handoff the run resumes from its saved state, never blindly replaying a click.
 
 ## Verification
 
@@ -200,4 +215,4 @@ A credential is **working only if its live test passes** (`verified`). Only `ver
 
 ## Key decisions
 
-All of them, with evidence, are in `docs/DECISIONS.md`. The ones that shape the product: local CLI with owner-only secret files outside the repo (D-053), accepting terms is always the person (D-048 to D-050), unclear terms on a provider are automated by default with consent each session (D-059), one app per run (D-063), and the agent loop over Playwright (D-078).
+All of them, with evidence, are in `docs/DECISIONS.md`. The ones that shape the product: a local app (web page and CLI) with owner-only secret files outside the repo (D-053), accepting terms is always the person (D-048 to D-050), unclear terms on a provider are automated by default with consent each session (D-059), one app per run (D-063), and the agent loop over Playwright (D-078).

@@ -245,3 +245,19 @@ h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }
   .grid-row { grid-template-columns: 1fr 64px 64px; padding: 9px 10px; }
   .nav-link { padding: 5px 7px; font-size: 13px; }
 }
+
+.doc-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+
+/* printing / saving as PDF: just the page, in colour, without breaking a card across two sheets */
+@page { size: A4; margin: 14mm 13mm; }
+@media print {
+  html, body { background: #fff; }
+  body { font-size: 11pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .header, .skip, .no-print, .doc-cta { display: none !important; }
+  .main { max-width: none; padding: 0; }
+  .doc h1 { font-size: 26pt; }
+  .doc-section { margin-top: 22pt; break-inside: auto; }
+  .doc-h2, .doc-h3 { break-after: avoid; }
+  .mini, .layer, .story-item, .grid-row, .stat, .run-chip, .callout, .outcome, .role, .verdict, .journey li, .loop-cell { break-inside: avoid; }
+  .card, .mini, .layer, .grid, .stat, .loop, .verdicts, .role { box-shadow: none; }
+}
