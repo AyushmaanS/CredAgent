@@ -65,6 +65,7 @@ class Scenario:
     secret_reveal_button: bool = False  # secret shown only after clicking "View client secret" (e.g. Spotify)
     numeric_client_id: bool = False  # client ID is an all-digit snowflake (e.g. Discord)
     decoy_token: bool = False  # the console shows an unlabelled token-like value before any app exists
+    crowded_oauth2: bool = False  # OAuth2 page also has a URL generator with ~20 scope checkboxes (as on Discord)
     secret_after_reset: bool = False  # app page shows only the ID; the secret is on an OAuth2 page behind
     #                                   "Reset Secret" (as on Discord)
 
@@ -435,7 +436,8 @@ class Handler(BaseHTTPRequestHandler):
             # Discord's app page: many settings fields and buttons come before the sidebar link (D-066).
             crowd = ("<form id=settings>" + "".join(f'<label>Setting {i} <input name="s{i}"></label>' for i in range(9))
                      + "".join(f'<button type="button">Option {i}</button>' for i in range(11)) + "</form>")
-            secret_html = f'{crowd}<p><a href="/apps/{app.id}/oauth2">OAuth2</a></p>'
+            secret_html = (f'{self.portal_chrome(app)}{crowd}'
+                           + ("" if self.sc.crowded_oauth2 else f'<p><a href="/apps/{app.id}/oauth2">OAuth2</a></p>'))
         elif self.sc.secret_reveal_button:
             slot = esc(json.dumps(f'<code id="client-secret">{esc(app.client_secret)}</code>'))
             secret_html = (f'<p>Client secret: <span id="secret-slot"></span> <button type="button" '
@@ -490,9 +492,32 @@ class Handler(BaseHTTPRequestHandler):
                      f'<div id="redirect-rows">{saved}</div>'
                      f'<button type="button" onclick="{add}">Add Redirect</button>'
                      '<button type="submit">Save Changes</button></form>')
+        generator = ""
+        if self.sc.crowded_oauth2:  # Discord's OAuth2 URL Generator: many scope checkboxes after the redirects
+            names = ["identify", "email", "connections", "guilds", "guilds.join", "guilds.members.read", "gdm.join",
+                     "bot", "rpc", "rpc.notifications.read", "rpc.voice.read", "rpc.voice.write", "rpc.video.read",
+                     "rpc.activities.write", "webhook.incoming", "messages.read", "applications.builds.upload",
+                     "applications.commands", "activities.read", "relationships.read", "voice", "role_connections"]
+            generator = ("<h3>OAuth2 URL Generator</h3><fieldset>" + "".join(
+                f'<label><input type="checkbox" name="scope" value="{n}"> {n}</label>' for n in names)
+                + '</fieldset><label>Generated URL <input type="text" readonly value="Please select at least one '
+                  'OAuth2 scope"></label><button type="button">Copy</button>')
+        generator = self.portal_chrome(app) + generator
         self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
                   f"<h3>Client ID</h3><div><div>{esc(app.client_id)}</div><button type=button>Copy</button></div>"
-                  f'{secret}</div>{redirects}<p><a href="/console">Back to applications</a></p>')
+                  f'{secret}</div>{redirects}{generator}<p><a href="/console">Back to applications</a></p>')
+
+    def portal_chrome(self, app: App) -> str:
+        """Discord-like header buttons and app sidebar (only with crowded_oauth2): many links on every app page."""
+        if not self.sc.crowded_oauth2:
+            return ""
+        side = ["General Information", "Installation", "OAuth2", "Bot", "Emojis", "Webhooks", "Rich Presence",
+                "App Testers", "App Directory", "Activities", "Monetization", "Linked Roles", "Users"]
+        links = "".join(f'<li><a href="/apps/{app.id}/{"oauth2" if n == "OAuth2" else "x-" + n.lower().replace(" ", "-")}">'
+                        f"{n}</a></li>" for n in side)
+        head = "".join(f'<button type="button">{n}</button>' for n in ("Docs", "Teams", "User Menu", "Overview",
+                                                                    "Games NEW", "Activities", "Premium Apps"))
+        return f"<nav id=portal>{head}<ul>{links}</ul></nav>"
 
     def get_terms(self) -> None:
         self.page("Developer Terms", "<h1>Fakeprov Developer Terms (fake)</h1><p>These are placeholder "

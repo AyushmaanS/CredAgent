@@ -573,7 +573,7 @@ Values are still never read; only their lengths are compared. Tested: the Discor
 
 **Fix:** `rank_for_goal` scores a name quoted in the step ('…', “…”) as a whole-string match (strong). When the step is about an app, the candidate marked "(the app this run created)" scores high too. A unit test reproduces the list page.
 
-## D-073 Design: checkable steps, with progress proven by code — Proposed (owner review pending)
+## D-073 Design: checkable steps, with progress proven by code — Approved (owner, 2026-11-17)
 After twelve Discord fixes (D-061 to D-072), the owner asked to step back from patching. Design: `docs/design/checkable-steps.md`.
 - **Checkable steps:** every browser step gets `where`, `target` and `done_when`, from a closed vocabulary that plain code evaluates (`at_page`, `element_present` / `element_absent`, `field_holds` as an in-page equality test with approved non-secret values, `app_exists`, `credential_shown`).
 - **Progress from proofs:** a step is done only with proof. The plan position is the first step not proven done, so the cursor corrections go away.
@@ -582,6 +582,38 @@ After twelve Discord fixes (D-061 to D-072), the owner asked to step back from p
 Jev's five decisions, the policy rules and secret handling are unchanged. Three open questions for the owner are listed in §13 of the design. No code has been changed for it yet.
 
 Added at the owner's request: **measure how many elements Jev should see (20 vs 40 vs 60) before building** (design §11a, step 0). The current 20 was an unmeasured Sprint 3 default.
+
+**Approved by the owner** ("Approve, start"), with the recommended answers to the design's §13 questions:
+- **Q1:** code may open an allowed console path directly; a visible link is preferred when known.
+- **Q2:** steps research cannot make checkable stay *inferred*, and are handed off if one fails twice.
+- **Q3:** recipes come later.
+- **Q4:** measure first.
+
+Work starts with step 0, the measurement.
+
+## D-074 Jev's candidate limit stays at 20; the misses come from ranking and vague steps, not list size — Decided (measured 2026-11-17, design §11a)
+**Measurement:** `scripts/measure_candidates.py`, fake provider only, real Jev (`jev-1.14.0`).
+- **Pages:** crowded pages copied from Discord's layout (app page, 50 candidates; OAuth2 page, 54 candidates with a sidebar and about 20 scope checkboxes; app list, 19), plus a form and the home page.
+- **Calls:** 9 cases × 3 limits × 3 orders × 3 repeats = **243 Jev calls**, with no Jev failures. Raw metrics in `docs/samples/candidate-limit.json`; table in `docs/samples/candidate-limit.md`.
+
+| limit | order | correct when the target was offered | said "none" when offered | median latency | request size |
+|---|---|---|---|---|---|
+| 20 | ranked | **100 %** (target offered in 89 % of calls) | 0 % | 304 ms | 4.8 k chars |
+| 20 | target first | **100 %** | 0 % | 322 ms | 4.8 k |
+| 20 | target last (20th) | **100 %** | 0 % | 345 ms | 4.8 k |
+| 40 | ranked | 89 % | 11 % | 310 ms | 6.0 k |
+| 40 | target first | 100 % | 0 % | 342 ms | 6.0 k |
+| 60 | ranked | 89 % | 11 % | 320 ms | 6.8 k |
+| 60 | target first | 100 % | 0 % | 338 ms | 6.8 k |
+
+**Findings:**
+1. **When the target is in the list, Jev picks it**, even in 20th place (100 %). Latency is about 0.3 s at every size, so size costs little, but it does not help either.
+2. **All the misses are one case.** A vague step ("Go to the page with the client credentials and redirects") ranks the `OAuth2` link 37th of 50. At 20 it is not offered. At 40 or 60 it *is* offered, and Jev still answers "none", always uncertain (confidence 0.37–0.56), which would go to the LLM fallback. **Bigger lists did not fix it.** Putting the target first did (100 %).
+3. So the failures seen on Discord (D-066, D-072) come from **ranking and vague step wording**, not from the limit. That is what the checkable-steps design addresses, with named targets placed first and a `where` for each step.
+
+**Decision:** keep `MAX_CANDIDATES = 20`. It meets the bar (≥95 % correct when offered, median well under 3 s), and 40 or 60 were no better. Re-measure with the same script if steps or ranking change.
+
+**Limits of the measurement:** 9 cases on fake pages, 3 repeats. Real portals may differ, so this is evidence for the design, not proof for every site.
 
 ---
 

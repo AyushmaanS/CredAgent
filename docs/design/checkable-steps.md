@@ -1,6 +1,6 @@
 # Design: checkable steps (code-proven progress)
 
-Status: **proposed, for owner review** (2026-11-17). No code has been changed for this design yet.
+Status: **approved by the owner** (2026-11-17), with the recommended answers to §13. Work starts with §11a.
 Decision record: `docs/DECISIONS.md` D-073.
 
 ## 1. Why
@@ -197,7 +197,7 @@ If 40 or 60 is no more accurate than 20, it stays 20. The results and the chosen
 
 ## 12. Order of work (after approval)
 
-0. **Run the §11a measurement and set `MAX_CANDIDATES` from it** (it does not depend on the rest).
+0. ~~Run the §11a measurement and set `MAX_CANDIDATES` from it.~~ **Done (D-074):** the limit stays 20. Jev picks the target 100 % of the time when it is offered. The misses come from ranking and vague steps, which steps 1–5 address.
 1. Check vocabulary and evaluator, plus unit tests.
 2. Step format, validator, `{app_id}` binding, legacy mode.
 3. Loop: evaluate checks after every observation; computed position; proofs in state; remove the cursor patches.
