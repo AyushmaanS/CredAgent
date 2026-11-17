@@ -570,3 +570,53 @@ def test_name_based_domain_inference_is_conservative():
     assert infer_official_domains(["blog.thirdparty.example", "medium.com"], ["Acme"]) == []  # nothing is invented
     assert infer_official_domains(["acme-oauth-guide.example"], ["Acme"]) == []  # look-alikes do not match
     assert registrable_domain("a.b.example.com") == "example.com" and registrable_domain("x.example.co.uk") == "example.co.uk"
+
+
+# ------------------------------------------------- the chosen credential type is planned for (D-096)
+
+def two_kinds(chosen):
+    return findings(chosen_credential_kind=chosen, credential_options=[
+        {"kind": "api_key", "description": "API key", "best_for": "server calls", "source_url": DOCS},
+        {"kind": "oauth_client", "description": "OAuth client ID", "best_for": "user sign-in", "source_url": DOCS}])
+
+
+def pick(prefix):
+    return lambda options: next(o for o in options if o.startswith(prefix))
+
+
+def test_choosing_a_credential_type_other_than_the_recommended_re_plans_for_it(tmp_path):
+    """Google run 955e: research recommended an API key, the person chose the OAuth client, and the plan stayed the
+    API-key plan (the consent screen said "api key"). Now the chosen type is planned for."""
+    r = FakeReasoner({"triage": [triage(), triage()],
+                      "synthesis": [two_kinds("api_key"), two_kinds("oauth_client")]})
+    o, store = orch(tmp_path, FakeSearcher(), r, io=FakeIO(pick("oauth_client")))
+    run = o.get("Acme")
+    assert run.plan.credential_kind == "oauth_client" and run.phase == "planned"
+    assert len(r.calls) == 4  # a second research pass, for the chosen type
+    asked = [c for c in r.calls if c["schema_name"] == "synthesis"][1]["messages"][1]["content"]
+    assert "chose the credential type 'oauth_client'" in asked and "set chosen_credential_kind to it" in asked
+    assert any("re-planned for the chosen credential type: oauth_client" in s.action for s in run.steps)
+    assert "replanned" in [e["type"] for e in store.events(run.id)]
+    assert not any("could not be redone" in u for u in run.plan.unknowns)
+
+
+def test_choosing_the_recommended_credential_type_does_not_research_again(tmp_path):
+    r = FakeReasoner({"triage": [triage()], "synthesis": [two_kinds("api_key")]})
+    o, _ = orch(tmp_path, FakeSearcher(), r, io=FakeIO(pick("api_key")))
+    run = o.get("Acme")
+    assert run.plan.credential_kind == "api_key" and len(r.calls) == 2
+
+
+def test_the_persons_choice_wins_even_if_the_model_answers_with_another_type(tmp_path):
+    r = FakeReasoner({"triage": [triage(), triage()], "synthesis": [two_kinds("api_key"), two_kinds("api_key")]})
+    o, _ = orch(tmp_path, FakeSearcher(), r, io=FakeIO(pick("oauth_client")))
+    assert o.get("Acme").plan.credential_kind == "oauth_client"
+
+
+def test_a_failed_re_plan_keeps_the_run_and_says_the_steps_may_not_fit(tmp_path):
+    r = FakeReasoner({"triage": [triage(), ModelCallError("x"), ModelCallError("x")],
+                      "synthesis": [two_kinds("api_key")]})
+    o, _ = orch(tmp_path, FakeSearcher(), r, io=FakeIO(pick("oauth_client")))
+    run = o.get("Acme")
+    assert run.phase == "planned" and run.plan.credential_kind == "api_key"
+    assert any("could not be redone" in u for u in run.plan.unknowns)

@@ -3,6 +3,7 @@ after every step. Code owns the lifecycle; models only propose content."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -58,6 +59,7 @@ class Orchestrator:
         return self._research_and_plan(run, None)
 
     def _research_and_plan(self, run: Run, chosen: Candidate | None) -> Run:
+        self._chosen = chosen  # remembered so a different credential type can be re-planned for the same app
         run.phase = "research"
         self._cp(run, "research_started", {"chosen": chosen.model_dump() if chosen else None})
         try:
@@ -154,14 +156,37 @@ class Orchestrator:
             return False
         run.resolve_handoff(h.id, answer=answer)
         run.add_step(StepRecord(action=f"chose credential type: {answer[:80]}", actor="person", outcome="done"))
-        if answer != rec:
-            run.plan.unknowns.insert(
-                0,
-                f"The person chose '{answer[:80]}' instead of the recommended "
-                f"{run.plan.credential_kind}; the browser steps must be re-planned for it.",
-            )
         self._cp(run, "handoff_resolved", {"handoff_id": h.id, "answer": answer})
+        if answer != rec:
+            self._replan_for(run, answer)
         return True
+
+    def _replan_for(self, run: Run, answer: str) -> None:
+        """The person chose a credential type other than the recommended one: plan for THAT type (D-096). Before, only a
+        note was added, so the console page, steps, live test and consent screen stayed those of the recommended
+        type (a Google run asked for an OAuth client and was shown an API key)."""
+        kind = re.split(r"[:(]", answer, maxsplit=1)[0].strip()
+        old = run.plan.credential_kind
+        note = (f"The person chose '{answer[:80]}' instead of the recommended {old}; the plan could not be redone "
+                "for it, so the browser steps may not fit.")
+        if self.research is None or not hasattr(self.research, "research"):
+            run.plan.unknowns.insert(0, note)
+            return
+        self.io.say(f"Planning the steps for {kind}…")
+        try:
+            result = self.research.research(run.app_input, getattr(self, "_chosen", None), want_kind=kind)
+        except ResearchError as exc:
+            self._log_actions(run)
+            run.plan.unknowns.insert(0, f"{note} ({str(exc)[:120]})")
+            return
+        self._log_actions(run)
+        if result.status != "planned" or result.plan is None or result.plan.credential_kind != kind:
+            run.plan.unknowns.insert(0, note)
+            return
+        run.plan = result.plan
+        run.add_step(StepRecord(action=f"re-planned for the chosen credential type: {kind}", actor="agent",
+                                outcome="done"))
+        self._cp(run, "replanned", {"from": old, "to": kind})
 
     def _log_actions(self, run: Run) -> None:
         for a in getattr(self.research, "actions", []):

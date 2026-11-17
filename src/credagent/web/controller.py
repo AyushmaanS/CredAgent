@@ -110,7 +110,8 @@ class RunController:
             if run.status != "running":
                 run.transition("running", "resumed", resume=True)
             self.stage = "researching"
-            run = Orchestrator(self.store, m, None, self.io).resume_choice(run)  # type: ignore[arg-type]
+            agent = ResearchAgent(TavilyClient(s, m), FastRouterClient(s, m), model=s.llm_model)
+            run = Orchestrator(self.store, m, agent, self.io).resume_choice(run)
             if run.phase == "planned":
                 self.browser_stage(run, resume=False, doubt=None)
             return

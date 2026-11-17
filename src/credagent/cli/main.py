@@ -447,7 +447,12 @@ def resume(run_id: str, headless: bool) -> None:
             # Research finished; only the credential-type question was left unanswered. Ask it again.
             if run.status != "running":
                 run.transition("running", "resumed", resume=True)
-            run = Orchestrator(store, m, None, TerminalIO()).resume_choice(run)  # type: ignore[arg-type]
+            from credagent.reasoning.fastrouter import FastRouterClient
+            from credagent.research.agent import ResearchAgent
+            from credagent.research.tavily import TavilyClient
+
+            agent = ResearchAgent(TavilyClient(s, m), FastRouterClient(s, m), model=s.llm_model)
+            run = Orchestrator(store, m, agent, TerminalIO()).resume_choice(run)
             if run.phase == "planned":
                 _real_browser(s, m, store, run, resume=False)
             return

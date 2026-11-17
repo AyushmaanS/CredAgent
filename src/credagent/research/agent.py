@@ -331,17 +331,17 @@ class ResearchAgent:
         raise ResearchError(f"{name} output was unusable after a retry: {last_err[:300]}")
 
     # ---------------------------------------------------------- main
-    def research(self, app: str, chosen: Candidate | None = None) -> ResearchResult:
+    def research(self, app: str, chosen: Candidate | None = None, want_kind: str | None = None) -> ResearchResult:
         """Research once; if the plan has no official domains or no console URL, research once more, telling the
         model what the first attempt lacked and allowing the name-based domain fallback (D-092). A retry that fails
         or is no better never replaces the first result and never fails the run."""
-        first = self._research(app, chosen, attempt=1)
+        first = self._research(app, chosen, attempt=1, want_kind=want_kind)
         gaps = _gaps(first)
         if not gaps:
             return first
         prior = list(self.actions)
         try:
-            second = self._research(app, chosen, attempt=2, hint=gaps)
+            second = self._research(app, chosen, attempt=2, hint=gaps, want_kind=want_kind)
         except ResearchError as exc:
             self.actions = [*prior, {"action": "research_retry", "because": gaps, "error": str(exc)[:200]}]
             first.actions = self.actions
@@ -352,9 +352,11 @@ class ResearchAgent:
         best.actions = self.actions
         return best
 
-    def _research(self, app: str, chosen: Candidate | None, *, attempt: int, hint: list[str] | None = None
-                  ) -> ResearchResult:
+    def _research(self, app: str, chosen: Candidate | None, *, attempt: int, hint: list[str] | None = None,
+                  want_kind: str | None = None) -> ResearchResult:
         self._start()
+        want_note = (f"\n\nThe developer has chosen the credential type {want_kind!r}: choose pages that explain how "
+                     "to obtain exactly that, and plan only that credential." if want_kind else "")
         retry_note = (f"\n\nNOTE: a first attempt ended without: {', '.join(hint)}. Name the provider's official "
                       "domains (bare hostnames) and choose the pages to read in full, so the plan can start."
                       if hint else "")
@@ -382,7 +384,7 @@ class ResearchAgent:
                 f"up to {self.budget.max_extracts}) should "
                 "be read in full to learn how to obtain credentials (urls_to_read, official docs "
                 f"first)? Up to {self.budget.max_follow_ups} follow_up_queries, only for credential setup details "
-                "the results above do not cover." + retry_note + "\n\n"
+                "the results above do not cover." + retry_note + want_note + "\n\n"
                 + _sources_block(ranked, []))},
         ], max_tokens=1500)
 
@@ -427,7 +429,10 @@ class ResearchAgent:
             {"role": "user", "content": (
                 f"App: {json.dumps(subject)}. Provider: {json.dumps(triage.provider)}. "
                 f"Official domains: {json.dumps(official)}.\n\n"
-                "Produce the credential plan. Guidance:\n"
+                "Produce the credential plan." + (f" The developer chose the credential type {want_kind!r}: set "
+                                                  "chosen_credential_kind to it and plan only that credential "
+                                                  "(its console page, steps and live test)." if want_kind else "")
+                + " Guidance:\n"
                 "- credential_options: every credential type the sources describe; chosen_credential_kind: "
                 "what a developer needs to build an integration (an OAuth client if the provider offers "
                 "third-party OAuth apps, else an API key/token; sandbox/test keys where the provider has "
@@ -457,6 +462,8 @@ class ResearchAgent:
                 + _sources_block(ranked, pages))},
         ], max_tokens=8000)
 
+        if want_kind and findings.chosen_credential_kind != want_kind:  # the person's choice wins over the model's
+            findings = findings.model_copy(update={"chosen_credential_kind": want_kind})
         self.actions.append({"action": "synthesis_result", "attempt": attempt, "console_url": findings.console_url,
                              "console_url_source": findings.console_url_source,
                              "sign_in_domains": findings.sign_in_domains[:6],

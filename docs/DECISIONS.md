@@ -1058,6 +1058,17 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-096 Choosing a credential type other than the recommended one now re-plans for it — Decided (owner reported: chose OAuth, the next screen showed an API key)
+**What happened (run 20261117-164320-google-cloud-955e).** Research recommended an **API key**; the person chose **OAuth client** from the list. The run's plan stayed the API-key plan: `credential_kind` api_key, the API-key console steps and live test, and a go-ahead screen that said "Credential: api key". The code only wrote a note ("the browser steps must be re-planned for it") into the plan's unknowns and never re-planned. Earlier Discord runs never hit this because OAuth was the recommended option.
+
+**Fix.** After a non-recommended choice, research runs again **for the chosen type** (`ResearchAgent.research(..., want_kind=…)`): the triage is told which type to find pages for, the synthesis is told to plan only that credential, and the person's choice overrides the model's (`chosen_credential_kind` is forced to it if the model answers otherwise). The new plan replaces the old one, the run records a step ("re-planned for the chosen credential type") and an event (`replanned`), and the go-ahead screen, console URL, steps and live test are those of the chosen type. Cost: one more research pass, about $0.15–0.20, only when you choose a non-recommended type; the weak-answer retry (D-092) still applies inside it. If the re-plan fails or comes back as another type, the run keeps the old plan and says so plainly in the plan's unknowns ("the plan could not be redone for it, so the browser steps may not fit"). Resuming a run whose credential-type question was left open now also has a research agent (CLI and page), so the re-plan works there too.
+
+**Tests.** Choosing the OAuth client re-plans (second pass asked for exactly that type, plan, step and event recorded); choosing the recommended type does not research again; the person's choice wins over a model that answers another type; a failed re-plan keeps the run and says the steps may not fit.
+
+**The obsolete run.** 955e is saved with the wrong plan; start a new run.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
