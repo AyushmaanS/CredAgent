@@ -274,3 +274,49 @@ def test_a_saved_chrome_that_cannot_be_driven_is_replaced_by_a_fresh_one_on_the_
             await second.close()
     run(go())
 
+
+def test_a_window_less_chrome_left_on_the_profile_does_not_block_the_next_run(tmp_path):
+    """Google run: the person closed the agent's window, Chrome stayed alive without one and kept the profile, and the
+    next run failed with "Chrome could not start with the profile (exit code 0)" so no browser opened (D-095). A
+    Chrome that still has a window is left alone."""
+    import json
+    import os
+    import urllib.request
+
+    from playwright.async_api import async_playwright
+
+    from credagent.browser.chrome import ChromeError, ChromeProcess, release_stale_chrome
+
+    prof = tmp_path / "profile"
+
+    async def go():
+        old = ChromeProcess.launch(prof, headless=HEADLESS)
+        # 1. a Chrome with a window is in use: left alone, and a second launch fails as before
+        assert await release_stale_chrome(prof) is False and old.is_running()
+        # 2. the person closes the window: Chrome stays alive with no page and keeps the profile locked
+        pw = await async_playwright().start()
+        b = await pw.chromium.connect_over_cdp(old.cdp_url)
+        for pg in list(b.contexts[0].pages):
+            await pg.close()
+        await b.close()
+        await pw.stop()
+        for _ in range(30):
+            if not json.load(urllib.request.urlopen(f"{old.cdp_url}/json/list")):  # noqa: S310
+                break
+            await asyncio.sleep(0.1)
+        assert old.is_running() and os.readlink(prof / "SingletonLock").endswith(str(old.pid))
+        # 3. the next run opens its browser anyway: the stale Chrome is quit, a fresh one is launched
+        s = await open_pw_session(prof, headless=HEADLESS)
+        try:
+            assert s.chrome.pid != old.pid and not old.is_running()
+            await s.page.goto("about:blank")
+        finally:
+            await s.close()
+        with pytest.raises(ChromeError):  # (control) without the release, a locked profile still fails to launch
+            held = ChromeProcess.launch(prof, headless=HEADLESS)
+            try:
+                ChromeProcess.launch(prof, headless=HEADLESS)
+            finally:
+                await held.graceful_close()
+    run(go())
+

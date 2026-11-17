@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -176,4 +177,39 @@ def _pid_alive(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
+    return True
+
+
+async def release_stale_chrome(profile_dir: Path) -> bool:
+    """Quit a CredAgent Chrome that still holds this profile but has no window (D-095).
+
+    When the person closes the agent's window, Chrome on macOS keeps running without one and keeps the profile
+    locked; the next run's Chrome then starts, finds the profile taken and exits ("Chrome could not start with the
+    profile"). A Chrome with a window is somebody's open session and is left alone. Returns True if one was quit."""
+    lock = profile_dir / "SingletonLock"
+    try:
+        target = os.readlink(lock)  # "<host>-<pid>"
+    except OSError:
+        return False
+    tail = target.rsplit("-", 1)[-1]
+    if not tail.isdigit() or not _pid_alive(int(tail)):
+        return False
+    pid = int(tail)
+    try:
+        cmd = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True,  # noqa: S603
+                             timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    m = re.search(r"--remote-debugging-port=(\d+)", cmd)
+    if f"--user-data-dir={profile_dir}" not in cmd or not m:
+        return False  # not a CredAgent-started Chrome on this profile
+    port = int(m.group(1))
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as r:  # noqa: S310
+            targets = json.loads(r.read())
+    except (OSError, ValueError):
+        return False
+    if any(t.get("type") == "page" for t in targets):
+        return False  # it has a window: it is in use
+    await ChromeProcess(pid=pid, port=port, profile_dir=profile_dir).graceful_close()
     return True

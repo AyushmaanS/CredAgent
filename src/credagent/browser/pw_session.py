@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from credagent.browser.chrome import ChromeProcess
+from credagent.browser.chrome import ChromeProcess, release_stale_chrome
 from credagent.policy.hard_checks import host_allowed
 from credagent.state.models import BrowserSession
 
@@ -102,6 +102,7 @@ async def open_pw_session(
         if candidate.is_running():
             chrome, reattached = candidate, True
     if chrome is None:
+        await release_stale_chrome(profile_dir)  # a window-less Chrome left by a closed window would block the launch
         chrome = ChromeProcess.launch(profile_dir, headless=headless)
     pw = await async_playwright().start()
     try:
@@ -114,6 +115,7 @@ async def open_pw_session(
             # stays alive without one, and DevTools then refuses to be driven, D-094). Quit it, which releases the
             # profile, and open a fresh Chrome on the same profile: sign-ins live in the profile, so nothing is lost.
             await chrome.graceful_close()
+            await release_stale_chrome(profile_dir)
             chrome = ChromeProcess.launch(profile_dir, headless=headless)
             reattached = False
             browser, context, page = await _connect(pw, chrome)

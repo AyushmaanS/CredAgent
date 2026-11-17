@@ -1045,6 +1045,19 @@ The easy scenarios took 8 calls (about 22k tokens); the hardest were `discord_li
 
 ---
 
+## D-095 Why the browser did not open: a window-less Chrome from the closed window held the profile — Decided (fix after reading the logs)
+**What happened.** Google runs after D-094: run 3b22's browser opened (event `browser_opened`), then the window was closed and the run **paused**. On macOS, closing the last window leaves Chrome running without one, and it keeps the profile locked. The next runs (e46c, c5b0) launched a new Chrome on the same profile: it found the profile taken, handed over and exited with code 0, and CredAgent reported "Chrome could not start with the profile … (exit code 0). Usually another Chrome window is still using it". No `browser_opened` event, no window. The stale process (pid 50248) had no pages and no browser contexts, which I confirmed with a read-only DevTools query. A fresh launch on the same profile works (checked three times, including connecting straight away), so the profile and the launch code are not at fault.
+
+**Fix.** Before a new Chrome is launched on a profile, `release_stale_chrome` looks at who holds it (the profile's `SingletonLock` names the pid): if it is a CredAgent-started Chrome (our `--user-data-dir` and a debugging port) with **no page**, it is quit gracefully (which flushes and releases the profile) and the launch goes ahead. A Chrome that still has a window is somebody's open session and is **left alone**, so that case still fails with the old message. The same release runs in the re-attach fallback added in D-094.
+
+**Test (real Chrome).** A window is closed (headless: its last page), Chrome stays alive with the lock held; the next `open_pw_session` quits it and opens a fresh Chrome; a Chrome with a window is not released; a launch on a held profile still fails as a control.
+
+**What the person sees.** Nothing extra: closing the agent's window mid-run now only pauses the run, and starting or resuming a run opens a new window. The Google profile and its sign-ins were never touched by the diagnosis (I quit the stuck Chrome, which flushes the profile, and launched and closed test windows on it).
+
+**Not fixed / unknown.** The page records only the *latest* controller's error for a run: the first attempt's error was overwritten when Resume started a second controller, so I had to infer the first failure from the process state. Worth keeping the error history if it matters again.
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.
