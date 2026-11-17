@@ -60,6 +60,8 @@ DO_INSTRUCTIONS = {
 
 
 MAX_HANDOFF_TRIES = 3
+RESET_SECRET_RE = re.compile(
+    r"^(reset|regenerate|rotate|generate( a)?( new)?)\b.{0,20}\b(client )?(secret|key|token)s?$", re.I)
 REVEAL_RE = re.compile(r"^(view|show|reveal|display)\b[^\n]{0,30}\b(secret|key|token)s?$", re.I)
 NEVER_REVEAL = re.compile(r"regenerate|rotate|reset|new|create|delete|revoke", re.I)
 
@@ -579,6 +581,12 @@ class BrowserLoop:
                 self._cp(run, "binding_learned", {"placeholder": "app_id"})
             if i == cur_i:
                 self._last_results = where_res + res
+            if here and all(r.ok for r in res) and any(c.check == "element_absent" for c in st.done_when):
+                # "Not shown" can be true only because the page has not caught up yet (e.g. a Save bar that
+                # appears after typing). Look again after a short wait before calling it proven (D-077).
+                await page.wait_for_timeout(1500)
+                obs = await observe_page(page, self.masker, self._not_secret())
+                res, _ = await evaluate_all(st.done_when, page, obs, ctx)
             if here and all(r.ok for r in res):
                 self._prove_by(run, st, obs, "code checks", [r.line() for r in where_res + res])
                 # A linear setup flow: a later step proven means the steps before it are done (e.g. the app exists,
@@ -631,6 +639,57 @@ class BrowserLoop:
                            "agent", "done")
             return "done"
         return None
+
+    async def _reset_for_secret(self, run: Run, page: Any, obs: Observation, gates: list) -> Any:
+        """At the capture step, the secret may be hidden behind "Reset Secret" (Discord, D-077). Generating it is
+        the person's decision (it invalidates any old secret); after a yes, the agent clicks it and confirms the
+        provider's "are you sure" dialog. Codes / 2FA stay the person's (hard checks hand them off)."""
+        if getattr(self, "_reset_clicked", False) and not getattr(self, "_reset_confirmed", False):
+            confirm = next((b for b in obs.buttons if b.get("in_dialog") and not b.get("disabled")
+                            and re.match(r"^(yes|confirm|reset|ok|continue)\b", (b.get("text") or "").strip(), re.I)),
+                           None)
+            if confirm is not None and not getattr(self, "_reset_confirmed", False):
+                self._reset_confirmed = True
+                seq = self.store.begin_action(run, "click", {"target": f"button '{confirm['text'][:40]}'",
+                                                             "why": "confirm the reset you approved"})
+                await page.locator("xpath=" + confirm["xpath"]).click()
+                await page.wait_for_timeout(self.budget.settle_ms)
+                self.store.end_action(run, seq, "done")
+                self._step(run, f"click button '{confirm['text'][:40]}' (confirming the reset you approved)", "agent",
+                           "done")
+                return True
+            return False
+        if run.plan_cursor >= len(run.plan.steps) or run.plan.steps[run.plan_cursor].kind != "capture":
+            return False
+        if not run.created or (run.credential and set(run.credential.parts) & {"client_secret", "api_key", "token"}):
+            return False
+        if getattr(self, "_reset_clicked", False):
+            return False
+        btn = next((b for b in obs.buttons if not b.get("disabled") and RESET_SECRET_RE.match(
+            (b.get("text") or "").strip())), None)
+        if btn is None:
+            return False
+        text = btn["text"].strip()
+        answer = await self._handoff(
+            run, "DECIDE", "other",
+            f"The secret is not shown on this page. “{text}” generates a new one, and any earlier secret stops "
+            "working. This app was created by this run, so nothing uses its secret yet.",
+            [f"button “{text}”"], obs,
+            instruction=f"Should the agent click “{text}” to generate the secret?",
+            options=[f"Yes, click “{text}”", "No, stop here"],
+            after="Click it, confirm the provider's prompt, capture the new secret by plain code, then test it.",
+        )
+        if answer is None:
+            return "pending"
+        if not answer.startswith("Yes"):
+            return "declined"
+        seq = self.store.begin_action(run, "click", {"target": f"button '{text}'", "why": "person approved"})
+        await page.locator("xpath=" + btn["xpath"]).click()
+        await page.wait_for_timeout(self.budget.settle_ms)
+        self.store.end_action(run, seq, "done")
+        self._reset_clicked = True
+        self._step(run, f"click button '{text}' (you approved generating the secret)", "agent", "done")
+        return True
 
     async def _go_where(self, run: Run, page: Any, obs: Observation, gates: list) -> bool:
         """If the current step happens on another page, go there first (design §7): a link on this page whose
@@ -1028,6 +1087,15 @@ class BrowserLoop:
                 if await self._go_where(run, page, obs, gates):
                     n_act += 1
                     continue
+                reset = await self._reset_for_secret(run, page, obs, gates)
+                if reset == "pending":
+                    return LoopResult("handoff_pending", "waiting for your answer about the secret", n_obs, n_act)
+                if reset == "declined":
+                    self._stop = "person chose not to generate a new secret"
+                    return LoopResult("blocked", self._stop, n_obs, n_act)
+                if reset:
+                    n_act += 1
+                    continue
             no_progress = no_progress + 1 if fp == last_fp else 0
             last_fp = fp
             if no_progress >= self.budget.max_no_progress:
@@ -1096,6 +1164,7 @@ class BrowserLoop:
                 {
                     "goal": goal,
                     "candidates": len(cands),
+                    "offered": [c.description[:60] for c in cands[:20]],
                     "source": source,
                     "element": el,
                     "action": act,
@@ -1138,6 +1207,11 @@ class BrowserLoop:
                     if n_rej <= 2:
                         continue
                     act = "stuck"  # twice rejected: let the navigator or the person help
+                elif cur_step is not None and cur_step.kind in ("capture", "verify"):
+                    # Code-owned steps are never completed by Jev (D-077): code captures and tests.
+                    self._jev_note = ("The credential is not captured yet: find what shows the secret "
+                                      "(e.g. a reset/regenerate control); code does the capture.")
+                    self._cp(run, "jev_complete_rejected", {"step": cur_step.id, "failing": ["code-owned step"]})
                 elif cur_step is not None:
                     self._prove_by(run, cur_step, obs, "Jev (no checkable condition; inferred)")
                     continue
@@ -1368,6 +1442,8 @@ class BrowserLoop:
             n_act += 1
             self._pending_effect = (f"{cand.method} {cand.description[:60]}", fp)
             btn_text = next((b.get("text") or "" for b in obs.buttons if b["xpath"] == cand.xpath), "")
+            if cand.method == "click" and RESET_SECRET_RE.match(btn_text.strip()):
+                self._reset_clicked = True  # the person approved it (DECIDE); the agent confirms the prompt
             if not self._proof and cand.method == "click" and re.fullmatch(r"save( changes)?", btn_text.strip(),
                                                                            re.I) and re.search(
                     r"\bsave\b", goal, re.I):

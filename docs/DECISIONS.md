@@ -663,6 +663,22 @@ Fixes:
 
 The run is resumable. Its proofs so far, and the app, are kept.
 
+## D-077 Capture and live test are never Jev's; a reset-for-secret is a DECIDE the agent then carries out; "not shown" checks wait to be sure — Decided (found resuming Discord run #5)
+*Found in real run `20261117-080548-discord-1971`, resumed with D-076.* Progress, all proven by code: "app exists", the OAuth2 page (with `{app_id}` bound from the URL), "the Redirects box holds the callback", and "Save Changes is not shown". The person clicked into the app once, because Jev had no app link to offer.
+
+Then:
+1. **No browser step reset the secret.** Research had folded "click Reset Secret" into the code-owned capture step as a note.
+2. **Jev completed the capture and live-test steps.** Its "done" was accepted on them as on any step without a condition. With nothing left, Jev kept saying "done" on the OAuth2 page until the no-progress check handed off.
+3. **"Save Changes not shown" was proven right after typing.** The live page later showed no unsaved-changes bar and the box holding the exact callback, so it was most likely saved, but the proof had not waited.
+
+Fixes:
+- **Code-owned steps are never completed by Jev.** A "done" on capture or verify is rejected, with a note that code does the capture.
+- **At the capture step,** if no secret has been captured and a reset/regenerate control is visible ("Reset Secret", "Regenerate secret", "Reset Bot Token" …), the person gets a DECIDE. It explains that a new secret is generated, that any old one stops working, and that nothing uses this run's app yet. After a "yes" (here, or via the usual secret-rotation DECIDE on a reset step), the agent clicks it and confirms the provider's "are you sure" dialog ("Yes, do it!"), because the person already decided. Codes and 2FA stay with the person, through the hard checks.
+- **Stable "not shown":** a step whose done-when includes `element_absent` is re-checked after 1.5 s before it is proven.
+- **Diagnosis:** the `decisions` event now logs the first 20 candidate descriptions offered to Jev.
+
+Tested: the Discord-like fake now shows the "Reset the client secret?" dialog. A plan *without* a reset step gets the DECIDE at capture, then the confirmation, exactly one regeneration, capture and a verified live test. 80 of 80 real-Chrome tests pass.
+
 ---
 
 ## Discrepancies between documents

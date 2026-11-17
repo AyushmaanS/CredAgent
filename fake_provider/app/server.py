@@ -481,8 +481,14 @@ class Handler(BaseHTTPRequestHandler):
             secret = (f'<p>Client secret: <code id="client-secret">{esc(app.client_secret)}</code></p>'
                       '<p class="warn">Copy it now; it is shown once.</p>')
         else:
+            # As on Discord: "Reset Secret" opens an "are you sure" dialog; "Yes, do it!" regenerates.
             secret = ('<h3>Client Secret</h3>'
-                      f'<form method="post" action="/apps/{app.id}/regenerate"><button>Reset Secret</button></form>')
+                      '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display=\'\'">'
+                      'Reset Secret</button>'
+                      '<div id="reset-dialog" role="dialog" style="display:none"><p>Reset the client secret? Any '
+                      f'old secret stops working.</p><form method="post" action="/apps/{app.id}/regenerate">'
+                      '<button type="button" onclick="document.getElementById(\'reset-dialog\').style.display='
+                      '\'none\'">Cancel</button><button type="submit">Yes, do it!</button></form></div>')
         saved = "".join(f'<div><input type="text" name="redirect" aria-label="Select redirect URI" value="{esc(u)}">'
                         "</div>" for u in app.redirects)
         add = ("const d=document.getElementById('redirect-rows');const i=document.createElement('input');"

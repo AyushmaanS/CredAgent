@@ -554,3 +554,19 @@ def test_jev_cannot_complete_a_step_without_proof_d075(tmp_path):
     assert LiesOnce.lied and any(e["type"] == "jev_complete_rejected" for e in ev)
     assert run.proofs["p2"]["by"] == "code checks" and "on page /apps/new" in run.proofs["p2"]["checks"][0]
     assert run.status == "succeeded"
+
+
+def test_secret_behind_reset_with_confirm_dialog_when_the_plan_has_no_reset_step_d077(tmp_path):
+    """Discord run #5: research folded "click Reset Secret" into the code-owned capture step, so no browser step
+    did it, and Jev's "done" completed capture and verify. Now: capture/verify are never Jev's; at capture, a
+    reset control is offered as a DECIDE, and the provider's "Yes, do it!" prompt is confirmed by the agent."""
+    with FakeProvider(scenario("discord_like")) as fp:
+        run = new_run(fp, "reset", oauth_step=True)
+        run.plan = run.plan.model_copy(update={"steps": [s for s in run.plan.steps if s.id != "p5d"]})
+        io = LateIO()
+        run, store = asyncio.run(_phase(tmp_path, fp, run, deps_for(tmp_path), io))
+        regen = [a for a in fp.audit() if a["event"] == "secret_regenerated"]
+    assert ("DECIDE", "other") in io.person.handoffs
+    assert len(regen) == 1  # one reset, after the person said yes
+    assert not any(v["by"].startswith("Jev") for k, v in run.proofs.items() if k in ("p6", "p7"))
+    assert run.status == "succeeded" and run.verification.label == "verified", (run.status, run.status_reason)
