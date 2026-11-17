@@ -52,6 +52,9 @@ LIMITED_COOKIE = re.compile(
     r"use necessary cookies only|refuse( all)?|deny( all)?)$",
     re.I,
 )
+# A password-type input that holds a credential the provider shows (Slack's "Client Secret" with a Show button) is
+# not a sign-in form (D-098). Real sign-in fields say "password", or autocomplete says so.
+SECRET_FIELD = re.compile(r"secret|token|api[\s_-]?key|client[\s_-]?id|credential|signing|private[\s_-]?key", re.I)
 COOKIE_WORD = re.compile(r"cookie|tracking|privacy choices|your privacy", re.I)
 CONSENT_WORD = re.compile(r"consent", re.I)  # a banner is about cookies only with a consent button beside the word
 ACCEPT_BUTTON = re.compile(r"^(accept( all)?|allow( all)?|agree|i agree|got it)$", re.I)
@@ -122,6 +125,12 @@ def _is_cookie_banner(text: str, obs: Observation) -> bool:
         for x in obs.buttons)
 
 
+def _is_shown_secret(i: dict) -> bool:
+    if "password" in (i.get("autocomplete") or ""):  # current-password / new-password: a real sign-in field
+        return False
+    return bool(SECRET_FIELD.search(f"{i.get('label') or ''} {i.get('name') or ''} {i.get('id') or ''}"))
+
+
 def check(obs: Observation, allowed: list[str]) -> list[Gate]:
     gates: list[Gate] = []
     text = obs.text
@@ -136,7 +145,7 @@ def check(obs: Observation, allowed: list[str]) -> list[Gate]:
         )
         return gates  # nothing else on an off-domain page matters to the agent
 
-    pw = [i for i in obs.inputs if i["type"] == "password"]
+    pw = [i for i in obs.inputs if i["type"] == "password" and not _is_shown_secret(i)]
     if pw:
         gates.append(
             Gate(

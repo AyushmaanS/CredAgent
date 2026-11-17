@@ -52,6 +52,21 @@ def test_human_gates(o, kind, action):
     assert g and g[0].kind == kind and g[0].action == action
 
 
+def test_a_secret_shown_in_a_password_input_is_not_a_sign_in_page_but_real_sign_in_fields_are_d098():
+    """Slack's Basic Information page: "Client Secret" is a password-type input with a Show button. It was read as a
+    sign-in form and the person was asked to sign in (run 4bc5)."""
+    slack = obs(url="http://127.0.0.1:8765/app-settings/A1/general", title="Basic Information",
+                inputs=[inp("/i1", "Client Secret", "password", value_len=32),
+                        inp("/i2", "Signing Secret", "password", value_len=32)])
+    assert not [g for g in check(slack, ALLOWED) if g.kind == "sign_in"]
+    for label, kw in (("Password", {}), ("Client Secret", {"autocomplete": "current-password"}),
+                      ("Confirm password", {"autocomplete": "new-password"})):
+        g = check(obs(inputs=[inp("/i1", label, "password", **kw)]), ALLOWED)
+        assert [x for x in g if x.kind == "sign_in"], label
+    mixed = obs(inputs=[inp("/i1", "Client Secret", "password"), inp("/i2", "Password", "password")])
+    assert [g for g in check(mixed, ALLOWED) if g.kind == "sign_in"]
+
+
 def test_terms_checkbox_and_implied_wording_detected():
     g = check(obs(inputs=[inp("/f/i3", "I have read and agree to the Fakeprov Developer Terms", "checkbox")]), ALLOWED)
     t = [x for x in g if x.kind == "terms"]
