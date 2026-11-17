@@ -439,13 +439,62 @@ class BrowserLoop:
             gates = check(obs, self._allowed)
         return obs, gates, "ok", summary
 
+    async def _fill_step_by_code(self, run: Run, page: Any, obs: Observation, gates: list, saved_on: set[str],
+                                 len_asked: set[str]) -> bool | str:
+        step = run.plan.steps[run.plan_cursor] if run.plan_cursor < len(run.plan.steps) else None
+        if step is None or step.kind != "fill":
+            return False
+        key = field_key_for(step.description)
+        want = self.values.get(key) if key else None
+        if not want:
+            return False
+        boxes = [i for i in obs.inputs if i["type"] not in ("checkbox", "radio", "hidden", "submit", "button")
+                 and i["xpath"] not in obs.secret_xpaths
+                 and field_key_for(i["label"] or i.get("section") or "") == key]
+        filled = [i for i in boxes if i["value_len"]]
+        if not filled:
+            return False
+        box = filled[0]
+        label = box["label"] or box.get("section") or key
+        if box["value_len"] == len(want):
+            if await self._save_if_step_says_so(run, page, obs, gates, step.description, saved_on, require_typed=False):
+                return True
+            self._step(run, f"step complete: {step.description[:120]} (code: “{label[:40]}” already holds a value of "
+                       "the approved length)", "agent", "done")
+            run.plan_cursor += 1
+            self._cp(run, "plan_step_complete", {"cursor": run.plan_cursor, "by": "code: value present"})
+            return True
+        if box["xpath"] in len_asked:
+            return False
+        len_asked.add(box["xpath"])
+        answer = await self._handoff(
+            run, "DECIDE", "other",
+            f"The “{label[:50]}” box holds a different value ({box['value_len']} characters) than the approved one "
+            f"({len(want)} characters: {want}). A stray character, such as a trailing full stop, makes it not match.",
+            [f"“{label[:50]}”: {box['value_len']} characters"], obs,
+            instruction=f"Should the agent replace what is in “{label[:50]}” with {want}?",
+            options=[f"Yes, replace it with {want}", "No, leave it as it is"],
+            after="Replace it (if yes), save if the step says so, and continue.",
+        )
+        if answer is None:
+            return "pending"
+        if not answer.startswith("Yes"):
+            return False
+        seq = self.store.begin_action(run, "fill", {"target": label[:60], "field": key, "why": "person: replace"})
+        await page.locator("xpath=" + box["xpath"]).fill(want)
+        await page.wait_for_timeout(self.budget.settle_ms)
+        self.store.end_action(run, seq, "done")
+        self._step(run, f"fill text field '{label[:60]}' = {want} (replacing a different value; your decision)",
+                   "agent", "done")
+        return True
+
     async def _save_if_step_says_so(self, run: Run, page: Any, obs: Observation, gates: list, goal: str,
-                                    saved_on: set[str]) -> bool:
+                                    saved_on: set[str], require_typed: bool = True) -> bool:
         """D-069: a step that says "… and save" is not complete while the page's Save button is unclicked. After the
         agent typed into a field on this page, click the visible Save / Save Changes button once (policy decides)."""
         if not re.search(r"\bsave\b", goal, re.I) or obs.url in saved_on:
             return False
-        typed = any(s.action.startswith("fill ") and s.actor == "agent" for s in run.steps[-6:])
+        typed = not require_typed or any(s.action.startswith("fill ") and s.actor == "agent" for s in run.steps[-6:])
         btn = next((b for b in obs.buttons if not b["disabled"]
                     and re.fullmatch(r"save( changes)?", (b["text"] or "").strip(), re.I)), None)
         if not (typed and btn):
@@ -630,6 +679,7 @@ class BrowserLoop:
         toward_tried: set[str] = set()
         clicks: dict[tuple[str, str], int] = {}
         page_memory: dict = {}
+        len_asked: set[str] = set()
         saved_on: set[str] = set()
         self._waited = 0.0  # seconds spent waiting for the person: not counted against the time budget
         allowed = run.plan.allowed_domains
@@ -780,6 +830,16 @@ class BrowserLoop:
                 if await self._stuck(run, obs, "no progress on this page") is None:
                     return LoopResult("stuck", "no progress", n_obs, n_act)
                 no_progress = 0
+                continue
+
+            # D-071: a "type this value" step is checked by code first. If the box for the step's approved value
+            # already holds a value of that length, the step is done (save first if it says so); if it holds
+            # something else, the person decides whether to replace it. No model involved.
+            done_by_code = await self._fill_step_by_code(run, page, obs, gates, saved_on, len_asked)
+            if done_by_code == "pending":
+                return LoopResult("handoff_pending", "waiting for your answer about a field's value", n_obs, n_act)
+            if done_by_code:
+                n_act += 1
                 continue
 
             # 3. candidates + Jev (one request, five decisions)

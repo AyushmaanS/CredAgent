@@ -481,12 +481,13 @@ class Handler(BaseHTTPRequestHandler):
         else:
             secret = ('<h3>Client Secret</h3>'
                       f'<form method="post" action="/apps/{app.id}/regenerate"><button>Reset Secret</button></form>')
-        saved = "".join(f"<li><code>{esc(u)}</code></li>" for u in app.redirects)
+        saved = "".join(f'<div><input type="text" name="redirect" aria-label="Select redirect URI" value="{esc(u)}">'
+                        "</div>" for u in app.redirects)
         add = ("const d=document.getElementById('redirect-rows');const i=document.createElement('input');"
                "i.type='text';i.name='redirect';d.appendChild(i);this.innerText='Add Another';")
-        redirects = (f'<h3>Redirects</h3><ul id="saved-redirects">{saved}</ul>'
+        redirects = (f'<h3>Redirects</h3>'
                      f'<form method="post" action="/apps/{app.id}/redirects" id="redirects-form">'
-                     '<div id="redirect-rows"></div>'
+                     f'<div id="redirect-rows">{saved}</div>'
                      f'<button type="button" onclick="{add}">Add Redirect</button>'
                      '<button type="submit">Save Changes</button></form>')
         self.page(f"{app.name} · OAuth2", f"<h1>{esc(app.name)} · OAuth2</h1><div id=credentials>"
@@ -611,7 +612,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.state.log("submitted_for_review", self.actor(), app=app.name)
                 return self.redirect(f"/apps/{app.id}")
             if action == "redirects":
-                app.redirects = [u for u in (f.get("redirect") or []) if u.strip()] or app.redirects  # keep saved
+                app.redirects = [u for u in (f.get("redirect") or []) if u.strip()]
                 self.state.log("redirects_saved", self.actor(), app=app.name, count=len(app.redirects))
                 return self.redirect(f"/apps/{app.id}/oauth2")
             if action == "regenerate":

@@ -483,3 +483,29 @@ def test_docs_detour_is_undone_d070(tmp_path):
     assert DocsOnceJev.went
     assert any("documentation page is not part of the console steps" in s.action for s in run.steps)
     assert run.status == "succeeded", (run.status, run.status_reason)
+
+
+def test_redirect_with_a_stray_character_is_noticed_and_replaced_d071(tmp_path):
+    """Discord run #4: the person typed the callback with a trailing full stop; the agent could not tell and kept
+    clicking. Code now compares the value's length and asks before replacing it."""
+    from credagent.browser.candidates import FieldValues
+
+    with FakeProvider(scenario("discord_like")) as fp:
+        app = fp.state._new_app(FieldValues.default(CB).app_name, CB)
+        app.redirects = [CB + "."]
+        run = new_run(fp, "stray", oauth_step=True)
+        run.plan = run.plan.model_copy(update={"console_url": f"{fp.base_url}/apps/{app.id}/oauth2"})
+        run.created = ["an app (created earlier)"]
+        run.plan_cursor = [i for i, st in enumerate(run.plan.steps) if st.id == "p5c"][0]
+        from credagent.metadata.discovery import discover
+
+        with httpx.Client() as http:
+            run.metadata_check = discover(run.plan, http, base_urls=[fp.base_url]).summary()
+        m = Masker()
+        RunStore(tmp_path / "runs", m).create(run)
+        io = LateIO()
+        run, _ = asyncio.run(_phase(tmp_path, fp, run, deps_for(tmp_path), io, resume=True, masker=m))
+        saved = list(app.redirects)
+    assert any(k == "DECIDE" for k, _ in io.person.handoffs)  # asked before replacing
+    assert saved == [CB], saved
+    assert run.status == "succeeded", (run.status, run.status_reason)

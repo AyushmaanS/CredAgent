@@ -557,6 +557,17 @@ Fixes:
 
 Tested: a real-Chrome case where the decider sends the agent to the docs once; the agent goes back and the run succeeds. 74 of 74 earlier real-Chrome tests still pass.
 
+## D-071 "Type this value" steps are checked by code: done when the box holds the approved value's length; otherwise the person decides — Decided (found resuming the fresh Discord run)
+*Found in real run `20261116-190534-discord-a839`:* the owner typed the redirect themselves, as `http://127.0.0.1:8976/callback.` with a trailing full stop (most likely copied from a sentence in my instructions). CredAgent never reads field values, only their length, and the box has an aria label ("Select redirect URI"). Jev kept clicking "Add Redirect", "Add Another" and "Select redirect URI" instead of finishing the step, so the agent showed "person needed" cards. The owner had already done the step, but with a value that would not match.
+
+**Fix:** before Jev, a `fill` step whose description maps to an approved value (e.g. the callback URL) is checked in plain code:
+- **The box holds a value of the approved length:** the step is complete. If the step says save and a Save button is visible, the agent clicks it first.
+- **The box holds a value of a different length:** a DECIDE says so, *"31 characters vs 30: a stray character, such as a trailing full stop, makes it not match"*, and asks whether to replace it with the approved value. "Yes" → the agent types the approved value, then saves.
+
+Values are still never read; only their lengths are compared. Tested: the Discord-like fake starts with the callback plus a trailing full stop saved. The agent asks, replaces it, saves exactly one correct redirect, resets the secret after a DECIDE, captures and live-tests.
+
+*Also noted:* commands and URLs in my messages to the owner sit at the end of sentences. I now put them on their own line, with no punctuation after them.
+
 ---
 
 ## Discrepancies between documents
