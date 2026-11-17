@@ -581,6 +581,8 @@ After twelve Discord fixes (D-061 to D-072), the owner asked to step back from p
 
 Jev's five decisions, the policy rules and secret handling are unchanged. Three open questions for the owner are listed in §13 of the design. No code has been changed for it yet.
 
+Added at the owner's request: **measure how many elements Jev should see (20 vs 40 vs 60) before building** (design §11a, step 0). The current 20 was an unmeasured Sprint 3 default.
+
 ---
 
 ## Discrepancies between documents

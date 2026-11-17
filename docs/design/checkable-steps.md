@@ -118,7 +118,7 @@ Next: click "Reset Secret" (needs your DECIDE) · capture · live test
 Recent actions: clicked "Add Redirect" → a Redirects box appeared (empty)
 ```
 
-- **Target first:** if the step's `target` is on the page, it is candidate `c0`. The other candidates are ranked as now (D-066/D-072) and still capped at 20.
+- **Target first:** if the step's `target` is on the page, it is candidate `c0`. The other candidates are ranked as now (D-066/D-072) and capped at `MAX_CANDIDATES`. That is 20 today, an unmeasured Sprint 3 default; the measurement in §11a sets the final value.
 - **Location:** if the current step's `where` is false, code first tries the **known way there**. That is a link whose href matches the `where` path (remembered from any earlier page in this run, e.g. the sidebar's OAuth2 link), or the path itself when the placeholders are bound. Only if neither exists does the navigator choose (D-068).
 - **Recent actions** (last 3) state their observed effect, e.g. "no change". The repeat guard (D-069) stays as a backstop.
 - The navigator gets the same block.
@@ -174,8 +174,30 @@ Recent actions: clicked "Add Redirect" → a Redirects box appeared (empty)
 
 4. **Then one real Discord run** (owner present), recorded in `RESULTS.md` as #5.
 
+## 11a. Measurement: how many elements Jev should see
+
+**Why:** `MAX_CANDIDATES = 20` (`src/credagent/browser/candidates.py`) was chosen in Sprint 3 as a size limit and never measured. Twice on Discord the right element was beyond the 20 (D-066, D-072). Jev's request format allows 60, and its context is 64k tokens. So the limit should come from data.
+
+**Method (fake provider only, no real provider contacted):**
+- **Pages:** crowded pages that copy real layouts. The `discord_like` app page (9 fields and 11 buttons before the sidebar), its OAuth2 page (32 inputs, about 20 scope checkboxes), and the app list with the run's app among other apps. Plus three ordinary fake pages as a control.
+- **Cases:** for each page, 2–3 steps with a known correct element (e.g. "open the OAuth2 page" → link `OAuth2`). Some steps quote the target name, some don't.
+- **Variants:**
+  - limit **20 / 40 / 60**;
+  - ranked, with and without "target first";
+  - the target placed at the *end* of the list, as a worst case.
+- **Repeats:** 5 Jev calls per case and variant (about 150–250 calls in all).
+
+**What is recorded per call:** whether Jev chose the correct element, whether it said "none" while the element was in the list, its confidence, latency, request size in characters, and the served Jev version.
+
+**How the limit is chosen:** the smallest limit that both
+- reaches at least 95 % correct when the target is in the list, and
+- keeps median latency under about 3 s.
+
+If 40 or 60 is no more accurate than 20, it stays 20. The results and the chosen value are recorded in `docs/DECISIONS.md` (with a table), and the script is kept in `scripts/` so it can be re-run.
+
 ## 12. Order of work (after approval)
 
+0. **Run the §11a measurement and set `MAX_CANDIDATES` from it** (it does not depend on the rest).
 1. Check vocabulary and evaluator, plus unit tests.
 2. Step format, validator, `{app_id}` binding, legacy mode.
 3. Loop: evaluate checks after every observation; computed position; proofs in state; remove the cursor patches.
@@ -188,6 +210,7 @@ Recent actions: clicked "Add Redirect" → a Redirects box appeared (empty)
 1. **Direct navigation by path:** when `where` names a path on an allowed domain (e.g. `/applications/{app_id}/oauth2`), may code open it directly, or only by clicking a link seen on the page? *Recommendation: allowed (read-only, allow-listed), with a link preferred when known.*
 2. **Agent steps research cannot make checkable:** keep them as *inferred* (Jev decides, the report says so), or hand them to the person? *Recommendation: inferred, and a handoff if one fails twice.*
 3. **Learned recipes:** after a verified run, save the proven steps (paths, names) as a recipe for the next run of the same provider? *Recommendation: later (stretch). Research and the live page stay the source of truth.*
+4. **How many elements Jev sees:** *Owner decision (2026-11-17): measure 20 vs 40 vs 60 first (§11a), then set the limit from the results.*
 
 ## 14. What this does not solve
 
