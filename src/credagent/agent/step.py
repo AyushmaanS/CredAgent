@@ -19,9 +19,9 @@ from urllib.parse import urljoin, urlparse
 from pydantic import BaseModel, ConfigDict
 
 from credagent.browser.snapshot import Element, Snapshot
+from credagent.browser.values import APPROVED_VALUES
 from credagent.policy.engine import ProposedAction
-from credagent.policy.hard_checks import host_allowed
-from credagent.steps.checks import APPROVED_VALUES, is_docs_host
+from credagent.policy.hard_checks import host_allowed, is_docs_host
 
 ACTIONS = ["click", "type", "select", "navigate", "scroll", "inspect", "back", "wait", "ask_person", "done",
            "give_up"]

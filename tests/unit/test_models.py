@@ -2,14 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from credagent.state.models import (
-    MAX_REPLANS,
     Blocker,
     CredentialPart,
     CredentialReference,
     Fact,
     Handoff,
     InvariantError,
-    Plan,
     Run,
     StepRecord,
     VerificationResult,
@@ -119,13 +117,17 @@ def test_handoff_shape_rules():
                 expected_resume_action="", options=["a", "b"])
 
 
-def test_replan_limit():
+def test_runs_saved_before_d078_still_load():
+    """The step-machine loop's bookkeeping fields and the plan step conditions are ignored, not an error."""
     r = run()
-    for i in range(MAX_REPLANS):
-        assert r.record_replan(Plan()).revision == i + 1
-    with pytest.raises(InvariantError):
-        r.record_replan(Plan())
-    assert r.replans_used == MAX_REPLANS
+    data = r.model_dump()
+    data.update({"replans_used": 1, "plan_cursor": 3, "loop": "legacy", "proofs": {"p1": {"checks": []}},
+                 "bindings": {"app_id": "1"}})
+    data["plan"]["revision"] = 1
+    data["plan"]["steps"] = [{"id": "p1", "description": "d", "kind": "click", "where": [{"check": "at_page"}],
+                              "done_when": [], "inferred": True}]
+    loaded = Run.model_validate(data)
+    assert loaded.plan.steps[0].id == "p1" and not hasattr(loaded, "proofs")
 
 
 def test_sourced_fact_needs_url_and_extra_fields_forbidden():

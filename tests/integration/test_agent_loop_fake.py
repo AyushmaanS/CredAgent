@@ -45,7 +45,6 @@ def test_success_reaches_the_credential_page_without_help(tmp_path):
     assert [a["choice"] for a in o.audit if a["event"] == "cookie_choice"] == ["reject"]  # chosen by code
     assert_safe(o.audit)
     assert o.run.created and "app" in o.run.created[0]
-    assert o.run.loop == "agent"
     ev = [e["type"] for e in o.store.events(o.run.id)]
     assert ev.count("action_started") == ev.count("action_finished") > 3  # every page-changing action bracketed
     assert "/apps/" in o.url and o.llm.calls <= 10

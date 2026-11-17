@@ -318,7 +318,7 @@ def test_test_hooks_need_header(site):
 def test_fixtures_cover_prd_acceptance_scenarios():
     s = load_scenarios()
     required = {"success", "terms_checkbox", "terms_implied", "signin_resume", "shown_once_secret",
-                "captcha", "blocked", "jev_failure"}
+                "captcha", "blocked", "llm_failure"}
     assert required <= set(s)
     for name, spec in s.items():
         sc = scenario(name)
@@ -327,7 +327,7 @@ def test_fixtures_cover_prd_acceptance_scenarios():
                                              "waiting_on_provider"}
         if spec["expect"]["outcome"] == "succeeded":
             assert spec["expect"]["verification"] == "verified"
-    assert s["jev_failure"]["jev"] == "always_fail" and s["service_unavailable"]["fastrouter"] == "down"
+    assert s["llm_failure"]["llm"] == "flaky" and s["service_unavailable"]["llm"] == "down"
 
 
 def test_unknown_scenario_field_rejected():

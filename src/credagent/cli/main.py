@@ -116,8 +116,8 @@ def _fake_provider_names() -> list[str]:
 @click.argument("app", callback=_validate_app)
 @click.option("--fake-provider", "scenario", metavar="SCENARIO", default=None,
               help="Run the browser phase against the local fake provider (Fakeprov) with this scenario.")
-@click.option("--offline", is_flag=True, help="With --fake-provider: no API calls (rule-based decisions, "
-              "plain-code candidates).")
+@click.option("--offline", is_flag=True, help="With --fake-provider: no API calls (a scripted stand-in for the "
+              "model, not an LLM).")
 @click.option("--headless", is_flag=True, help="With --fake-provider: hide the browser window.")
 def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
     """Start a new run to obtain credentials for APP (e.g. "GitHub").
@@ -151,7 +151,7 @@ def get(app: str, scenario: str | None, offline: bool, headless: bool) -> None:
 
 
 def _intended_actions(s: Settings, run, check) -> str:
-    from credagent.browser.candidates import FieldValues
+    from credagent.browser.values import FieldValues
 
     v = FieldValues.default(s.redirect_uri)
     p = run.plan
@@ -197,18 +197,20 @@ def _ask_consent(s: Settings, run, check) -> str | None:
 def _real_deps(s: Settings, m: Masker, run):
     import re
 
-    from credagent.browser.stagehand_llm import make_generate
-    from credagent.decisions.client import JevClient
     from credagent.orchestrator import BrowserDeps
-    from credagent.reasoning.fastrouter import FastRouterClient
     from credagent.secrets.store import SecretFileStore
 
-    fr = FastRouterClient(s, m)
     slug = re.sub(r"[^a-z0-9]+", "-", (run.app_name or run.app_input).lower()).strip("-")[:40] or "provider"
-    return BrowserDeps(jev=JevClient(fr), reasoner=fr, llm_model=s.llm_model,
-                       model_callback=make_generate(fr, s.stagehand_model), secret_store=SecretFileStore(s.secrets_dir),
-                       profile_dir=s.profiles_dir / slug, redirect_uri=s.redirect_uri, headless=False,
-                       allow_dcr=False, ephemeral_profile=False)
+    return BrowserDeps(secret_store=SecretFileStore(s.secrets_dir), profile_dir=s.profiles_dir / slug,
+                       redirect_uri=s.redirect_uri, headless=False, allow_dcr=False, ephemeral_profile=False)
+
+
+def _step_llm(s: Settings, m: Masker):
+    """The model that chooses each browser step (D-078): one structured call per step through FastRouter."""
+    from credagent.agent.llm import StepLLM
+    from credagent.reasoning.fastrouter import FastRouterClient
+
+    return StepLLM(FastRouterClient(s, m), m, model=s.llm_model)
 
 
 def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool, in_doubt: dict | None = None):
@@ -217,7 +219,7 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
 
     from credagent.browser.chrome import ChromeError
     from credagent.consent.terms import lookup
-    from credagent.orchestrator import Orchestrator, execute_browser_phase, resume_browser_phase
+    from credagent.orchestrator import Orchestrator, execute_agent_phase, resume_agent_phase
     from credagent.state.models import Consent
 
     check = lookup(run.app_name, run.provider, run.app_input)
@@ -232,7 +234,7 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
                    "not drive it. Follow the plan by hand if you want the credential.")
         return
     if not s.fastrouter_api_key:
-        click.echo("FASTROUTER_API_KEY is missing; the browser needs Jev and the LLM.", err=True)
+        click.echo("FASTROUTER_API_KEY is missing; the browser agent needs the LLM.", err=True)
         sys.exit(CONFIG_EXIT)
     account = _ask_consent(s, run, check)
     if account is None:
@@ -243,6 +245,7 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
                                terms_finding=check.finding, terms_record=check.record))
     store.checkpoint(run, "consent_given", {"provider": check.provider, "terms": check.finding})
     deps = _real_deps(s, m, run)
+    llm = _step_llm(s, m)
     io = TerminalIO()
     orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (research is done)
     click.echo(f"\nOpening the CredAgent browser window (profile: {_tilde(deps.profile_dir)}).")
@@ -250,9 +253,9 @@ def _real_browser(s: Settings, m: Masker, store: RunStore, run, *, resume: bool,
 
     try:
         if resume:
-            run = asyncio.run(resume_browser_phase(orch, run, deps, io, in_doubt))
+            run = asyncio.run(resume_agent_phase(orch, run, deps, io, llm, in_doubt))
         else:
-            run = asyncio.run(execute_browser_phase(orch, run, deps, run.plan.console_url, io))
+            run = asyncio.run(execute_agent_phase(orch, run, deps, run.plan.console_url, io, llm))
     except ChromeError as exc:
         click.echo(f"Browser problem: {exc}", err=True)
         sys.exit(1)
@@ -277,34 +280,31 @@ def _fake_dir(s: Settings, run_id: str):
     return s.home / "fakeprov" / run_id
 
 
-def _fake_deps(s: Settings, m: Masker, run_id: str, scenario_name: str, offline: bool, headless: bool):
-    from fake_provider.app import load_scenarios
-    from fake_provider.faults import FaultyFastRouter, faults_for
-
-    from credagent.decisions.client import JevClient, RuleJev, RuleLLM
+def _fake_deps(s: Settings, run_id: str, headless: bool):
     from credagent.orchestrator import BrowserDeps
     from credagent.secrets.store import SecretFileStore
 
+    return BrowserDeps(secret_store=SecretFileStore(s.secrets_dir), profile_dir=s.profiles_dir / "fakeprov" / run_id,
+                       redirect_uri=s.redirect_uri, headless=headless, allow_dcr=True, ephemeral_profile=True)
+
+
+def _fake_llm(s: Settings, m: Masker, scenario_name: str, offline: bool):
+    """Offline: the deterministic scripted stand-in (tests and demos only). Online: the real step LLM. A scenario can
+    make either misbehave (`llm: flaky` / `down` in the fixtures)."""
+    from fake_provider.app import load_scenarios
+    from fake_provider.faults import FaultyLLM, faults_for
+
     faults = faults_for(load_scenarios()[scenario_name])
+    if offline:
+        from credagent.agent.scripted import ScriptedLLM
+        llm = ScriptedLLM()
+    else:
+        llm = _step_llm(s, m)
     if faults.any:
         click.echo("Simulated fault for this scenario: "
-                   + ("Jev and the LLM are unreachable." if faults.llm_down else "every Jev call fails."))
-    if offline:
-        jev, reasoner, cb = RuleJev(), None, None
-        if faults.any:  # the offline LLM stand-in answers the fallbacks, as the real LLM would
-            llm = FaultyFastRouter(RuleLLM(), faults)
-            jev, reasoner = JevClient(llm), llm
-    else:
-        from credagent.browser.stagehand_llm import make_generate
-        from credagent.reasoning.fastrouter import FastRouterClient
-        fr = FastRouterClient(s, m)
-        if faults.any:
-            fr = FaultyFastRouter(fr, faults)  # type: ignore[assignment]
-        jev, reasoner, cb = JevClient(fr), fr, make_generate(fr, s.stagehand_model)
-    return BrowserDeps(jev=jev, reasoner=reasoner, llm_model=s.llm_model, model_callback=cb,
-                       secret_store=SecretFileStore(s.secrets_dir),
-                       profile_dir=s.profiles_dir / "fakeprov" / run_id, redirect_uri=s.redirect_uri,
-                       headless=headless, allow_dcr=True, ephemeral_profile=True)
+                   + ("the LLM is unreachable." if faults.down else "every other model answer is unusable."))
+        llm = FaultyLLM(llm, faults)
+    return llm
 
 
 def _end_message(run) -> None:
@@ -322,7 +322,7 @@ def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> No
     from fake_provider.app import FakeProvider, scenario
 
     from credagent.browser.chrome import ChromeError
-    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, execute_browser_phase, fake_provider_plan
+    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, execute_agent_phase, fake_provider_plan
     from credagent.state.atomic import atomic_write_json
     from credagent.state.models import Run, new_run_id
 
@@ -348,10 +348,11 @@ def _run_fake(app: str, scenario_name: str, offline: bool, headless: bool) -> No
         run.predicted_outcome = run.plan.predicted_outcome
         run.phase = "planned"
         store.create(run)
-        deps = _fake_deps(s, m, run.id, scenario_name, offline, headless)
+        deps = _fake_deps(s, run.id, headless)
+        llm = _fake_llm(s, m, scenario_name, offline)
         orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]  (no research for Fakeprov)
         try:
-            run = asyncio.run(execute_browser_phase(orch, run, deps, fp.base_url + "/", io))
+            run = asyncio.run(execute_agent_phase(orch, run, deps, fp.base_url + "/", io, llm))
         except ChromeError as exc:
             click.echo(f"Browser problem: {exc}", err=True)
             sys.exit(1)
@@ -386,7 +387,7 @@ def resume(run_id: str, headless: bool) -> None:
     import asyncio
 
     from credagent.browser.chrome import ChromeError
-    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, resume_browser_phase
+    from credagent.orchestrator import FAKE_PROVIDER_NAME, Orchestrator, resume_agent_phase
     from credagent.secrets.capture import load_into_masker
     from credagent.secrets.store import SecretFileStore
 
@@ -447,10 +448,11 @@ def resume(run_id: str, headless: bool) -> None:
     io = TerminalIO()
     with _start_saved_fake(s, run) as fp:
         click.echo(f"Fakeprov restarted at {fp.base_url} with this run's saved state.")
-        deps = _fake_deps(s, m, run.id, launch["scenario"], launch["offline"], headless or launch["headless"])
+        deps = _fake_deps(s, run.id, headless or launch["headless"])
+        llm = _fake_llm(s, m, launch["scenario"], launch["offline"])
         orch = Orchestrator(store, m, None, io)  # type: ignore[arg-type]
         try:
-            run = asyncio.run(resume_browser_phase(orch, run, deps, io, doubt))
+            run = asyncio.run(resume_agent_phase(orch, run, deps, io, llm, doubt))
         except ChromeError as exc:
             click.echo(f"Browser problem: {exc}", err=True)
             sys.exit(1)

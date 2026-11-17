@@ -6,7 +6,6 @@ Invariants enforced here (not by convention):
 * Status transitions follow TRANSITIONS; terminal outcomes are final unless the
   outcome is resumable and the transition is an explicit resume.
 * At most one pending handoff at a time.
-* Re-planning is limited to MAX_REPLANS per run (PRD §7 Flow E).
 * No raw secret is stored: credentials are references plus masked displays.
 """
 
@@ -18,10 +17,6 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from credagent.steps.checks import Check, Target
-
-MAX_REPLANS = 2
 
 RunStatus = Literal[
     "running", "succeeded", "partial", "blocked", "waiting_on_provider", "failed", "cancelled"
@@ -38,8 +33,9 @@ BlockerKind = Literal[
     "identity_verification", "business_verification", "payment", "terms", "cookie_consent",
     "provider_review", "paid_plan", "partner_approval", "policy_denied", "off_allow_list",
     "unexpected", "service_unavailable", "budget_exhausted", "replan_limit", "app_not_identified",
-    "secret_hidden", "other",
+    "secret_hidden", "other",  # replan_limit is only found in runs saved before D-078
 ]
+LEGACY_RUN_FIELDS = ("replans_used", "plan_cursor", "loop", "proofs", "bindings")
 RunPhase = Literal["created", "research", "planned", "browser", "verifying", "done"]
 
 # Which statuses may follow which. Resume re-enters "running" from resumable outcomes.
@@ -88,17 +84,16 @@ class Fact(Strict):
         return self
 
 
-class PlanStep(Strict):
+class PlanStep(BaseModel):
+    """A step of the research plan. Guidance for the agent, not a script (D-078). Runs saved before D-078 carry extra
+    fields (conditions, targets); they are ignored when loading."""
+
+    model_config = ConfigDict(extra="ignore", validate_assignment=True)
+
     id: str
-    description: str  # the step's intent, shown to Jev and to the person
+    description: str  # the step's intent, shown to the agent and to the person
     kind: Literal["navigate", "fill", "click", "capture", "verify", "handoff", "check"]
     expected_page: str | None = None
-    # Checkable steps (design docs/design/checkable-steps.md): code proves completion from these.
-    where: list[Check] = Field(default_factory=list)  # which page the step happens on (empty = any)
-    target: Target | None = None  # the control the step starts with
-    value: str | None = None  # fill steps: which code-approved value
-    done_when: list[Check] = Field(default_factory=list)  # all must hold for the step to be done
-    inferred: bool = False  # an agent step research could not make checkable: Jev's judgement decides
 
 
 class Source(Strict):
@@ -155,7 +150,6 @@ class Plan(Strict):
     metadata_url: str | None = None
     token_endpoint: str | None = None  # from sourced research; used by the live test if no metadata is found
     validation_notes: list[str] = Field(default_factory=list)  # what code corrected in the model's plan
-    revision: int = 0  # 0 = original plan, 1..MAX_REPLANS = re-plans
 
 
 class Evidence(Strict):
@@ -274,16 +268,21 @@ class Run(Strict):
     actual_outcome: str | None = None
     untested: list[str] = Field(default_factory=list)
     browser: BrowserSession | None = None
-    replans_used: int = Field(default=0, ge=0, le=MAX_REPLANS)
-    plan_cursor: int = 0  # index of the current plan step during browser execution (legacy loop only)
-    loop: Literal["legacy", "agent"] = "legacy"  # which browser loop ran this run (D-078)
     metadata_check: dict | None = None  # observed OAuth metadata / DCR eligibility (no secrets)
     observed_limitations: list[str] = Field(default_factory=list)  # seen on the credential page (no secrets)
     consent: list[Consent] = Field(default_factory=list)  # one per session in which a real provider was run
     created: list[str] = Field(default_factory=list)  # what this run created at the provider (cleanup; D-063)
-    proofs: dict[str, dict] = Field(default_factory=dict)  # step id -> {"checks", "url", "at"}: why it is done
-    bindings: dict[str, str] = Field(default_factory=dict)  # placeholders bound from the live page ({app_id})
     checkpoint_seq: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_pre_d078_fields(cls, data: object) -> object:
+        """Runs saved by the earlier step-machine loop stay readable: its bookkeeping fields are dropped."""
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k not in LEGACY_RUN_FIELDS}
+            if isinstance(data.get("plan"), dict):
+                data["plan"] = {k: v for k, v in data["plan"].items() if k != "revision"}
+        return data
 
     @model_validator(mode="after")
     def _invariants(self) -> Run:
@@ -354,17 +353,6 @@ class Run(Strict):
         self.blockers.append(blocker)
         self._touch()
         return blocker
-
-    def record_replan(self, new_plan: Plan) -> Plan:
-        """Replace the remaining plan. Raises once the two-replan budget is used."""
-        self._require_running("re-plan")
-        if self.replans_used >= MAX_REPLANS:
-            raise InvariantError(f"re-plan limit ({MAX_REPLANS}) reached; ask the person")
-        self.replans_used += 1
-        new_plan.revision = self.replans_used
-        self.plan = new_plan
-        self._touch()
-        return new_plan
 
     def transition(self, status: str, reason: str | None = None, *, resumable: bool | None = None,
                    resume: bool = False) -> None:

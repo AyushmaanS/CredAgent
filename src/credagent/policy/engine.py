@@ -1,7 +1,7 @@
 """Policy engine: the last word before every browser action (spec §6.6). Code only.
 
 Order (fixed): hard-stop categories → terms → navigation allow-list → field rules → risk.
-A model (Jev or LLM) proposes; this module disposes. Nothing here can be overridden by
+A model proposes; this module disposes. Nothing here can be overridden by
 model output: the model's choice is an input, never a permission.
 """
 

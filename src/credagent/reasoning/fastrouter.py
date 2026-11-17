@@ -1,4 +1,4 @@
-"""FastRouter HTTP client for the LLM (chat completions) and Jev (systemone).
+"""FastRouter HTTP client for the LLM (chat completions).
 
 Every outgoing payload passes through the Masker before it leaves the process.
 The API key is only ever placed in the Authorization header and is registered
@@ -116,20 +116,6 @@ class FastRouterClient:
             "usage": data.get("usage"),
             "latency_ms": latency_ms,
         }
-
-    def systemone(
-        self,
-        state: Any,
-        questions: dict[str, Any],
-        *,
-        model: str | None = None,
-        timeout_s: float | None = 20.0,
-    ) -> dict[str, Any]:
-        body = {"model": model or self._settings.jev_model, "state": state, "questions": questions}
-        started = time.monotonic()
-        data = self._post("/systemone", body, timeout_s)
-        data["latency_ms"] = round((time.monotonic() - started) * 1000)
-        return data
 
 
 def _strip_fences(text: str) -> str:

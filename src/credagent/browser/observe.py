@@ -1,6 +1,6 @@
 """Plain-code page observation (no model involved).
 
-One JavaScript pass collects what code-owned checks and Jev need. Secret-bearing
+One JavaScript pass collects what code-owned checks and the agent's snapshot need. Secret-bearing
 values never leave the page:
 * input values are reported only as length + a "looks like a credential" flag;
 * elements whose text looks like a credential (long mixed token, or a token next to a

@@ -50,7 +50,7 @@ def test_5xx_and_connect_errors_are_service_unavailable():
         raise httpx.ConnectError("down")
 
     with pytest.raises(ServiceUnavailable):
-        client(boom).systemone("s", {})
+        client(boom).chat([])
 
 
 def test_4xx_is_model_call_error_without_key():

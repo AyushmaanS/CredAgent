@@ -232,10 +232,6 @@ class BrowserDeps:
     secret_store: object  # SecretFileStore
     profile_dir: object  # Path
     redirect_uri: str
-    jev: object | None = None  # legacy loop only (removed in D-078 phase 5)
-    reasoner: object | None = None  # legacy loop only
-    llm_model: str | None = None  # legacy loop only
-    model_callback: object | None = None  # legacy loop only (Stagehand)
     headless: bool = False
     allow_dcr: bool = False  # DCR creates a client at the provider: fake provider only until Sprint 6
     ephemeral_profile: bool = False  # delete the profile when the run ends (fake provider)
@@ -244,7 +240,7 @@ class BrowserDeps:
 def _metadata_step(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str, http: object) -> Run | None:
     """Public OAuth metadata and the dynamic-registration shortcut (observed and recorded either way). Returns the
     finished run if dynamic registration produced a credential (no browser needed), else None."""
-    from credagent.browser.candidates import FieldValues
+    from credagent.browser.values import FieldValues
     from credagent.metadata.dcr import register
     from credagent.metadata.discovery import discover
 
@@ -271,43 +267,6 @@ def _metadata_step(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str,
         o.io.say("Dynamic registration looks available, but it is not used at real providers yet (it creates a "
                  "client without the console steps you consented to); continuing in the browser.")
     return None
-
-
-async def execute_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, start_url: str, io: object) -> Run:
-    import httpx
-
-    from credagent.browser.candidates import FieldValues
-    from credagent.browser.loop import BrowserLoop
-    from credagent.browser.session import open_session
-
-    # 1. Public metadata / DCR shortcut (observed, recorded either way)
-    with httpx.Client() as http:
-        done = _metadata_step(o, run, deps, start_url, http)
-        if done is not None:
-            return done
-
-    # 2. Browser loop
-    session = await open_session(deps.profile_dir, headless=deps.headless, model_callback=deps.model_callback)
-    run.browser = session.record()
-    o._cp(run, "browser_opened", {"profile": str(deps.profile_dir)})
-    loop = BrowserLoop(
-        o.store,
-        o.masker,
-        io,
-        deps.jev,
-        FieldValues.default(deps.redirect_uri),
-        reasoner=deps.reasoner,
-        llm_model=deps.llm_model,
-        secret_store=deps.secret_store,
-    )
-    try:
-        seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(start_url)})
-        await session.page.goto(start_url)
-        o.store.end_action(run, seq, "done")
-        result = await loop.run(run, session.page, session.stagehand, session.browser.context)
-    except KeyboardInterrupt:
-        result = None
-    return await _after_loop(o, run, deps, session, result)
 
 
 async def _after_loop(o: Orchestrator, run: Run, deps: BrowserDeps, session: object, result: object) -> Run:
@@ -363,13 +322,9 @@ def fake_provider_plan(base_url: str) -> object:
     from pathlib import Path
 
     from credagent.state.models import Plan
-    from credagent.steps.validate import validate_steps
 
     raw = (Path(__file__).resolve().parents[2] / "fake_provider" / "fixtures" / "plan.json").read_text()
-    plan = Plan.model_validate(_json.loads(raw.replace("{base}", base_url))["plan"])
-    notes: list[str] = []
-    steps = validate_steps(plan.steps, plan.allowed_domains, notes)
-    return plan.model_copy(update={"steps": steps, "validation_notes": plan.validation_notes + notes})
+    return Plan.model_validate(_json.loads(raw.replace("{base}", base_url))["plan"])
 
 
 def verify_and_finish(o: Orchestrator, run: Run, deps: BrowserDeps, http: object, *, how: str) -> Run:
@@ -406,41 +361,6 @@ def safe_resume_url(run: Run) -> str | None:
     return run.plan.console_url or None
 
 
-async def resume_browser_phase(o: Orchestrator, run: Run, deps: BrowserDeps, io: object,
-                               in_doubt: dict | None) -> Run:
-    """Continue a paused run (spec §6.8): restore the profile, reopen the page, re-check before acting.
-
-    A pending handoff is not assumed done: it is closed as "re-checked on resume" and the loop observes the
-    page again, so the same blocker produces a fresh card if it is still there and nothing is repeated."""
-    from credagent.browser.candidates import FieldValues
-    from credagent.browser.loop import BrowserLoop
-    from credagent.browser.session import open_session
-
-    h = run.pending_handoff
-    if h is not None:
-        run.resolve_handoff(h.id, cancelled=True)
-        run.add_step(StepRecord(action=f"resumed: re-checking the page instead of assuming “{h.blocker_kind}” "
-                                "was done", actor="system", outcome="done"))
-    session = await open_session(deps.profile_dir, headless=deps.headless, model_callback=deps.model_callback,
-                                 existing=run.browser)
-    reattached = bool(run.browser and session.chrome.pid == run.browser.chrome_pid)
-    run.browser = session.record()
-    o._cp(run, "browser_opened", {"profile": str(deps.profile_dir), "reattached": reattached})
-    url = safe_resume_url(run)
-    if url and not reattached:
-        seq = o.store.begin_action(run, "navigate", {"url": o.masker.mask_text(url)})
-        await session.page.goto(url)
-        o.store.end_action(run, seq, "done")
-    loop = BrowserLoop(o.store, o.masker, io, deps.jev, FieldValues.default(deps.redirect_uri),
-                       reasoner=deps.reasoner, llm_model=deps.llm_model, secret_store=deps.secret_store,
-                       in_doubt=in_doubt if in_doubt and in_doubt.get("action") == "click" else None)
-    try:
-        result = await loop.run(run, session.page, session.stagehand, session.browser.context)
-    except KeyboardInterrupt:
-        result = None
-    return await _after_loop(o, run, deps, session, result)
-
-
 # ---------------------------------------------------------------- the agent loop (D-078)
 
 
@@ -451,9 +371,9 @@ async def execute_agent_phase(o: Orchestrator, run: Run, deps: BrowserDeps, star
     import httpx
 
     from credagent.agent.loop import AgentLoop
-    from credagent.browser.candidates import FieldValues
     from credagent.browser.executor import BrowserClosed
     from credagent.browser.pw_session import open_pw_session
+    from credagent.browser.values import FieldValues
 
     with httpx.Client() as http:
         done = _metadata_step(o, run, deps, start_url, http)
@@ -482,9 +402,9 @@ async def resume_agent_phase(o: Orchestrator, run: Run, deps: BrowserDeps, io: o
     and the same blocker produces a fresh card if it is still there. An action that was started but never confirmed
     is never repeated without asking."""
     from credagent.agent.loop import AgentLoop
-    from credagent.browser.candidates import FieldValues
     from credagent.browser.executor import BrowserClosed
     from credagent.browser.pw_session import open_pw_session
+    from credagent.browser.values import FieldValues
 
     h = run.pending_handoff
     if h is not None:

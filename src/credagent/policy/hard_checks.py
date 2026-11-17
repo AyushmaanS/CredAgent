@@ -1,4 +1,4 @@
-"""Code-owned page checks (spec §6.4 step 2, §6.6). Run on every observed page, before Jev.
+"""Code-owned page checks (spec §6.4 step 2, §6.6). Run on every observed page, before any model is asked.
 
 They only read the Observation (plain-code data). Results:
   Gate(action="DO")     a person must act in the browser (sign-in, code, CAPTCHA, payment, …)
@@ -94,6 +94,13 @@ def host_allowed(url: str, allowed: list[str]) -> bool:
         return True
     host = (p.hostname or "").lower().removeprefix("www.")
     return any(host == d or host.endswith("." + d) for d in allowed)
+
+
+def is_docs_host(url: str) -> bool:
+    """Documentation pages are not part of the console steps (D-070)."""
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    return host.startswith("docs.") or host.startswith("developer-docs.") or p.path.startswith("/docs")
 
 
 def _quote(text: str, m: re.Match[str], pad: int = 60) -> str:

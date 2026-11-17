@@ -12,8 +12,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from credagent.steps.convert import STEP_CONDITION_PROPS
-
 CRED_KINDS = ["oauth_client", "api_key", "token", "sandbox_key", "other"]
 STEP_KINDS = ["navigate", "fill", "click", "capture", "verify", "handoff", "check"]
 BLOCKER_KINDS = ["sign_in", "account_creation", "verification_code", "two_factor", "captcha",
@@ -99,8 +97,7 @@ FINDINGS_SCHEMA = obj({
     "console_url": NSTR,
     "console_url_source": NSTR,
     "sign_in_domains": arr(STR),
-    "setup_steps": arr(obj({"description": STR, "kind": enum(STEP_KINDS), "source_url": NSTR,
-                            **STEP_CONDITION_PROPS})),
+    "setup_steps": arr(obj({"description": STR, "kind": enum(STEP_KINDS), "source_url": NSTR})),
     "needs_redirect_uri": enum(["yes", "no", "unknown"]),
     "scopes_or_permissions": arr(obj({"name": STR, "why": STR, "source_url": NSTR})),
     "likely_blockers": arr(obj({"kind": enum(BLOCKER_KINDS), "description": STR,
@@ -131,12 +128,6 @@ class SetupStep(_M):
     description: str
     kind: Literal["navigate", "fill", "click", "capture", "verify", "handoff", "check"]
     source_url: str | None
-    # checkable-step conditions (design §8); validated in credagent.steps.convert
-    where_path: str | None = None
-    target_role: str | None = None
-    target_name: str | None = None
-    value: str | None = None
-    done_when: list[dict[str, Any]] = []
 
 
 class Scope(_M):

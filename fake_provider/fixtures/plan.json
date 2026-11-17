@@ -27,85 +27,28 @@
         "id": "p1",
         "kind": "navigate",
         "description": "Open the developer console",
-        "expected_page": "/console",
-        "done_when": [
-          {
-            "check": "at_page",
-            "path": "/console"
-          }
-        ]
+        "expected_page": "/console"
       },
       {
         "id": "p2",
         "kind": "click",
         "description": "Open the form to create a new app",
-        "expected_page": "/apps/new",
-        "target": {
-          "role": "link",
-          "name": "Create new app"
-        },
-        "done_when": [
-          {
-            "check": "at_page",
-            "path": "/apps/new"
-          }
-        ]
+        "expected_page": "/apps/new"
       },
       {
         "id": "p3",
         "kind": "fill",
-        "description": "Fill in the application name field",
-        "where": [
-          {
-            "check": "at_page",
-            "path": "/apps/new"
-          }
-        ],
-        "value": "app_name",
-        "done_when": [
-          {
-            "check": "field_holds",
-            "field": {
-              "label": "Application name"
-            },
-            "value": "app_name"
-          }
-        ]
+        "description": "Fill in the application name field"
       },
       {
         "id": "p4",
         "kind": "fill",
-        "description": "Fill in the authorization callback URL field",
-        "where": [
-          {
-            "check": "at_page",
-            "path": "/apps/new"
-          }
-        ],
-        "value": "redirect_uri",
-        "done_when": [
-          {
-            "check": "field_holds",
-            "field": {
-              "label": "Authorization callback URL"
-            },
-            "value": "redirect_uri"
-          }
-        ]
+        "description": "Fill in the authorization callback URL field"
       },
       {
         "id": "p5",
         "kind": "click",
-        "description": "Submit the form to create the app (Create app button)",
-        "target": {
-          "role": "button",
-          "name": "Create app"
-        },
-        "done_when": [
-          {
-            "check": "app_exists"
-          }
-        ]
+        "description": "Submit the form to create the app (Create app button)"
       },
       {
         "id": "p6",

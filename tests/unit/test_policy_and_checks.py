@@ -1,14 +1,11 @@
-"""Hard checks, policy engine, candidates, fallbacks (no browser)."""
+"""Hard checks, policy engine and field-value mapping (no browser)."""
 
 import pytest
 
-from credagent.browser.candidates import FieldValues, dom_candidates, field_key_for, normalise, use_stagehand
 from credagent.browser.observe import Observation, from_raw
-from credagent.decisions.client import DecisionLog, JevClient, RuleJev, ServiceDown, apply_fallbacks
-from credagent.decisions.jev import Candidate, PageState
+from credagent.browser.values import FieldValues, field_key_for
 from credagent.policy.engine import ProposedAction, bump, evaluate
-from credagent.policy.hard_checks import blocking, check, host_allowed
-from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
+from credagent.policy.hard_checks import blocking, check, host_allowed, is_docs_host
 from credagent.secrets.masking import Masker
 
 ALLOWED = ["127.0.0.1"]
@@ -132,7 +129,7 @@ def test_risk_rules_and_decide_categories():
         ["reversible", "hard_to_undo", "irreversible", "irreversible", "hard_to_undo"]
 
 
-# -------------------------------------------------------------- candidates
+# -------------------------------------------------------------- field values
 
 def test_field_mapping_and_values():
     assert field_key_for("Authorization callback URL") == "redirect_uri"
@@ -143,20 +140,8 @@ def test_field_mapping_and_values():
     assert v.homepage_url == "http://127.0.0.1:8976" and v.app_name.startswith("credagent-demo-")
 
 
-def test_dom_candidates_exclude_secrets_and_cap():
-    o = obs(inputs=[inp("/i1", "Application name"), inp("/i2", "Key", readonly=True)],
-            buttons=[btn(f"/b{i}", f"Button {i}") for i in range(30)],
-            links=[{"xpath": "/a1", "text": "Docs", "href": "http://127.0.0.1/docs"}], secret_xpaths=["/b0"])
-    raw = dom_candidates(o)
-    assert "/i2" not in [r.xpath for r in raw] and "/b0" not in [r.xpath for r in raw]
-    cands, mapping = normalise(raw)
-    assert len(cands) == 20 and cands[0].id == "c0" and mapping["c0"].field_key == "app_name"
 
 
-def test_stagehand_never_used_on_credential_pages():
-    assert use_stagehand(obs(text="Your apps"))
-    assert not use_stagehand(obs(text="x", secret_xpaths=["/code[1]"]))
-    assert not use_stagehand(obs(text="Copy your client secret now"))
 
 
 def test_observation_masks_text_and_keeps_raw_url_out_of_summary():
@@ -165,99 +150,6 @@ def test_observation_masks_text_and_keeps_raw_url_out_of_summary():
                   "text": "value fake-shown-once-secret-abc123 here"}, m)
     assert "fake-shown-once-secret-abc123" not in o.text
     assert "Zq9fakeTokenValue" not in o.summary()["url"] and "Zq9fakeTokenValue" in o.url
-
-
-# ---------------------------------------------------------- Jev + fallbacks
-
-def state():
-    return PageState(step_goal="Open the form to create a new app", url="http://127.0.0.1/console",
-                     candidates=[Candidate(id="c0", description="link 'Create new app'", method="click")])
-
-
-class FR:
-    def __init__(self, behaviour):
-        self.b = list(behaviour)
-        self.calls = 0
-
-    def systemone(self, state, questions, timeout_s=None):
-        self.calls += 1
-        x = self.b.pop(0)
-        if isinstance(x, Exception):
-            raise x
-        return x
-
-
-def test_jev_retried_once_then_all_uncertain():
-    fr = FR([ServiceUnavailable("timeout"), ModelCallError("bad")])
-    log = DecisionLog()
-    d = JevClient(fr).decide(state(), log)
-    assert fr.calls == 2 and log.jev_failed and d.all_uncertain
-
-
-def test_jev_second_attempt_succeeds():
-    ok = {"model": "jev-1.14.0", "answers": {
-        "element_selection": {"choice": "c0", "confidence": 0.9}, "action_selection": {"choice": "proceed", "confidence": 0.9},
-        "blocker_detection": {"noul": 0.05}, "risk_assessment": {"probabilities": {"0": 0.9}, "confidence": 0.9},
-        "completion_detection": {"noul": 0.02}}}
-    log = DecisionLog()
-    d = JevClient(FR([ModelCallError("x"), ok])).decide(state(), log)
-    assert not log.jev_failed and d["element_selection"].value == "c0" and log.served_model == "jev-1.14.0"
-
-
-class LLM:
-    def __init__(self, out=None, exc=None):
-        self.out, self.exc = out, exc
-
-    def chat(self, messages, **kw):
-        if self.exc:
-            raise self.exc
-        return {"parsed": self.out}
-
-
-def uncertain():
-    from credagent.decisions.jev import all_uncertain
-    return all_uncertain(state())
-
-
-def test_fallbacks_follow_prd_rules():
-    log = DecisionLog()
-    d = apply_fallbacks(uncertain(), state(), log,
-                        LLM({"element": "c0", "action": "proceed", "human_needed": False,
-                             "reason": "The console shows a create-app link; no sign-in needed."}),
-                        code_gates_found=False, credential_on_page=False)
-    assert d["element_selection"].value == "c0" and d["action_selection"].value == "proceed"
-    assert d["blocker_detection"].value is False and d["completion_detection"].value is False
-    assert set(log.fallbacks) >= {"element_selection", "action_selection", "blocker_detection",
-                                  "risk_assessment", "completion_detection"}
-    # LLM says no human needed but code found a gate -> pause
-    d2 = apply_fallbacks(uncertain(), state(), DecisionLog(),
-                         LLM({"element": "c0", "action": "proceed", "human_needed": False, "reason": "looks fine here"}),
-                         code_gates_found=True, credential_on_page=False)
-    assert d2["blocker_detection"].value is True
-    # LLM gives no real reason -> pause
-    d3 = apply_fallbacks(uncertain(), state(), DecisionLog(),
-                         LLM({"element": "c0", "action": "proceed", "human_needed": False, "reason": "ok"}),
-                         code_gates_found=False, credential_on_page=False)
-    assert d3["blocker_detection"].value is True
-
-
-def test_both_services_down_raises_service_down():
-    log = DecisionLog(jev_service_unavailable=True, jev_failed=True)
-    with pytest.raises(ServiceDown):
-        apply_fallbacks(uncertain(), state(), log, LLM(exc=ServiceUnavailable("down")),
-                        code_gates_found=False, credential_on_page=False)
-
-
-def test_llm_unusable_pauses_and_completion_is_code_owned():
-    d = apply_fallbacks(uncertain(), state(), DecisionLog(), LLM(exc=ModelCallError("400")),
-                        code_gates_found=False, credential_on_page=True)
-    assert d["blocker_detection"].value is True and d["completion_detection"].value is True
-
-
-def test_rule_jev_is_deterministic():
-    s = PageState(step_goal="Open the developer console (expected page: /console)", url="http://127.0.0.1/console",
-                  candidates=[])
-    assert RuleJev().decide(s, DecisionLog())["action_selection"].value == "step_complete"
 
 
 def test_choices_and_permissions_are_decide_not_autonomous():
@@ -279,78 +171,12 @@ def test_one_app_per_run_rule_d063():
         assert not CREATE_RE.search(label), label
 
 
-def test_mark_created_moves_only_past_the_current_create_step_d064():
-    """Resumed Discord run: the cursor jumped to the live-test step because a later step mentioned creating."""
-    from credagent.browser.candidates import FieldValues
-    from credagent.browser.loop import BrowserLoop
-    from credagent.secrets.masking import Masker
-    from credagent.state.models import Plan, PlanStep, Run
-
-    steps = [PlanStep(id="a", kind="navigate", description="Open the portal"),
-             PlanStep(id="b", kind="click", description="Click 'New Application' and create the app"),
-             PlanStep(id="c", kind="navigate", description="Open the OAuth2 page"),
-             PlanStep(id="d", kind="click", description="If no app exists yet, click 'New Application' first"),
-             PlanStep(id="e", kind="verify", description="Live test")]
-    run = Run(id="r", app_input="x", plan=Plan(steps=steps), plan_cursor=1)
-
-    class NullStore:
-        def checkpoint(self, *a, **k):
-            return 0
-
-    loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"))
-    loop._mark_created(run, "an app")
-    assert run.plan_cursor == 2 and run.created == ["an app"]
-    # D-067: recording the app again elsewhere (e.g. a capture on resume) never moves the cursor
-    run.plan_cursor = 2
-    loop._mark_created(run, "an app")
-    assert run.plan_cursor == 2
 
 
-def test_resume_corrects_a_cursor_past_the_console_steps_d064():
-    import asyncio
-
-    from credagent.browser.candidates import FieldValues
-    from credagent.browser.loop import BrowserLoop, LoopBudget
-    from credagent.secrets.masking import Masker
-    from credagent.state.models import Plan, PlanStep, Run
-
-    steps = [PlanStep(id="a", kind="navigate", description="Open the portal"),
-             PlanStep(id="b", kind="click", description="Click 'New Application' and create the app"),
-             PlanStep(id="c", kind="navigate", description="Open the OAuth2 page"),
-             PlanStep(id="d", kind="capture", description="Capture"),
-             PlanStep(id="e", kind="verify", description="Live test")]
-    run = Run(id="r", app_input="x", plan=Plan(steps=steps), plan_cursor=4, created=["an app"])
-
-    class NullStore:
-        def checkpoint(self, *a, **k):
-            return 0
-
-    loop = BrowserLoop(NullStore(), Masker(), None, None, FieldValues.default("http://127.0.0.1:8976/callback"),
-                       budget=LoopBudget(max_observations=0))
-    asyncio.run(loop.run(run, page=None))
-    assert run.plan_cursor == 2
 
 
-def test_replan_keeps_code_owned_steps_once_at_the_end_d065():
-    from credagent.reasoning.replan import normalise_steps
-    from credagent.state.models import PlanStep
-
-    k = ["navigate", "click", "verify", "navigate", "verify", "click", "handoff", "capture", "verify"]
-    steps = [PlanStep(id=f"s{i}", kind=kind, description=f"{kind} {i}") for i, kind in enumerate(k)]
-    new, cur = normalise_steps(steps, 6)
-    assert [x.kind for x in new] == ["navigate", "click", "navigate", "click", "handoff", "capture", "verify"]
-    assert new[cur].id == "s6"
 
 
-def test_rank_for_goal_keeps_the_named_link_within_the_cap_d066():
-    from credagent.browser.candidates import RawCandidate as R
-    from credagent.browser.loop import rank_for_goal
-
-    cands = ([R(f"/f{i}", "fill", f"text field 'F{i}'") for i in range(9)]
-             + [R(f"/b{i}", "click", f"button 'B{i}'") for i in range(11)]
-             + [R("/l1", "click", "link 'General Information'"), R("/l2", "click", "link 'OAuth2'")])
-    ranked = rank_for_goal(cands, "In the left sidebar of the application, open the OAuth2 page.")
-    assert ranked[0].description == "link 'OAuth2'" and ranked[1:] == [c for c in cands if c.xpath != "/l2"]
 
 
 def test_reset_secret_step_is_not_a_create_step_d067():
@@ -375,28 +201,11 @@ def test_formless_button_named_in_agreement_is_the_persons_d069():
     assert cancel.category != "terms"
 
 
-def test_unlabelled_field_is_mapped_by_its_section_heading_d069():
-    from credagent.browser.candidates import dom_candidates
-
-    o = obs(inputs=[inp("/f/i1", "", type_="text", section="Redirects")])
-    (c,) = [c for c in dom_candidates(o) if c.method == "fill"]
-    assert c.field_key == "redirect_uri" and "Redirects" in c.description
 
 
 def test_docs_pages_are_detours_d070():
-    from credagent.browser.loop import is_docs_page
-
-    assert is_docs_page("https://docs.discord.com/developers/platform/oauth2-and-permissions")
-    assert is_docs_page("http://127.0.0.1:1/docs")
-    assert not is_docs_page("https://discord.com/developers/applications/123/oauth2")
+    assert is_docs_host("https://docs.discord.com/developers/platform/oauth2-and-permissions")
+    assert is_docs_host("http://127.0.0.1:1/docs")
+    assert not is_docs_host("https://discord.com/developers/applications/123/oauth2")
 
 
-def test_rank_for_goal_matches_quoted_names_and_the_runs_app_d072():
-    from credagent.browser.candidates import RawCandidate as R
-    from credagent.browser.loop import rank_for_goal
-
-    cands = ([R(f"/f{i}", "fill", f"text field 'Field {i}'") for i in range(15)]
-             + [R(f"/l{i}", "click", f"link 'Applications {i}'") for i in range(6)]
-             + [R("/app", "click", "link 'c-d-2 credagent-demo-20261116' (the app this run created)")])
-    ranked = rank_for_goal(cands, "Click the 'c-d-2' application in the My Applications list to open it.")
-    assert ranked[0].xpath == "/app"

@@ -13,12 +13,11 @@ from credagent.agent.step import (
     to_proposed,
     validate_step,
 )
-from credagent.browser.candidates import FieldValues
 from credagent.browser.snapshot import build_snapshot
+from credagent.browser.values import APPROVED_VALUES, FieldValues
 from credagent.policy.engine import evaluate
 from credagent.policy.hard_checks import check
 from credagent.secrets.masking import Masker
-from credagent.steps.checks import APPROVED_VALUES
 from tests.unit.test_snapshot import el, raw
 
 CB = "http://127.0.0.1:8976/callback"

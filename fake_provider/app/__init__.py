@@ -12,7 +12,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios.json"
 
 
 def load_scenarios() -> dict[str, dict[str, Any]]:
-    """Name → {"description", "config", "jev", "fastrouter", "expect"}."""
+    """Name → {"description", "config", "llm", "expect"}."""
     return json.loads(FIXTURES.read_text(encoding="utf-8"))["scenarios"]
 
 

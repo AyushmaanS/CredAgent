@@ -1,4 +1,4 @@
-"""Playwright over CDP to the CredAgent-owned Chrome (D-078). Replaces `session.py` (Stagehand) in phase 5.
+"""Playwright over CDP to the CredAgent-owned Chrome (D-078).
 
 `ChromeProcess` is unchanged: it launches Chrome with a persistent profile, survives this process, can be
 re-attached from a later process on the saved CDP port, and is shut down gracefully so the profile is flushed.

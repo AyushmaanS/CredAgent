@@ -825,6 +825,32 @@ Plus unit tests for the risk table and the ported handoff helpers.
 
 ---
 
+## D-083 D-078 phase 5 done: the old machinery is removed; the CLI runs the agent loop — Decided (implementation record)
+**Removed (still in git history and the local tag `pre-d078`):** Jev and its fallbacks (`decisions/`), the step machine and its proofs (`steps/`), the legacy 1,570-line loop (`browser/loop.py`), Stagehand and its model callback, the old Stagehand session, re-planning (`reasoning/replan.py`), candidate building and ranking (`browser/candidates.py`), the `systemone` call, the Jev and Stagehand settings and the `stagehand` dependency. Also retired: `scripts/measure_candidates.py` and the two Sprint 0 spikes that needed Stagehand or Jev (`spike_stagehand.py`, `spike_fastrouter.py`; their recorded results stay in `docs/spikes/`). Source went from 10,070 to 7,115 lines (about 2,950 fewer); with tests the change is about 5,800 lines fewer.
+
+**Moved, not rewritten:** `FieldValues`, the field-label mapping and `APPROVED_VALUES` into `browser/values.py`; `is_docs_host` into `policy/hard_checks.py`.
+
+**CLI and orchestrator.** `credagent get`, `resume` and the fake-provider runs now call `execute_agent_phase` / `resume_agent_phase` with the step LLM (`StepLLM` over FastRouter, model `CREDAGENT_LLM_MODEL`). `--offline` uses the scripted stand-in, which is a test and demo tool, not a model. Fault injection is now about the model: scenario field `llm` = `flaky` (every other answer unusable; the run still succeeds) or `down` (service unavailable, resumable). Scenario `jev_failure` became `llm_failure`; `service_unavailable` stays.
+
+**State.** Dropped `proofs`, `bindings`, `plan_cursor`, `replans_used`, `Run.loop`, `Plan.revision` and the plan-step conditions. **Old runs still load** (a before-validator drops those fields; plan steps ignore extra keys; the `replan_limit` blocker kind is kept for them), with a unit test. They cannot be resumed by the new loop (design §5). Plan steps are now `id, description, kind, expected_page`: guidance for the agent. Research no longer asks the model for step conditions, so the research call is simpler.
+
+**Cards.** Progress reads "N actions by the agent, M by you; created: …" (no plan-step counter). The terms card again says "The agent filled: …" for fields the agent filled earlier in the form (it only listed fields filled at the handoff after the rewrite; found by the ported test).
+
+**Chrome flags kept unchanged** (renamed `CHROME_FLAGS`). The scoping said "trim"; I did not, because the flags began as Stagehand's defaults and removing any could change how real providers treat the browser, which I cannot verify without a real run. They can be trimmed in phase 7 if the Discord run shows it is safe.
+
+**Tests.** 305 tests; the real-Chrome suite (opt-in) and the default suite both pass. Deleted with their subjects: Jev, Stagehand, step checks, step validation, and the legacy loop and Sprint 5 files. The behaviours that mattered were **ported** to `tests/integration/test_agent_flows.py`: prompt injection ignored, unanswered dropdown is the person's choice and scopes stay unticked, declining a choice ends blocked with nothing created, the terms card names box and button and re-checks after Enter, three unchanged Enters save the handoff as waiting, optional fields and the "agent filled" line, a Discord-like portal creates exactly one app and saves the redirect, a documentation detour is undone, unusable model answers, model down, and the command line (end to end, service unavailable, `get` then `resume` from a new process). New `tests/unit/test_removed_modules.py` checks that nothing imports the removed modules and `stagehand` is not a dependency.
+
+**Behaviour not carried over — for the owner to judge.**
+1. **Stray character in a value the person typed (D-071).** The old loop compared lengths and asked before replacing a redirect like `…/callback.`. The model never sees field values, so it cannot notice this. It can use `inspect` (answers only "holds the approved value" or "holds another value", D-080), and typing an approved value replaces the field, but nothing *asks* before replacing. The replaced value is the approved one in a field of the app being created, so the risk is low; if you want the ask back it is a small addition.
+2. **"Navigator" for the app list (D-068).** Gone with Jev: the model now chooses links itself from the numbered list.
+3. **Old-run resume.** Runs saved before D-078 (Discord #4/#5) cannot continue; a new run starts.
+
+**Scripted stand-in** learned the fake console's flow: it fills fields first, clicks Save after typing, picks a dropdown option (which policy turns into the person's choice), opens the "Add Redirect" box, and visits the OAuth2 page before any secret reset (my first order reset the secret and then lost it on the next page load; the capture then correctly asked the person).
+
+**README:** only the commands and lines that no longer worked were fixed; the full rewrite of README, PRD, spec and sprint plan is phase 7 (D-078 discrepancy #5 stays open until then).
+
+---
+
 ## Discrepancies between documents
 1. Docs location (see D-001).
 2. Spec §3 lists `docs/04-CLAUDE-CODE-STARTER-PROMPT.md`, which was not provided.

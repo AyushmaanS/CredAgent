@@ -17,8 +17,8 @@ Requirements documents: `docs/CredAgent-PRD.md` (authoritative), `docs/02-ENGINE
 | Works | Not built yet |
 |---|---|
 | `credagent get "<app>"`: researches the app (Tavily + LLM) and writes a checked plan, then pauses | Browser runs against **real** providers (need per-provider consent, Sprint 6) |
-| Browser loop on the fake provider: Stagehand + Jev's five decisions + code policy, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) | |
-| Jev failure fallbacks and "service unavailable" proved on the fake provider (`--fake-provider jev_failure` / `service_unavailable`) | |
+| Browser agent on the fake provider: an LLM chooses each step over Playwright, code policy gates every action, DO/DECIDE handoffs ([sample cards](docs/samples/handoff-cards.md)) (D-078) | |
+| Unusable model answers and "service unavailable" proved on the fake provider (`--fake-provider llm_failure` / `service_unavailable`) | |
 | OAuth metadata check + dynamic client registration shortcut (fake provider) | Provider-specific live tests (API keys, authorization-code flow) arrive with the real providers (Sprint 6) |
 | Credential capture by plain browser code (shown-once secrets too), stored in owner-only files outside the repo | |
 | Live test (OAuth client-credentials token request); only `verified` → `succeeded` ([sample report](docs/samples/secret-and-report.md)) | |
@@ -52,7 +52,7 @@ git config core.hooksPath .githooks    # pre-commit secret scan + lint (for cont
 .venv/bin/credagent resume <run-id>                             # continues where it stopped
 .venv/bin/credagent secret <run-id>                             # where the credential is stored (masked)
 .venv/bin/credagent verify <run-id>                             # re-run the live test
-.venv/bin/credagent get Fakeprov --fake-provider jev_failure --offline  # Jev fails on purpose; fallbacks take over
+.venv/bin/credagent get Fakeprov --fake-provider llm_failure --offline  # every other model answer is unusable; the run still succeeds
 .venv/bin/python scripts/sample_cards.py                       # regenerate docs/samples/handoff-cards.md
 ```
 
@@ -60,12 +60,12 @@ git config core.hooksPath .githooks    # pre-commit secret scan + lint (for cont
 
 ```bash
 .venv/bin/credagent get "GitHub"       # research + plan (~1–2 min); real-provider browser runs: Sprint 6
-.venv/bin/credagent get Fakeprov --fake-provider terms_checkbox   # agent + real Jev/Stagehand; you accept the terms
+.venv/bin/credagent get Fakeprov --fake-provider terms_checkbox   # agent + the real LLM; you accept the terms
 .venv/bin/credagent runs
 .venv/bin/credagent report <run-id>
 ```
 
-You need a **FastRouter** key (LLM + Jev) and a **Tavily** key (web research). A research run
+You need a **FastRouter** key (the LLM) and a **Tavily** key (web research). A research run
 costs roughly $0.15–0.20 at list prices (about 9–10 Tavily credits plus two LLM calls; Tavily's
 free tier is 1,000 credits a month). Estimates, not measured billing; see `docs/DECISIONS.md`.
 
@@ -128,7 +128,7 @@ A local, clearly fake developer console used to test every path without real acc
 ```
 
 Scenarios are listed in `fake_provider/fixtures/scenarios.json` (success, terms checkbox / implied,
-sign-in + resume, shown-once secret, CAPTCHA, blocked, Jev failure, service unavailable, partial,
+sign-in + resume, shown-once secret, CAPTCHA, blocked, LLM failure, service unavailable, partial,
 DECIDE choices, overwrite, cookie accept-only, prompt injection, DCR). The test login is in
 `fake_provider/app/server.py` (fake values for this local site only).
 
@@ -138,11 +138,11 @@ Feasibility spikes (Sprint 0) are in `scripts/spikes/`; curated results are in
 ## Repository layout
 
 ```text
-src/credagent/      CLI, orchestrator, research, reasoning (FastRouter), decisions (Jev),
-                    browser (Chrome + Stagehand), state, secrets, reports, config
+src/credagent/      CLI, orchestrator, research, reasoning (FastRouter), agent (LLM step loop),
+                    browser (Chrome + Playwright), state, secrets, reports, config
 fake_provider/      Fakeprov fake developer console + scenario fixtures
 tests/              unit, integration (incl. opt-in real-browser test), fake_provider
-scripts/            secret scan, env check, Sprint 0 feasibility spikes
+scripts/            secret scan, env check, Sprint 0 spikes (storage, Tavily)
 docs/               PRD, spec, sprint plan, protocol, decisions, checklist, spike results, samples
 ```
 

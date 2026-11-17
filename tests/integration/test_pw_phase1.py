@@ -10,10 +10,10 @@ import os
 import pytest
 from fake_provider.app import FakeProvider, Scenario
 
-from credagent.browser.candidates import FieldValues
 from credagent.browser.executor import BrowserClosed, Executor, approved_values
 from credagent.browser.pw_session import open_pw_session
 from credagent.browser.snapshot import describe_change, take_snapshot
+from credagent.browser.values import FieldValues
 from credagent.secrets.masking import Masker
 
 pytestmark = pytest.mark.skipif(os.environ.get("CREDAGENT_BROWSER_TESTS") != "1",

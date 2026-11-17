@@ -1,14 +1,13 @@
 """CredAgent-owned local Chrome process with a persistent profile.
 
-Why not `stagehand.local_browser.launch()`? Observed in the Sprint 0 spike
-(docs/DECISIONS.md D-012): Stagehand 4.4.0's close() sends CDP Browser.close and
-then immediately SIGTERMs Chrome's whole process group, which lost cookies and
-localStorage written shortly before close. Owning the process lets us:
+Why CredAgent starts Chrome itself instead of letting a browser library launch it (docs/DECISIONS.md D-012): a
+library's close() killed Chrome's process group right after Browser.close and lost cookies and localStorage
+written shortly before. Owning the process lets us:
   * shut Chrome down gracefully (Browser.close, then wait for exit) so the
     profile is flushed;
   * keep the visible window open if the CredAgent process exits mid-handoff,
     and re-attach later on the saved CDP port.
-Stagehand attaches with `local_browser.connect(cdp_url=...)`.
+Playwright attaches with `connect_over_cdp` (D-078).
 """
 
 from __future__ import annotations
@@ -30,9 +29,9 @@ from credagent.state.atomic import mkdir_private
 
 MAC_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
-# Mirrors stagehand 4.4.0 browser._DEFAULT_CHROME_FLAGS (needed for its extension),
-# minus nothing. Re-check when upgrading Stagehand.
-STAGEHAND_FLAGS = (
+# Launch flags. They began as Stagehand 4.4.0's defaults (D-012). Stagehand is gone (D-078) but the flags are kept
+# unchanged on purpose: trimming them could change how real providers treat the browser, and that is unverified.
+CHROME_FLAGS = (
     "--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,"
     "CalculateNativeWinOcclusion,InterestFeedContentSuggestions,"
     "CertificateTransparencyComponentUpdater,AutofillServerCommunication,"
@@ -116,7 +115,7 @@ class ChromeProcess:
         mkdir_private(profile_dir)
         port = free_port()
         args = [
-            str(executable), *STAGEHAND_FLAGS, "--window-size=1280,800",
+            str(executable), *CHROME_FLAGS, "--window-size=1280,800",
             f"--remote-debugging-port={port}", f"--user-data-dir={profile_dir}",
             *(["--headless"] if headless else []), *(extra_args or []), "about:blank",
         ]

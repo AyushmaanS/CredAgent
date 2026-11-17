@@ -30,17 +30,16 @@ from credagent.agent.step import (
     to_proposed,
     validate_step,
 )
-from credagent.browser.candidates import FieldValues, field_key_for
 from credagent.browser.executor import Executor, approved_values
 from credagent.browser.snapshot import Snapshot, describe_change, take_snapshot
+from credagent.browser.values import FieldValues, field_key_for
 from credagent.policy.engine import CREATE_RE, HUMAN_ONLY_FIELDS, ProposedAction, evaluate
-from credagent.policy.hard_checks import blocking, check, host_allowed
+from credagent.policy.hard_checks import blocking, check, host_allowed, is_docs_host
 from credagent.policy.risk import assess_risk
 from credagent.secrets.capture import SECRET_PARTS, CaptureResult, capture
 from credagent.secrets.masking import Masker
 from credagent.state.models import Blocker, Evidence, Run, StepRecord
 from credagent.state.store import RunStore
-from credagent.steps.checks import is_docs_host
 
 NEW_FORM_PATH = re.compile(r"/(new|create|register|add)(/|$)", re.I)
 HIDDEN_VALUE_INSTRUCTION = (  # the person's part when the secret can no longer be shown (D-054)
@@ -139,13 +138,14 @@ class AgentLoop:
 
     async def _run(self, run: Run, session: Any) -> LoopResult:
         t0 = time.monotonic()
-        run.phase, run.loop = "browser", "agent"
+        run.phase = "browser"
         self.session, self.allowed = session, run.plan.allowed_domains
         self.ex = Executor(session.page, self.masker, approved=approved_values(self.values),
                            settle_ms=self.budget.settle_ms)
         self.handoffs = Handoffs(self.store, self.masker, self.io, self.allowed, self._observe, self._guard)
         self.history: list[HistoryEntry] = []
         self._refused: set[tuple[str, str]] = set()
+        self._typed: set[tuple[str, str]] = set()  # fields the agent filled, so a handoff card can say so
         self._clicks: dict[tuple[str, str], int] = {}
         self._pending: tuple[HistoryEntry, Snapshot] | None = None
         self._maybe_created: tuple[str, str] | None = None  # (label, path before) of a create-looking button click
@@ -518,6 +518,8 @@ class AgentLoop:
             return "invalid"
         if key is not None and v.action == "click":
             self._clicks[key] = self._clicks.get(key, 0) + 1
+        if v.action == "type" and v.element is not None:
+            self._typed.add((urlparse(snap.url).path, v.element.xpath))
         entry = self._hist(v.action, v.target(), v.step.reason, "")
         self._pending = (entry, snap)
         self._step(run, f"{v.action} {v.target()}", "agent", "done", [f"reason: {v.step.reason[:150]}"])
@@ -651,6 +653,8 @@ class AgentLoop:
             key = field_key_for(label) or field_key_for(e.section)
             if e.filled:
                 used.add(key)
+                if (urlparse(snap.url).path, e.xpath) in self._typed:
+                    summary["filled"].append(f"“{label[:60]}”")  # filled earlier by the agent: say so on the card
                 continue
             if HUMAN_ONLY_FIELDS.search(label) or key in used:
                 continue

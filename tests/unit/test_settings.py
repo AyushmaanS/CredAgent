@@ -13,7 +13,7 @@ def test_defaults_and_repr_hides_keys(tmp_path):
     f = tmp_path / ".env.local"
     f.write_text("FASTROUTER_API_KEY=fake-key-for-test-123\n")
     s = load_settings(env_file=f, environ={"CREDAGENT_HOME": str(tmp_path / "home")})
-    assert s.jev_model == "typesafe/jev-latest"
+    assert s.llm_model == "anthropic/claude-sonnet-5.5"
     assert s.fastrouter_base_url == "https://api.fastrouter.ai/api/v1"
     assert "fake-key-for-test-123" not in repr(s)
     assert "fake-key-for-test-123" not in str(s.describe())

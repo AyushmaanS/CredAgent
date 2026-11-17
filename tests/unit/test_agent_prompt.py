@@ -12,8 +12,8 @@ from credagent.agent.prompt import (
     build_messages,
 )
 from credagent.agent.step import STEP_SCHEMA
-from credagent.browser.candidates import FieldValues
 from credagent.browser.snapshot import build_snapshot
+from credagent.browser.values import FieldValues
 from credagent.reasoning.fastrouter import ModelCallError, OutputTruncated, ServiceUnavailable
 from credagent.secrets.masking import Masker
 from tests.unit.test_snapshot import el, raw

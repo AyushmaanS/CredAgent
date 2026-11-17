@@ -1,1 +1,1 @@
-"""Stagehand lifecycle, persistent profile, page observation."""
+"""CredAgent-owned Chrome, Playwright session, page snapshot and executor."""

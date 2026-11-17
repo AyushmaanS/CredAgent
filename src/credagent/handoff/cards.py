@@ -22,22 +22,11 @@ DEFAULT_DONT = {
 
 
 def progress(run: Run) -> str:
-    if run.loop == "agent":  # the plan is guidance for the agent, not a step counter (D-078)
-        agent = sum(1 for s in run.steps if s.actor == "agent" and s.outcome == "done")
-        person = sum(1 for s in run.steps if s.actor == "person" and s.outcome == "done")
-        created = f"; created: {', '.join(run.created)[:90]}" if run.created else ""
-        return f"{agent} actions by the agent, {person} by you{created}"
-    total = len(run.plan.steps)
-    # Plan steps finished, not actions: several actions (fills, a cookie click) can belong to one step.
-    if run.phase == "browser":
-        done = run.plan_cursor
-    else:
-        done = len({s.plan_step_id for s in run.steps if s.outcome == "done" and s.plan_step_id})
-    done = min(done, total) if total else done
+    """The plan is guidance for the agent, not a step counter (D-078): count what was actually done."""
     agent = sum(1 for s in run.steps if s.actor == "agent" and s.outcome == "done")
     person = sum(1 for s in run.steps if s.actor == "person" and s.outcome == "done")
-    head = f"{done} of {total} plan steps done" if total else f"{done} plan steps done (plan length unknown)"
-    return f"{head}; {agent} actions by the agent, {person} by you"
+    created = f"; created: {', '.join(run.created)[:90]}" if run.created else ""
+    return f"{agent} actions by the agent, {person} by you{created}"
 
 
 def _wrap(label: str, text: str) -> list[str]:

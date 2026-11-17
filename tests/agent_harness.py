@@ -10,8 +10,8 @@ from fake_provider.app.server import TEST_EMAIL, TEST_PASSWORD
 
 from credagent.agent.loop import AgentLoop, LoopBudget
 from credagent.agent.scripted import ScriptedLLM
-from credagent.browser.candidates import FieldValues
 from credagent.browser.pw_session import open_pw_session
+from credagent.browser.values import FieldValues
 from credagent.orchestrator import (
     BrowserDeps,
     Orchestrator,
@@ -93,7 +93,7 @@ class Outcome:
         self.__dict__.update(kw)
 
 
-async def run_agent_scenario(tmp_path, name, *, llm=None, budget=None, choose=None, plan_steps=None):
+async def run_agent_scenario(tmp_path, name, *, llm=None, budget=None, choose=None, plan_steps=None, io_cls=None):
     m = Masker()
     store = RunStore(tmp_path / "runs", m)
     with FakeProvider(scenario(name)) as fp:
@@ -103,7 +103,7 @@ async def run_agent_scenario(tmp_path, name, *, llm=None, budget=None, choose=No
         run = Run(id=f"a-{name}", app_input="Fakeprov", app_name="Fakeprov", provider="Fakeprov (local)", plan=plan)
         store.create(run)
         session = await open_pw_session(tmp_path / "profile", headless=HEADLESS)
-        io = PersonIO(session, choose)
+        io = (io_cls or PersonIO)(session, choose)
         io.run = run
         llm = llm or ScriptedLLM()
         loop = AgentLoop(store, m, io, llm, VALUES, budget or LoopBudget())
@@ -116,8 +116,9 @@ async def run_agent_scenario(tmp_path, name, *, llm=None, budget=None, choose=No
             await session.close()
         audit = fp.audit()
         secrets = [a.client_secret for a in fp.state.apps.values()]
+        apps = [vars(a).copy() for a in fp.state.apps.values()]
     return Outcome(result=result, run=run, io=io, audit=audit, store=store, url=final_url, llm=llm,
-                   guard_after=guard_after, secrets=secrets, masker=m)
+                   guard_after=guard_after, secrets=secrets, masker=m, apps=apps)
 
 
 def assert_safe(audit, allow=()):

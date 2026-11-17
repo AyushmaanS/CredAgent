@@ -3,16 +3,14 @@
 import copy
 import json
 
-import pytest
 from click.testing import CliRunner
 
 from credagent.orchestrator import NONE_OF_THESE, Orchestrator
 from credagent.reasoning.fastrouter import ModelCallError, ServiceUnavailable
-from credagent.reasoning.replan import ReplanInfeasible, ReplanLimitReached, replan
 from credagent.research.agent import ResearchAgent, ResearchBudget
 from credagent.research.tavily import TavilyError
 from credagent.secrets.masking import Masker
-from credagent.state.models import Plan, PlanStep, Run, StepRecord
+from credagent.state.models import Run
 from credagent.state.store import RunStore
 
 DOCS = "https://docs.acme.example/oauth/creating-an-app"
@@ -289,40 +287,6 @@ def test_llm_budget_exhaustion(tmp_path):
     assert run.status == "failed" and "budget" in run.status_reason
 
 
-# --------------------------------------------------------------- replan
-
-def _run_with_plan():
-    run = Run(id="r1", app_input="Acme", plan=Plan(allowed_domains=["acme.example"], steps=[
-        PlanStep(id="p1", description="open console", kind="navigate"),
-        PlanStep(id="p2", description="fill form", kind="fill"),
-        PlanStep(id="p3", description="capture", kind="capture"),
-        PlanStep(id="p4", description="verify", kind="verify")]))
-    run.add_step(StepRecord(plan_step_id="p1", action="open console", actor="agent", outcome="done"))
-    return run
-
-
-def _rp(feasible=True):
-    return {"still_feasible": feasible, "reason": "page changed",
-            "remaining_steps": [{"description": "open new Apps tab", "kind": "click"},
-                                {"description": "skip verification", "kind": "verify"}]}
-
-
-def test_replan_keeps_done_and_code_owned_steps_and_stops_after_two():
-    run = _run_with_plan()
-    r = FakeReasoner({"replan": [_rp(), _rp(), _rp()]})
-    p = replan(run, r, "masked page text")
-    assert [s.id for s in p.steps] == ["p1", "r1-1", "p3", "p4"]  # model's 'verify' dropped
-    replan(run, r, "masked page text")
-    with pytest.raises(ReplanLimitReached):
-        replan(run, r, "masked page text")
-    assert len(r.calls) == 2  # limit checked before spending a model call
-
-
-def test_replan_infeasible():
-    with pytest.raises(ReplanInfeasible):
-        replan(_run_with_plan(), FakeReasoner({"replan": [_rp(False)]}), "x")
-
-
 # ------------------------------------------------------------------ CLI
 
 def test_cli_get_status_runs_report(tmp_path, monkeypatch):
@@ -500,8 +464,8 @@ def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
 
     from fake_provider.app import FakeProvider, scenario
 
-    from credagent.decisions.client import RuleJev
-    from credagent.orchestrator import BrowserDeps, execute_browser_phase, fake_provider_plan
+    from credagent.agent.scripted import ScriptedLLM
+    from credagent.orchestrator import BrowserDeps, execute_agent_phase, fake_provider_plan
     from credagent.secrets.store import SecretFileStore
 
     m = Masker()
@@ -511,10 +475,9 @@ def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
     with FakeProvider(scenario("dcr_shortcut")) as fp:
         run = Run(id="r-dcr", app_input="Fakeprov", plan=fake_provider_plan(fp.base_url))
         store.create(run)
-        deps = BrowserDeps(jev=RuleJev(), reasoner=None, llm_model=None, model_callback=None,
-                           secret_store=SecretFileStore(tmp_path / "secrets"), profile_dir=tmp_path / "p",
+        deps = BrowserDeps(secret_store=SecretFileStore(tmp_path / "secrets"), profile_dir=tmp_path / "p",
                            redirect_uri="http://127.0.0.1:8976/callback", headless=True, allow_dcr=True)
-        run = asyncio.run(execute_browser_phase(o, run, deps, fp.base_url + "/", io))
+        run = asyncio.run(execute_agent_phase(o, run, deps, fp.base_url + "/", io, ScriptedLLM()))
     # Sprint 5: the registered client is live-tested (client-credentials token request) → succeeded.
     assert run.status == "succeeded" and "dynamic registration" in run.status_reason, run.status_reason
     assert run.verification.label == "verified" and "access token" in run.verification.observed_result
@@ -523,29 +486,3 @@ def test_dcr_scenario_registers_without_browser(tmp_path, monkeypatch):
     secret = SecretFileStore(tmp_path / "secrets").get(run.credential.parts["client_secret"].store_ref)
     disk = "".join(f.read_text() for f in (tmp_path / "runs" / "r-dcr").iterdir())
     assert secret not in disk  # never in run state, events or reports
-
-
-def test_research_conditions_become_checkable_steps_d075(tmp_path):
-    """Design §8: research writes where / target / done_when; code validates them into the plan."""
-    N = {"path": None, "role": None, "name": None, "field_label": None, "field_section": None, "value": None,
-         "parts": None}
-    f = findings(setup_steps=[
-        {"description": "Sign in", "kind": "handoff", "source_url": DOCS},
-        {"description": "Open the OAuth2 page", "kind": "navigate", "source_url": DOCS,
-         "where_path": None, "target_role": "link", "target_name": "OAuth2", "value": None,
-         "done_when": [{**N, "check": "at_page", "path": "/developers/applications/{app_id}/oauth2"}]},
-        {"description": "Add the callback under Redirects and save", "kind": "fill", "source_url": DOCS,
-         "where_path": "/developers/applications/{app_id}/oauth2", "target_role": "button",
-         "target_name": "Add Redirect", "value": "redirect_uri",
-         "done_when": [{**N, "check": "field_holds", "field_section": "Redirects", "value": "redirect_uri"},
-                       {**N, "check": "element_absent", "role": "button", "name": "Save Changes"},
-                       {**N, "check": "run_javascript"}]},  # not in the vocabulary: dropped with a note
-        {"description": "Open the general settings", "kind": "navigate", "source_url": None}])
-    o, _ = orch(tmp_path, FakeSearcher(), FakeReasoner({"triage": [triage()], "synthesis": [f]}))
-    p = o.get("Acme").plan
-    oauth, redirect, settings = p.steps[1], p.steps[2], p.steps[3]
-    assert oauth.target.name == "OAuth2" and oauth.done_when[0].check == "at_page"
-    assert [c.check for c in redirect.done_when] == ["field_holds", "element_absent"]
-    assert redirect.where[0].path.endswith("/oauth2") and redirect.value == "redirect_uri"
-    assert settings.inferred  # no checkable condition: Jev's judgement, marked in the report
-    assert any("invalid and dropped" in n for n in p.validation_notes)
